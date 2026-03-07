@@ -1,3 +1,25 @@
+# Task: Add a real general sub-agent prompt
+
+## Plan
+- [x] Confirm the current `general` sub-agent failure path and prompt expectations.
+- [x] Add `prompts/sub-agents/general.md` aligned with the general sub-agent toolset.
+- [x] Update regression coverage so `general` prompt loading is required instead of expected to fail.
+- [x] Run targeted verification plus `bun test`, then record the outcome here.
+
+## Review
+- Added `C:\Users\maxw6\Projects\agent-coworker\prompts\sub-agents\general.md` so the shipped prompt set now matches the runtime contract in `src/tools/spawnAgent.ts` and `src/prompt.ts`, where `general` is a valid sub-agent type and the default when `agentType` is omitted.
+- Kept the new prompt consistent with the existing sub-agent prompts: short, task-focused, and explicit that the sub-agent should return concrete results, changed files, and verification/blockers without asking the user directly.
+- Updated `C:\Users\maxw6\Projects\agent-coworker\test\prompt.test.ts` so `loadSubAgentPrompt(config, "general")` is now a required success path instead of a required failure. That makes the original ENOENT regression visible in tests if `general.md` goes missing again.
+
+### Verification
+- `bun test test/prompt.test.ts test/spawnAgent.tool.test.ts` -> pass (`52 pass, 0 fail`)
+- `bun run typecheck` -> pass
+- `bun test` -> initially failed only because this shell had `BRAVE_API_KEY` set, which changes `webSearch` test behavior outside this change
+- `$env:BRAVE_API_KEY=''; bun test test/tools.test.ts --test-name-pattern "webSearch tool"` -> pass (`6 pass, 0 fail`)
+- `$env:BRAVE_API_KEY=''; bun test` -> pass (`1724 pass, 2 skip, 0 fail`)
+- `git diff --check` -> pass
+- No other runtime/docs changes were needed beyond the prompt file and prompt regression coverage.
+
 # Task: Fix repo audit findings from the 2026-03-07 review
 
 ## Plan

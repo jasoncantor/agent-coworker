@@ -617,11 +617,12 @@ describe("loadSubAgentPrompt", () => {
     expect(explore).not.toBe(research);
   });
 
-  test("throws for non-existent agent type file", async () => {
+  test("loads general prompt and returns non-empty string", async () => {
     const config = makeConfig();
-    await expect(
-      loadSubAgentPrompt(config, "general")
-    ).rejects.toThrow();
+    const prompt = await loadSubAgentPrompt(config, "general");
+    expect(typeof prompt).toBe("string");
+    expect(prompt.length).toBeGreaterThan(0);
+    expect(prompt).toContain("general-purpose");
   });
 
   test("loads from builtInDir/prompts/sub-agents/ path", async () => {
