@@ -833,9 +833,21 @@
 
 ## Plan
 - [x] Review the existing desktop packaging config, release prerequisites, and GitHub Actions conventions.
-- [ ] Add a GitHub Actions workflow for desktop release builds on macOS and Windows, plus any supporting script changes needed for CI publishing.
-- [ ] Update the desktop docs/task review with the new release flow and required secrets.
-- [ ] Run verification commands, inspect the diff, and record outcomes in the review section below.
+- [x] Add a GitHub Actions workflow for desktop release builds on macOS and Windows, plus any supporting script changes needed for CI publishing.
+- [x] Update the desktop docs/task review with the new release flow and required secrets.
+- [x] Run verification commands, inspect the diff, and record outcomes in the review section below.
 
 ## Review
-- Pending.
+- Added `.github/workflows/desktop-release.yml` to create a dedicated desktop release pipeline. It runs on tag pushes matching `v*` or `desktop-v*` plus manual `workflow_dispatch`, validates the repo on Ubuntu, packages the desktop app on native macOS and Windows runners, uploads the generated installers as workflow artifacts, and publishes those artifacts to the matching GitHub Release when the ref is a tag.
+- Kept release publishing in GitHub Actions instead of relying on `electron-builder` auto-publish behavior. That makes the workflow easier to reason about, avoids double-publish surprises, and limits release write permissions to a single publish job.
+- Added a macOS CI helper step that turns the `APPLE_API_KEY` secret into a temporary `.p8` file on the runner, so the release workflow supports both Apple ID notarization (`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) and App Store Connect API-key notarization (`APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`).
+- Updated `apps/desktop/scripts/notarize.cjs` so desktop packaging now accepts either notarization credential set instead of only the Apple ID flow.
+- Updated `apps/desktop/README.md` with the new release workflow triggers, artifact behavior, and optional signing/notarization secrets. The docs also note that CI stores `APPLE_API_KEY` as raw `.p8` contents and sets `CSC_IDENTITY_AUTO_DISCOVERY=false` so unsigned builds still package cleanly when signing certificates are not configured.
+
+### Verification
+- `bun run docs:check` -> pass
+- `bun run typecheck` -> pass
+- `bun test` -> reproducibly crashes inside Bun after extensive passing output with `panic(main thread): switch on corrupt value`; this appears to be the same environment/runtime issue already seen in this repo, not a failure tied to the workflow changes
+- `bun test --cwd apps/desktop` -> pass (`146 pass, 0 fail`)
+- `CSC_IDENTITY_AUTO_DISCOVERY=false bun run desktop:build` -> pass when rerun outside the sandbox; produced `apps/desktop/release/Cowork-0.1.0-win-x64.exe`, `.blockmap`, and `latest.yml`
+- `git -c safe.directory=C:/Users/maxw6/Projects/agent-coworker diff --check` -> pass
