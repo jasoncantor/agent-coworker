@@ -732,3 +732,21 @@
   - `~/.bun/bin/bunx tsc --noEmit` -> pass
   - `~/.bun/bin/bun test` -> pass (`1720 pass, 2 skip, 0 fail`)
   - `git diff --check` -> pass
+
+# Task: Teach prompts and webFetch about multimodal image inspection
+
+## Plan
+- [x] Inspect the prompt tool descriptions and current `webFetch` content-type handling for image URL gaps.
+- [x] Update `webFetch` so direct image URLs return multimodal image content instead of being cleaned or rejected as non-text.
+- [x] Update the default and GPT system prompts so they explicitly tell models they can inspect local images with `read` and remote image URLs with `webFetch`.
+- [x] Add regression coverage and rerun prompt/tool verification.
+
+## Review
+- Updated [webFetch.ts](/Users/mweinbach/Projects/agent-coworker/src/tools/webFetch.ts) so `webFetch` now returns multimodal image content for direct image URLs instead of forcing everything through markdown cleanup. It accepts image MIME types directly and also falls back to common image extensions when a server mislabels the response as `application/octet-stream`.
+- Updated the shipped prompt docs in [system.md](/Users/mweinbach/Projects/agent-coworker/prompts/system.md), the GPT prompts, the Claude prompts, and the Gemini prompts so models are explicitly told that `read` can inspect local images directly and `webFetch` can inspect direct image URLs as visual content instead of cleaned markdown.
+- Extended [prompt.test.ts](/Users/mweinbach/Projects/agent-coworker/test/prompt.test.ts) with direct coverage for the loaded default/GPT prompts plus a file-based regression over all shipped prompt files that document `read` and `webFetch`. Extended [tools.test.ts](/Users/mweinbach/Projects/agent-coworker/test/tools.test.ts) so `webFetch` is covered for direct image responses and octet-stream image URLs.
+- Verification:
+  - `~/.bun/bin/bun test test/prompt.test.ts` -> pass (`45 pass, 0 fail`)
+  - `~/.bun/bin/bunx tsc --noEmit` -> pass
+  - `~/.bun/bin/bun test` -> pass (`1723 pass, 2 skip, 0 fail`)
+  - `git diff --check` -> pass

@@ -11,18 +11,56 @@ import { resolveSafeWebUrl } from "../utils/webSafety";
 
 const MAX_REDIRECTS = 5;
 let responseTimeoutMs = 5_000;
+const SUPPORTED_IMAGE_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+]);
 
 function isRedirectStatus(status: number): boolean {
   return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
 }
 
-function assertReadableContentType(contentType: string | null): void {
-  if (!contentType) return;
-  const normalized = contentType.toLowerCase();
-  if (normalized.startsWith("text/")) return;
-  if (normalized.includes("json")) return;
-  if (normalized.includes("xml")) return;
-  if (normalized.includes("javascript")) return;
+function normalizeMimeType(contentType: string | null): string | null {
+  if (!contentType) return null;
+  const [rawMimeType] = contentType.split(";", 1);
+  const normalized = rawMimeType?.trim().toLowerCase();
+  return normalized || null;
+}
+
+function supportedImageMimeTypeFromUrl(url: string): string | null {
+  const pathname = new URL(url).pathname.toLowerCase();
+  if (pathname.endsWith(".png")) return "image/png";
+  if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")) return "image/jpeg";
+  if (pathname.endsWith(".webp")) return "image/webp";
+  if (pathname.endsWith(".gif")) return "image/gif";
+  return null;
+}
+
+function classifyResponseContent(
+  contentType: string | null,
+  resolvedUrl: string
+): { kind: "text" } | { kind: "image"; mimeType: string } {
+  const normalized = normalizeMimeType(contentType);
+  if (normalized && SUPPORTED_IMAGE_MIME_TYPES.has(normalized)) {
+    return {
+      kind: "image",
+      mimeType: normalized === "image/jpg" ? "image/jpeg" : normalized,
+    };
+  }
+
+  const inferredImageMimeType = supportedImageMimeTypeFromUrl(resolvedUrl);
+  if ((!normalized || normalized === "application/octet-stream") && inferredImageMimeType) {
+    return { kind: "image", mimeType: inferredImageMimeType };
+  }
+
+  if (!normalized) return { kind: "text" };
+  if (normalized.startsWith("text/")) return { kind: "text" };
+  if (normalized.includes("json")) return { kind: "text" };
+  if (normalized.includes("xml")) return { kind: "text" };
+  if (normalized.includes("javascript")) return { kind: "text" };
   throw new Error(`Blocked non-text content type: ${contentType}`);
 }
 
@@ -106,7 +144,7 @@ export const __internal = {
 export function createWebFetchTool(ctx: ToolContext) {
   return defineTool({
     description:
-      "Fetch a URL and return its content as clean markdown. Use to read documentation or web pages.",
+      "Fetch a URL and return clean markdown for web pages, or visual content for supported direct image URLs.",
     inputSchema: z.object({
       url: z.string().url().describe("URL to fetch"),
       maxLength: z.number().int().min(1000).max(200000).optional().default(50000),
@@ -118,10 +156,28 @@ export function createWebFetchTool(ctx: ToolContext) {
       if (!res.ok) {
         throw new Error(`webFetch failed: ${res.status} ${res.statusText}`);
       }
-      assertReadableContentType(res.headers.get("content-type"));
-      const html = await res.text();
-
       const finalUrl = (await resolveSafeWebUrl(res.url || url)).url.toString();
+      const contentKind = classifyResponseContent(res.headers.get("content-type"), finalUrl);
+      if (contentKind.kind === "image") {
+        const bytes = Buffer.from(await res.arrayBuffer());
+        const result = {
+          type: "content",
+          content: [
+            { type: "text", text: `Image URL: ${finalUrl}` },
+            { type: "image", data: bytes.toString("base64"), mimeType: contentKind.mimeType },
+          ],
+        };
+        ctx.log(
+          `tool< webFetch ${JSON.stringify({
+            image: true,
+            mimeType: contentKind.mimeType,
+            bytes: bytes.length,
+          })}`
+        );
+        return result;
+      }
+
+      const html = await res.text();
       const dom = new JSDOM(html, { url: finalUrl });
       const article = new Readability(dom.window.document).parse();
 

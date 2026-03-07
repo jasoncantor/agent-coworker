@@ -1428,6 +1428,61 @@ describe("webFetch tool", () => {
     }
   });
 
+  test("returns multimodal content for direct image URLs", async () => {
+    const dir = await tmpDir();
+    const pngBase64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4//8/AwAI/AL+X6ixAAAAAElFTkSuQmCC";
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(async () => {
+      return new Response(Buffer.from(pngBase64, "base64"), {
+        status: 200,
+        headers: { "Content-Type": "image/png" },
+      });
+    }) as any;
+
+    try {
+      const t: any = createWebFetchTool(makeCtx(dir));
+      const out = await t.execute({ url: "https://example.com/chart.png", maxLength: 50000 });
+      expect(out).toEqual({
+        type: "content",
+        content: [
+          { type: "text", text: "Image URL: https://example.com/chart.png" },
+          { type: "image", data: pngBase64, mimeType: "image/png" },
+        ],
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("accepts direct image URLs even when served as octet-stream", async () => {
+    const dir = await tmpDir();
+    const jpegBase64 = Buffer.from("fake-jpeg-bytes").toString("base64");
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(async () => {
+      return new Response(Buffer.from(jpegBase64, "base64"), {
+        status: 200,
+        headers: { "Content-Type": "application/octet-stream" },
+      });
+    }) as any;
+
+    try {
+      const t: any = createWebFetchTool(makeCtx(dir));
+      const out = await t.execute({ url: "https://example.com/photo.jpg", maxLength: 50000 });
+      expect(out).toEqual({
+        type: "content",
+        content: [
+          { type: "text", text: "Image URL: https://example.com/photo.jpg" },
+          { type: "image", data: jpegBase64, mimeType: "image/jpeg" },
+        ],
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("DNS-pinning: fetch is called with IP-addressed URL", async () => {
     const dir = await tmpDir();
 

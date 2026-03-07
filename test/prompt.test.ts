@@ -69,6 +69,34 @@ function expectWorkspaceHygieneAndShellFirstGuidance(prompt: string) {
   expect(prompt).toContain("Only create an ad hoc Python or shell script");
 }
 
+function expectImageInspectionGuidance(prompt: string) {
+  const normalized = prompt.toLowerCase();
+  const hasReadImageGuidance =
+    normalized.includes("if read returns an image, inspect that image directly") ||
+    normalized.includes("if read returns an image, inspect it directly") ||
+    normalized.includes("if this tool returns an image, inspect it directly");
+
+  expect(hasReadImageGuidance).toBe(true);
+  expect(normalized).toContain("do not ask the user to re-upload it just because it is visual");
+  expect(normalized).toContain(
+    "webfetch may return image content that you can inspect visually instead of cleaned markdown"
+  );
+  expect(normalized).toContain(
+    "inspect a direct image url as visual content"
+  );
+}
+
+const IMAGE_GUIDANCE_PROMPT_FILES = [
+  "prompts/system.md",
+  "prompts/system-models/gpt-5.2.md",
+  "prompts/system-models/gpt-5.4.md",
+  "prompts/system-models/claude-haiku-4-5.md",
+  "prompts/system-models/claude-sonnet-4-6.md",
+  "prompts/system-models/claude-opus-4-6.md",
+  "prompts/system-models/gemini-3-flash-preview.md",
+  "prompts/system-models/gemini-3-pro-preview.md",
+] as const;
+
 // ---------------------------------------------------------------------------
 // loadSystemPrompt
 // ---------------------------------------------------------------------------
@@ -218,6 +246,7 @@ describe("loadSystemPrompt", () => {
     const prompt = await loadSystemPrompt(config);
 
     expectWorkspaceHygieneAndShellFirstGuidance(prompt);
+    expectImageInspectionGuidance(prompt);
   });
 
   test("real gpt-5.2 prompt includes workspace hygiene and shell-first guidance", async () => {
@@ -228,6 +257,7 @@ describe("loadSystemPrompt", () => {
     const prompt = await loadSystemPrompt(config);
 
     expectWorkspaceHygieneAndShellFirstGuidance(prompt);
+    expectImageInspectionGuidance(prompt);
   });
 
   test("default system prompt includes workspace hygiene and shell-first guidance", async () => {
@@ -238,6 +268,14 @@ describe("loadSystemPrompt", () => {
     const prompt = await loadSystemPrompt(config);
 
     expectWorkspaceHygieneAndShellFirstGuidance(prompt);
+    expectImageInspectionGuidance(prompt);
+  });
+
+  test("all shipped prompt files that document read/webFetch include image inspection guidance", async () => {
+    for (const relPath of IMAGE_GUIDANCE_PROMPT_FILES) {
+      const prompt = await fs.readFile(path.join(repoRoot(), relPath), "utf-8");
+      expectImageInspectionGuidance(prompt);
+    }
   });
 
   test("uses model-specific system template for gemini-3.1-pro-preview when present", async () => {
