@@ -169,7 +169,7 @@ jobs:
             apps/desktop/release/*.zip
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
-            apps/desktop/release/*.yml
+            apps/desktop/release/latest*.yml
           if-no-files-found: error
           retention-days: 14
 
@@ -195,6 +195,6 @@ jobs:
             release-assets/**/*.zip
             release-assets/**/*.exe
             release-assets/**/*.blockmap
-            release-assets/**/*.yml
+            release-assets/**/latest*.yml
           fail_on_unmatched_files: true
           generate_release_notes: true
