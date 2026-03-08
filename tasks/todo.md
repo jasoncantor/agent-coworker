@@ -118,6 +118,20 @@
   - `~/.bun/bin/bun test test/utils.browser.test.ts test/connect.test.ts test/providers/auth-registry.test.ts test/mcp.oauth-provider.test.ts apps/desktop/test/providers-page.test.ts apps/desktop/test/protocol-v2-events.test.ts` -> pass (`51 pass, 0 fail`)
   - `~/.bun/bin/bun run typecheck` -> pass
   - `~/.bun/bin/bun test` -> pass (`1750 pass, 2 skip, 0 fail`)
+
+# Task: Prep release version 0.1.9 for merge to main
+
+## Plan
+- [x] Identify the authoritative release version surfaces and any tests that pin the visible app version.
+- [x] Bump the repo and desktop package versions from `0.1.8` to `0.1.9` and align the desktop updater/UI tests.
+- [x] Run focused verification for the bumped version and record the outcome below.
+
+## Review
+- Bumped `package.json` and `apps/desktop/package.json` from `0.1.8` to `0.1.9` to prep the next merge-to-main release version.
+- Updated the desktop updater and updates-page tests so their `currentVersion` fixtures and visible version assertions match `0.1.9`.
+- Verification:
+  - `bun test apps/desktop/test/updater-service.test.ts apps/desktop/test/updates-page.test.ts` -> pass (`11 pass, 0 fail`)
+  - `bun run typecheck` -> pass
   - `git diff --check` -> pass aside from existing CRLF conversion warnings on Windows
 
 # Task: Clear stale desktop Codex auth challenge URLs
