@@ -89,7 +89,7 @@ export function UpdatesPage(props: UpdatesPageProps = {}) {
         <CardHeader className="flex-row items-center justify-between space-y-0">
           <div>
             <CardTitle>Current build</CardTitle>
-            <CardDescription>Updater checks only run for packaged macOS and Windows releases.</CardDescription>
+            <CardDescription>Updater checks only work when packaged update metadata exists for this platform.</CardDescription>
           </div>
           <Badge variant={statusVariant(updateState.phase)}>{statusLabel(updateState.phase)}</Badge>
         </CardHeader>

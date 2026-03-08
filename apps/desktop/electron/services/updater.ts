@@ -7,6 +7,7 @@ import { createDefaultUpdaterState, type UpdaterReleaseInfo, type UpdaterState }
 const AUTOMATIC_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const STARTUP_CHECK_DELAY_MS = 10 * 1000;
 const RELEASE_NOTES_URL = "https://github.com/mweinbach/agent-coworker/releases/latest";
+const UNAVAILABLE_RELEASE_FEED_MESSAGE = "Updates are unavailable for this platform because no update feed is published.";
 const require = createRequire(import.meta.url);
 
 type UpdaterEventHandler = (...args: any[]) => void;
@@ -82,6 +83,11 @@ function toMessage(error: unknown): string {
     return error.message;
   }
   return String(error);
+}
+
+function isMissingReleaseFeedMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return /latest(?:-[a-z]+)?\.yml/.test(normalized) && (normalized.includes("404") || normalized.includes("cannot find"));
 }
 
 function normalizeReleaseNotes(value: unknown): string | undefined {
@@ -230,6 +236,20 @@ export class DesktopUpdaterService {
       await this.updater.checkForUpdates();
     } catch (error) {
       const message = toMessage(error);
+      if (isMissingReleaseFeedMessage(message)) {
+        console.warn(`[desktop] Auto updater feed unavailable: ${message}`);
+        this.setState({
+          phase: "disabled",
+          lastCheckedAt: this.now(),
+          message: UNAVAILABLE_RELEASE_FEED_MESSAGE,
+          error: null,
+          progress: null,
+          release: null,
+          downloadedAt: null,
+        });
+        return;
+      }
+
       console.warn(`[desktop] Auto updater check failed: ${message}`);
       this.setState({
         phase: "error",
@@ -318,6 +338,20 @@ export class DesktopUpdaterService {
 
     this.updater.on("error", (error: unknown) => {
       const message = toMessage(error);
+      if (isMissingReleaseFeedMessage(message)) {
+        console.warn(`[desktop] Auto updater feed unavailable: ${message}`);
+        this.setState({
+          phase: "disabled",
+          lastCheckedAt: this.now(),
+          message: UNAVAILABLE_RELEASE_FEED_MESSAGE,
+          error: null,
+          progress: null,
+          release: null,
+          downloadedAt: null,
+        });
+        return;
+      }
+
       console.warn(`[desktop] Auto updater error: ${message}`);
       this.setState({
         phase: "error",
@@ -342,5 +376,6 @@ export class DesktopUpdaterService {
 
 export const __internal = {
   getDefaultUpdaterClient,
+  isMissingReleaseFeedMessage,
   resolveAutoUpdaterClient,
 };
