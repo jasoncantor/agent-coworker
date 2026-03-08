@@ -1,10 +1,10 @@
-# Task: Cut a test desktop release without the final icon
+# Task: Cut a test desktop release with the updated icon assets
 
 ## Plan
 - [x] Inspect the current repo/workflow state and confirm how a tag push becomes a GitHub desktop release.
 - [x] Run a local signed/notarized desktop build using the configured Apple/GitHub release credentials.
-- [ ] Commit the release-pipeline changes needed for this test and push a tag that triggers the desktop release workflow.
-- [ ] Update the resulting GitHub release with an explicit note that this is a test build with no final icon, then record the outcome below.
+- [ ] Commit the release-pipeline and icon changes needed for this test and push a tag that triggers the desktop release workflow.
+- [ ] Update the resulting GitHub release with an explicit note that this is a test build, then record the outcome below.
 
 ## Review
 - Verified the local macOS release path with the final GitHub signing inputs before cutting the tag:
@@ -13,7 +13,8 @@
   - `codesign -dvvv apps/desktop/release/mac-arm64/Cowork.app` showed `Developer ID Application: Max Weinbach (6UHAW5UAT4)`, a secure timestamp, `Identifier=com.cowork.desktop`, and a stapled notarization ticket.
   - `xcrun stapler validate apps/desktop/release/mac-arm64/Cowork.app` succeeded.
   - `spctl -a -vv --type exec apps/desktop/release/mac-arm64/Cowork.app` returned `accepted` with `source=Notarized Developer ID`.
-- Pending: tag push, GitHub Actions release run, and release-note update.
+- The original no-icon release request was superseded before the final retry. The next release tag should include the refreshed desktop icon assets now present under `apps/desktop/build/`.
+- Pending: icon-inclusive tag push, GitHub Actions release run, and release-note update.
 
 # Task: Generate notarization secrets and add what is verifiably correct to GitHub
 
@@ -215,6 +216,30 @@
   - `~/.bun/bin/bun run build:desktop-resources` -> pass; `dist/skills` is no longer present after the build
   - `~/.bun/bin/bun test` -> pass (`1705 pass, 2 skip, 0 fail`)
   - `git diff --check` -> pass
+
+---
+
+# Task: Set the desktop macOS icon from the provided Icon Composer asset
+
+## Plan
+- [x] Verify the supported packaging path for Apple `.icon` assets and inspect the existing desktop icon configuration.
+- [x] Wire the provided `Cowork.icon` asset into the desktop build with minimal changes and preserve the required fallback icon assets.
+- [x] Run verification (`bun test`, `bun run typecheck`, and desktop packaging checks) and record the outcome below.
+
+## Review
+- Added the provided Icon Composer asset at `/Users/mweinbach/Projects/agent-coworker/apps/desktop/build/icon.icon` as the source-of-truth macOS icon source and documented that source in `/Users/mweinbach/Projects/agent-coworker/apps/desktop/README.md`.
+- Verified the current web guidance first, then confirmed locally that this repo's installed `electron-builder`/`app-builder` stack (`24.13.3`) still rejects `mac.icon: build/icon.icon` with `icon directory ... doesn't contain icons`, so direct `.icon` packaging is not compatible with the current toolchain.
+- Used `xcrun actool apps/desktop/build/icon.icon --app-icon icon --compile <tmpdir> --output-partial-info-plist <tmpdir>/assetcatalog_generated_info.plist --minimum-deployment-target 11.0 --platform macosx --target-device mac` to compile the source asset into a packaging-safe `icon.icns`, then replaced `/Users/mweinbach/Projects/agent-coworker/apps/desktop/build/icon.icns` with that output and regenerated `/Users/mweinbach/Projects/agent-coworker/apps/desktop/build/icon.png` from the compiled icon.
+- Regenerated `/Users/mweinbach/Projects/agent-coworker/apps/desktop/build/icon.ico` from the same compiled PNG so the Windows installer/app icon now matches the provided source art too. The final `.ico` now contains 7 embedded sizes: `16`, `24`, `32`, `48`, `64`, `128`, and `256`.
+- Kept `/Users/mweinbach/Projects/agent-coworker/apps/desktop/electron-builder.yml` on `mac.icon: build/icon.icns`, which now points at the icon compiled from the user-provided Icon Composer source instead of the older artwork.
+
+### Verification
+- `~/.bun/bin/bun run typecheck` -> pass
+- `~/.bun/bin/bun run --cwd apps/desktop build:dir` -> pass; packaging reached `release/mac-arm64` and only warned about missing local signing/notarization credentials
+- `~/.bun/bin/bun test` -> pass (`1730 pass, 2 skip, 0 fail`)
+- Visual check of `/Users/mweinbach/Projects/agent-coworker/apps/desktop/build/icon.png` confirms the generated desktop icon matches the provided source art
+- Binary inspection of `/Users/mweinbach/Projects/agent-coworker/apps/desktop/build/icon.ico` confirms the embedded Windows icon sizes listed above
+- Native Windows packaging was not run in this macOS environment; verification here covers the generated `.ico` asset, the checked-in `win.icon` config path, and the repo test/typecheck suite
 
 ---
 

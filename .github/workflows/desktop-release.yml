@@ -136,7 +136,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-        run: bun run desktop:build
+        run: bun run desktop:build -- --publish never
 
       - name: Verify macOS signing and notarization
         if: ${{ runner.os == 'macOS' }}
