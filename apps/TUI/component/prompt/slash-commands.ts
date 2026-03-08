@@ -1,24 +1,17 @@
 import type { AutocompleteItem } from "./autocomplete";
 import { showToast } from "../../ui/toast";
+import {
+  OPENAI_REASONING_EFFORT_VALUES,
+  OPENAI_REASONING_SUMMARY_VALUES,
+  OPENAI_TEXT_VERBOSITY_VALUES,
+} from "../../../../src/shared/openaiCompatibleOptions";
+import type { SyncConfigPatch } from "../../context/syncTypes";
 
 type LocalSlashDependencies = {
   syncActions: {
     reset: () => void;
     cancel: () => void;
-    setConfig: (config: {
-      providerOptions?: {
-        openai?: {
-          reasoningEffort?: "none" | "low" | "medium" | "high" | "xhigh";
-          reasoningSummary?: "auto" | "concise" | "detailed";
-          textVerbosity?: "low" | "medium" | "high";
-        };
-        "codex-cli"?: {
-          reasoningEffort?: "none" | "low" | "medium" | "high" | "xhigh";
-          reasoningSummary?: "auto" | "concise" | "detailed";
-          textVerbosity?: "low" | "medium" | "high";
-        };
-      };
-    }) => void;
+    setConfig: (config: SyncConfigPatch) => boolean;
     setProviderApiKey: (provider: string, methodId: string, apiKey: string) => void;
     requestHarnessContext: () => void;
     setHarnessContext: (context: {
@@ -41,9 +34,9 @@ type LocalSlashDependencies = {
 };
 
 const OPENAI_COMPATIBLE_PROVIDERS = new Set(["openai", "codex-cli"]);
-const TEXT_VERBOSITY_VALUES = new Set(["low", "medium", "high"]);
-const REASONING_EFFORT_VALUES = new Set(["none", "low", "medium", "high", "xhigh"]);
-const REASONING_SUMMARY_VALUES = new Set(["auto", "concise", "detailed"]);
+const TEXT_VERBOSITY_SET = new Set<string>(OPENAI_TEXT_VERBOSITY_VALUES);
+const REASONING_EFFORT_SET = new Set<string>(OPENAI_REASONING_EFFORT_VALUES);
+const REASONING_SUMMARY_SET = new Set<string>(OPENAI_REASONING_SUMMARY_VALUES);
 
 export type LocalSlashCommand = {
   name: string;
@@ -110,28 +103,32 @@ function setActiveProviderOption(
     return;
   }
 
-  if (field === "textVerbosity" && !TEXT_VERBOSITY_VALUES.has(value)) {
+  if (field === "textVerbosity" && !TEXT_VERBOSITY_SET.has(value)) {
     showToast("Verbosity must be low, medium, or high", "error");
     return;
   }
 
-  if (field === "reasoningEffort" && !REASONING_EFFORT_VALUES.has(value)) {
+  if (field === "reasoningEffort" && !REASONING_EFFORT_SET.has(value)) {
     showToast("Reasoning effort must be none, low, medium, high, or xhigh", "error");
     return;
   }
 
-  if (field === "reasoningSummary" && !REASONING_SUMMARY_VALUES.has(value)) {
+  if (field === "reasoningSummary" && !REASONING_SUMMARY_SET.has(value)) {
     showToast("Reasoning summary must be auto, concise, or detailed", "error");
     return;
   }
 
-  deps.syncActions.setConfig({
+  const dispatched = deps.syncActions.setConfig({
     providerOptions: {
       [provider]: {
         [field]: value,
       },
     },
   });
+  if (!dispatched) {
+    showToast("Not connected — reconnect and try again", "error");
+    return;
+  }
   showToast(
     `${provider} ${field === "textVerbosity" ? "verbosity" : field === "reasoningEffort" ? "reasoning effort" : "reasoning summary"} updated`,
     "success"
@@ -323,7 +320,7 @@ export function createLocalSlashCommands(deps: LocalSlashDependencies): LocalSla
     {
       name: "reasoning-effort",
       aliases: ["effort"],
-      description: "Set reasoning effort for the active OpenAI-compatible provider",
+      description: "Set reasoning effort for the active OpenAI-compatible provider (alias: /effort)",
       icon: "r",
       execute: (argumentsText) => {
         setActiveProviderOption(deps, "reasoningEffort", argumentsText);

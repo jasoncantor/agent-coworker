@@ -12,7 +12,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     syncActions: {
       reset: () => {},
       cancel: () => {},
-      setConfig: () => {},
+      setConfig: () => true,
       setProviderApiKey: () => {},
       requestHarnessContext: () => {},
       setHarnessContext: () => {},
@@ -55,7 +55,7 @@ describe("local slash command registry", () => {
           resetCalls += 1;
         },
         cancel: () => {},
-        setConfig: () => {},
+        setConfig: () => true,
         setProviderApiKey: () => {},
         requestHarnessContext: () => {},
         setHarnessContext: () => {},
@@ -108,7 +108,7 @@ describe("local slash command registry", () => {
       syncActions: {
         reset: () => {},
         cancel: () => {},
-        setConfig: () => {},
+        setConfig: () => true,
         setProviderApiKey: () => {},
         requestHarnessContext: () => {},
         setHarnessContext: (context) => {
@@ -138,7 +138,7 @@ describe("local slash command registry", () => {
   });
 
   test("/verbosity updates the active openai provider via setConfig", async () => {
-    const setConfig = mock(() => {});
+    const setConfig = mock(() => true);
     const commands = createLocalSlashCommands(makeDeps({
       syncActions: {
         reset: () => {},
@@ -166,7 +166,7 @@ describe("local slash command registry", () => {
   });
 
   test("/effort aliases reasoning-effort and targets codex-cli when active", async () => {
-    const setConfig = mock(() => {});
+    const setConfig = mock(() => true);
     const commands = createLocalSlashCommands(makeDeps({
       syncActions: {
         reset: () => {},
@@ -194,7 +194,7 @@ describe("local slash command registry", () => {
   });
 
   test("/reasoning-summary updates the active provider via setConfig", async () => {
-    const setConfig = mock(() => {});
+    const setConfig = mock(() => true);
     const commands = createLocalSlashCommands(makeDeps({
       syncActions: {
         reset: () => {},
@@ -222,7 +222,7 @@ describe("local slash command registry", () => {
   });
 
   test("provider-setting commands refuse non-openai-compatible providers", async () => {
-    const setConfig = mock(() => {});
+    const setConfig = mock(() => true);
     const commands = createLocalSlashCommands(makeDeps({
       syncActions: {
         reset: () => {},

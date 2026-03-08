@@ -1,4 +1,5 @@
 import { defaultModelForProvider } from "@cowork/providers/catalog";
+import type { OpenAiCompatibleProviderOptionsByProvider } from "@cowork/shared/openaiCompatibleOptions";
 import { z } from "zod";
 
 import {
@@ -92,9 +93,9 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
           sessionId,
           config: {
             ...(subAgentModel ? { subAgentModel } : {}),
-            ...(providerOptions ? { providerOptions } : {}),
+            ...(providerOptions ? { providerOptions: providerOptions as OpenAiCompatibleProviderOptionsByProvider } : {}),
           },
-        }) as any);
+        }));
         if (okConfig) {
           appendThreadTranscript(threadId, "client", {
             type: "set_config",
@@ -171,9 +172,9 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         sessionId,
         config: {
           subAgentModel,
-          ...(providerOptions ? { providerOptions } : {}),
+          ...(providerOptions ? { providerOptions: providerOptions as OpenAiCompatibleProviderOptionsByProvider } : {}),
         },
-      }) as any);
+      }));
       const mcpPersisted = sendControl(get, workspaceId, (sessionId) => ({
         type: "set_enable_mcp",
         sessionId,

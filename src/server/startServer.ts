@@ -97,6 +97,12 @@ async function persistProjectConfigPatch(
           ? { ...currentProviderOptions[provider] }
           : {};
 
+        // Merge order (lowest → highest priority):
+        //   runtimeSection  — options passed at server startup (e.g. CLI flags or desktop launch config)
+        //   currentSection  — previously persisted values in .agent/config.json
+        //   sectionPatch    — the incoming patch from this set_config call
+        // Launch-time options are intentionally overridable by persisted config and new patches so
+        // that user changes made via the UI/CLI survive server restarts.
         currentProviderOptions[provider] = {
           ...runtimeSection,
           ...currentSection,

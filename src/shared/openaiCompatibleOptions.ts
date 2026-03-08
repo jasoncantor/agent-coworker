@@ -1,6 +1,9 @@
 export const OPENAI_COMPATIBLE_PROVIDER_NAMES = ["openai", "codex-cli"] as const;
 export type OpenAiCompatibleProviderName = (typeof OPENAI_COMPATIBLE_PROVIDER_NAMES)[number];
 
+// "none" and "xhigh" are client-side sentinel values used to represent "disable reasoning"
+// and "maximum effort" respectively. They are mapped to API-specific parameters before
+// being sent to the provider and are not passed to the OpenAI API verbatim.
 export const OPENAI_REASONING_EFFORT_VALUES = ["none", "low", "medium", "high", "xhigh"] as const;
 export type OpenAiReasoningEffort = (typeof OPENAI_REASONING_EFFORT_VALUES)[number];
 

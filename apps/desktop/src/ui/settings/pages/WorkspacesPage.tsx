@@ -38,7 +38,8 @@ function displayProviderName(provider: ProviderName): string {
     google: "Google",
     openai: "OpenAI",
     anthropic: "Anthropic",
-    "codex-cli": "Codex CLI",  };
+    "codex-cli": "Codex CLI",
+  };
   return names[provider] ?? provider;
 }
 

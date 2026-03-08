@@ -314,8 +314,8 @@ export function SyncProvider(props: { serverUrl: string; children: JSX.Element }
 
     setConfig(config) {
       const sessionId = state.sessionId;
-      if (!sessionId || !socketLifecycle.hasSocket()) return;
-      socketLifecycle.send({
+      if (!sessionId || !socketLifecycle.hasSocket()) return false;
+      return socketLifecycle.send({
         type: "set_config",
         sessionId,
         config,
