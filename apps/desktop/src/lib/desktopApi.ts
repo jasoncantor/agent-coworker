@@ -92,7 +92,8 @@ export type DesktopMenuCommand =
   | "toggleSidebar"
   | "openSettings"
   | "openWorkspacesSettings"
-  | "openSkills";
+  | "openSkills"
+  | "openUpdates";
 
 export type ThemeSource = "system" | "light" | "dark";
 
@@ -123,6 +124,59 @@ export type DesktopNotificationInput = {
   body?: string;
   silent?: boolean;
 };
+
+export type UpdaterPhase =
+  | "disabled"
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "up-to-date"
+  | "error";
+
+export type UpdaterProgress = {
+  percent: number;
+  transferred: number;
+  total: number;
+  bytesPerSecond: number;
+};
+
+export type UpdaterReleaseInfo = {
+  version: string;
+  releaseName?: string;
+  releaseDate?: string;
+  releaseNotes?: string;
+  releasePageUrl?: string;
+};
+
+export type UpdaterState = {
+  phase: UpdaterPhase;
+  packaged: boolean;
+  currentVersion: string;
+  lastCheckStartedAt: string | null;
+  lastCheckedAt: string | null;
+  downloadedAt: string | null;
+  message: string | null;
+  error: string | null;
+  progress: UpdaterProgress | null;
+  release: UpdaterReleaseInfo | null;
+};
+
+export function createDefaultUpdaterState(currentVersion = "0.1.0", packaged = false): UpdaterState {
+  return {
+    phase: packaged ? "idle" : "disabled",
+    packaged,
+    currentVersion,
+    lastCheckStartedAt: null,
+    lastCheckedAt: null,
+    downloadedAt: null,
+    message: packaged ? "Updates are ready to check." : "Updates are only available in packaged builds.",
+    error: null,
+    progress: null,
+    release: null,
+  };
+}
 
 export type SetWindowAppearanceInput = {
   themeSource?: ThemeSource;
@@ -155,8 +209,12 @@ export interface DesktopApi {
   trashPath(opts: TrashPathInput): Promise<void>;
   confirmAction(opts: ConfirmActionInput): Promise<boolean>;
   showNotification(opts: DesktopNotificationInput): Promise<boolean>;
+  getUpdateState(): Promise<UpdaterState>;
+  checkForUpdates(): Promise<void>;
+  quitAndInstallUpdate(): Promise<void>;
   getSystemAppearance(): Promise<SystemAppearance>;
   setWindowAppearance(opts: SetWindowAppearanceInput): Promise<SystemAppearance>;
+  onUpdateStateChanged(listener: (state: UpdaterState) => void): () => void;
   onSystemAppearanceChanged(listener: (appearance: SystemAppearance) => void): () => void;
   onMenuCommand(listener: (command: DesktopMenuCommand) => void): () => void;
 }
@@ -187,11 +245,15 @@ export const DESKTOP_IPC_CHANNELS = {
   trashPath: "desktop:trashPath",
   confirmAction: "desktop:confirmAction",
   showNotification: "desktop:showNotification",
+  getUpdateState: "desktop:getUpdateState",
+  checkForUpdates: "desktop:checkForUpdates",
+  quitAndInstallUpdate: "desktop:quitAndInstallUpdate",
   getSystemAppearance: "desktop:getSystemAppearance",
   setWindowAppearance: "desktop:setWindowAppearance",
 } as const;
 
 export const DESKTOP_EVENT_CHANNELS = {
   menuCommand: "desktop:event:menuCommand",
+  updateStateChanged: "desktop:event:updateState",
   systemAppearanceChanged: "desktop:event:systemAppearanceChanged",
 } as const;

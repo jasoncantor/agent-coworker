@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { persistedStateInputSchema } from "../src/lib/desktopSchemas";
+import { desktopMenuCommandSchema, persistedStateInputSchema, updaterStateSchema } from "../src/lib/desktopSchemas";
 
 const TS = "2024-01-01T00:00:00.000Z";
 
@@ -49,5 +49,39 @@ describe("desktop persisted-state schema defaults", () => {
     expect(parsed.workspaces[0]?.yolo).toBe(true);
     expect(parsed.developerMode).toBe(true);
     expect(parsed.showHiddenFiles).toBe(true);
+  });
+
+  test("accepts updater state payloads", () => {
+    const parsed = updaterStateSchema.parse({
+      phase: "downloading",
+      packaged: true,
+      currentVersion: "0.1.0",
+      lastCheckStartedAt: TS,
+      lastCheckedAt: TS,
+      downloadedAt: null,
+      message: "Downloading update…",
+      error: null,
+      progress: {
+        percent: 42.5,
+        transferred: 425,
+        total: 1000,
+        bytesPerSecond: 256,
+      },
+      release: {
+        version: "0.2.0",
+        releaseName: "Cowork 0.2.0",
+        releaseDate: TS,
+        releaseNotes: "Bug fixes",
+        releasePageUrl: "https://github.com/mweinbach/agent-coworker/releases/latest",
+      },
+    });
+
+    expect(parsed.phase).toBe("downloading");
+    expect(parsed.progress?.percent).toBe(42.5);
+    expect(parsed.release?.version).toBe("0.2.0");
+  });
+
+  test("accepts openUpdates desktop menu command", () => {
+    expect(desktopMenuCommandSchema.parse("openUpdates")).toBe("openUpdates");
   });
 });

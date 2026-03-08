@@ -876,6 +876,44 @@
 # Task: Add a dedicated gpt-5.4 system prompt
 
 ## Plan
+# Task: Add desktop auto updater
+
+## Plan
+- [x] Inspect the current Electron desktop lifecycle, IPC bridge, settings navigation, and release pipeline to fit the updater into existing patterns.
+- [x] Add a main-process updater service plus explicit desktop IPC/event contracts for updater state, manual checks, and restart/install.
+- [x] Add a dedicated Updates settings page and menu wiring for `Check for Updates…` and `openUpdates`.
+- [x] Add updater-focused regression coverage and run the required verification commands.
+
+## Review
+- Added a packaged-only `DesktopUpdaterService` in [apps/desktop/electron/services/updater.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/electron/services/updater.ts) using `electron-updater`. It tracks updater state centrally in the main process, performs an automatic check shortly after startup plus every 6 hours, auto-downloads stable releases, emits non-fatal error state, and exposes a restart-only install path.
+- Wired the updater through the existing explicit desktop bridge:
+  - shared types/channels/events in [apps/desktop/src/lib/desktopApi.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/lib/desktopApi.ts)
+  - runtime validation in [apps/desktop/src/lib/desktopSchemas.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/lib/desktopSchemas.ts)
+  - preload bridge methods/event subscriptions in [apps/desktop/electron/preload.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/electron/preload.ts)
+  - system IPC handlers in [apps/desktop/electron/ipc/system.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/electron/ipc/system.ts)
+  - renderer command wrappers in [apps/desktop/src/lib/desktopCommands.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/lib/desktopCommands.ts)
+- Added a dedicated Updates settings surface in [apps/desktop/src/ui/settings/pages/UpdatesPage.tsx](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/ui/settings/pages/UpdatesPage.tsx), extended settings navigation with the new `updates` page, and wired menu-triggered update checks via `openUpdates` plus `Check for Updates…` menu entries in [apps/desktop/electron/services/menuTemplate.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/electron/services/menuTemplate.ts).
+- Threaded updater state through the desktop app store so the renderer can subscribe once and render current status/version/progress consistently from [apps/desktop/src/App.tsx](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/App.tsx), [apps/desktop/src/app/store.helpers.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/app/store.helpers.ts), and [apps/desktop/src/app/store.actions/bootstrap.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/app/store.actions/bootstrap.ts).
+- Added regression coverage for the updater service and UI contract in:
+  - [apps/desktop/test/updater-service.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/updater-service.test.ts)
+  - [apps/desktop/test/desktop-schemas.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/desktop-schemas.test.ts)
+  - [apps/desktop/test/menu.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/menu.test.ts)
+  - [apps/desktop/test/settings-nav.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/settings-nav.test.ts)
+  - [apps/desktop/test/updates-page.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/updates-page.test.ts)
+- Added `electron-updater` to [apps/desktop/package.json](/Users/mweinbach/Projects/agent-coworker/apps/desktop/package.json) and confirmed the existing release metadata path still works with packaged output.
+
+### Verification
+- `bun install` -> pass; added `electron-updater@6.8.3`
+- `bun run typecheck` -> pass
+- `bun test --cwd apps/desktop` -> pass (`160 pass, 0 fail`)
+- `bun test` -> pass (`1744 pass, 2 skip, 0 fail`)
+- `bun run desktop:build -- --publish never` -> pass; produced:
+  - `apps/desktop/release/Cowork-0.1.0-mac-arm64.dmg`
+  - `apps/desktop/release/Cowork-0.1.0-mac-arm64.zip`
+  - `apps/desktop/release/latest-mac.yml`
+- Verified [apps/desktop/release/latest-mac.yml](/Users/mweinbach/Projects/agent-coworker/apps/desktop/release/latest-mac.yml) points at `Cowork-0.1.0-mac-arm64.zip` and includes matching SHA512 metadata.
+- `git diff --check` -> pass
+
 - [x] Add a model-specific gpt-5.4 prompt file under prompts/system-models.
 - [x] Wire gpt-5.4 into the prompt template matcher.
 - [x] Add regression coverage and run the prompt tests.

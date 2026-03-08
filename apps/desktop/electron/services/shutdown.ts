@@ -5,6 +5,7 @@ type QuitEvent = {
 type ShutdownDeps = {
   unregisterIpc: () => void;
   unregisterAppearanceListener?: () => void;
+  stopUpdater?: () => void;
   stopAllServers: () => Promise<void>;
   quit: () => void;
   onError?: (error: unknown) => void;
@@ -17,6 +18,7 @@ export function createBeforeQuitHandler(deps: ShutdownDeps): (event: QuitEvent) 
   return (event: QuitEvent) => {
     deps.unregisterIpc();
     deps.unregisterAppearanceListener?.();
+    deps.stopUpdater?.();
 
     if (shutdownFinished || shutdownStarted) {
       return;

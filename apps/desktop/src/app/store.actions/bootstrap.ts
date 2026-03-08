@@ -2,6 +2,9 @@ import { defaultModelForProvider } from "@cowork/providers/catalog";
 import { z } from "zod";
 
 import {
+  checkForUpdates as runUpdateCheck,
+  getUpdateState,
+  quitAndInstallUpdate as runQuitAndInstallUpdate,
   deleteTranscript,
   listDirectory,
   loadState,
@@ -148,12 +151,18 @@ const persistedStateSchema = z.object({
   };
 });
 
-export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "init" | "openSettings" | "closeSettings" | "setSettingsPage" | "setDeveloperMode" | "setShowHiddenFiles" | "toggleSidebar" | "toggleContextSidebar" | "setSidebarWidth" | "setContextSidebarWidth" | "setMessageBarHeight"> {
+export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "init" | "openSettings" | "closeSettings" | "setSettingsPage" | "setDeveloperMode" | "setShowHiddenFiles" | "setUpdateState" | "checkForUpdates" | "quitAndInstallUpdate" | "toggleSidebar" | "toggleContextSidebar" | "setSidebarWidth" | "setContextSidebarWidth" | "setMessageBarHeight"> {
   return {
     init: async () => {
       set({ startupError: null });
       try {
         const state = persistedStateSchema.parse(await loadState());
+        let updateState = get().updateState;
+        try {
+          updateState = await getUpdateState();
+        } catch (error) {
+          console.warn("Desktop updater state load failed:", error);
+        }
         set({
           workspaces: state.workspaces,
           threads: state.threads,
@@ -161,6 +170,7 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
           selectedThreadId: state.selectedThreadId,
           developerMode: state.developerMode,
           showHiddenFiles: state.showHiddenFiles,
+          updateState,
           ready: true,
           startupError: null,
         });
@@ -233,6 +243,16 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
       if (wsId) {
         void get().refreshWorkspaceFiles(wsId);
       }
+    },
+
+    setUpdateState: (updateState) => set({ updateState }),
+
+    checkForUpdates: async () => {
+      await runUpdateCheck();
+    },
+
+    quitAndInstallUpdate: async () => {
+      await runQuitAndInstallUpdate();
     },
   
 

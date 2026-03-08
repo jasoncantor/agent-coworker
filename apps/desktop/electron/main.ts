@@ -1,9 +1,9 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { app, BrowserWindow, Menu, shell } from "electron";
+import { app, BrowserWindow, Menu, Notification, shell } from "electron";
 
-import { DESKTOP_EVENT_CHANNELS, type DesktopMenuCommand } from "../src/lib/desktopApi";
+import { DESKTOP_EVENT_CHANNELS, type DesktopMenuCommand, type UpdaterState } from "../src/lib/desktopApi";
 import { registerDesktopIpc } from "./ipc";
 import {
   applyInitialWindowAppearance,
@@ -16,6 +16,7 @@ import { PersistenceService } from "./services/persistence";
 import { resolveDesktopRendererUrl } from "./services/rendererUrl";
 import { ServerManager } from "./services/serverManager";
 import { createBeforeQuitHandler } from "./services/shutdown";
+import { DesktopUpdaterService } from "./services/updater";
 import { applyMacosPremiumEnhancements, macosBrowserWindowOptions } from "./services/windowEnhancements";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -24,6 +25,16 @@ const PACKAGED_RENDERER_DIR = path.resolve(path.join(__dirname, "../renderer"));
 
 const serverManager = new ServerManager();
 const persistence = new PersistenceService();
+const updater = new DesktopUpdaterService({
+  currentVersion: app.getVersion(),
+  isPackaged: app.isPackaged,
+  onStateChange: (state) => {
+    emitDesktopEvent(DESKTOP_EVENT_CHANNELS.updateStateChanged, state);
+  },
+  notifyUpdateReady: (state) => {
+    showUpdateReadyNotification(state);
+  },
+});
 let unregisterIpc = () => {};
 let unregisterAppearanceListener = () => {};
 let mainWindow: BrowserWindow | null = null;
@@ -49,6 +60,19 @@ function emitDesktopEvent(channel: string, payload: unknown): void {
 
 function emitSystemAppearance(): void {
   emitDesktopEvent(DESKTOP_EVENT_CHANNELS.systemAppearanceChanged, getSystemAppearanceSnapshot());
+}
+
+function showUpdateReadyNotification(state: UpdaterState): void {
+  if (!Notification.isSupported()) {
+    return;
+  }
+  const version = state.release?.version;
+  const notification = new Notification({
+    title: "Update ready",
+    body: version ? `Cowork ${version} is ready. Restart to install.` : "Cowork update is ready. Restart to install.",
+    silent: false,
+  });
+  notification.show();
 }
 
 function sendMenuCommand(command: DesktopMenuCommand): void {
@@ -233,6 +257,7 @@ if (!gotSingleInstanceLock) {
     unregisterIpc = registerDesktopIpc({
       persistence,
       serverManager,
+      updater,
     });
     unregisterAppearanceListener = registerSystemAppearanceListener((appearance) => {
       emitDesktopEvent(DESKTOP_EVENT_CHANNELS.systemAppearanceChanged, appearance);
@@ -246,6 +271,7 @@ if (!gotSingleInstanceLock) {
       sendCommand: (command) => sendMenuCommand(command),
     });
 
+    updater.start();
     void createWindow();
 
     app.on("activate", () => {
@@ -260,6 +286,7 @@ if (!gotSingleInstanceLock) {
     createBeforeQuitHandler({
       unregisterIpc: () => unregisterIpc(),
       unregisterAppearanceListener: () => unregisterAppearanceListener(),
+      stopUpdater: () => updater.dispose(),
       stopAllServers: () => serverManager.stopAll(),
       quit: () => app.quit(),
       onError: (error) => {

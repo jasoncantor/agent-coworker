@@ -21,6 +21,9 @@ import type {
   StopWorkspaceServerInput,
   SystemAppearance,
   TranscriptBatchInput,
+  UpdaterProgress,
+  UpdaterReleaseInfo,
+  UpdaterState,
   TrashPathInput,
 } from "./desktopApi";
 import type { PersistedState } from "../app/types";
@@ -154,6 +157,34 @@ export const desktopNotificationInputSchema: z.ZodType<DesktopNotificationInput>
   silent: z.boolean().optional(),
 });
 
+export const updaterProgressSchema: z.ZodType<UpdaterProgress> = z.object({
+  percent: z.number().finite(),
+  transferred: z.number().finite(),
+  total: z.number().finite(),
+  bytesPerSecond: z.number().finite(),
+});
+
+export const updaterReleaseInfoSchema: z.ZodType<UpdaterReleaseInfo> = z.object({
+  version: nonEmptyStringSchema,
+  releaseName: optionalNonEmptyStringSchema,
+  releaseDate: optionalNonEmptyStringSchema,
+  releaseNotes: optionalNonEmptyStringSchema,
+  releasePageUrl: optionalNonEmptyStringSchema,
+});
+
+export const updaterStateSchema: z.ZodType<UpdaterState> = z.object({
+  phase: z.enum(["disabled", "idle", "checking", "available", "downloading", "downloaded", "up-to-date", "error"]),
+  packaged: z.boolean(),
+  currentVersion: nonEmptyStringSchema,
+  lastCheckStartedAt: z.string().nullable(),
+  lastCheckedAt: z.string().nullable(),
+  downloadedAt: z.string().nullable(),
+  message: z.string().nullable(),
+  error: z.string().nullable(),
+  progress: updaterProgressSchema.nullable(),
+  release: updaterReleaseInfoSchema.nullable(),
+});
+
 export const setWindowAppearanceInputSchema: z.ZodType<SetWindowAppearanceInput> = z.object({
   themeSource: z.enum(["system", "light", "dark"]).optional(),
   backgroundMaterial: z.enum(["auto", "none", "mica", "acrylic", "tabbed"]).optional(),
@@ -165,6 +196,7 @@ export const desktopMenuCommandSchema: z.ZodType<DesktopMenuCommand> = z.enum([
   "openSettings",
   "openWorkspacesSettings",
   "openSkills",
+  "openUpdates",
 ]);
 
 export const systemAppearanceSchema: z.ZodType<SystemAppearance> = z.object({

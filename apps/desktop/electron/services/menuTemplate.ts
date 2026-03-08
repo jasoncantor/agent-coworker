@@ -28,6 +28,7 @@ export function buildDesktopMenuTemplate(
   platform: NodeJS.Platform = process.platform,
 ): MenuItemConstructorOptions[] {
   const isMac = platform === "darwin";
+  const buildUpdatesItem = () => commandItem("Check for Updates…", "openUpdates", options.sendCommand);
 
   const fileMenu: MenuItemConstructorOptions = {
     label: isMac ? "File" : "&File",
@@ -88,6 +89,8 @@ export function buildDesktopMenuTemplate(
   const helpMenu: MenuItemConstructorOptions = {
     label: isMac ? "Help" : "&Help",
     submenu: [
+      buildUpdatesItem(),
+      { type: "separator" },
       {
         label: "Cowork on GitHub",
         click: () => {
@@ -104,6 +107,7 @@ export function buildDesktopMenuTemplate(
       role: "appMenu",
       submenu: [
         { role: "about" },
+        buildUpdatesItem(),
         { type: "separator" },
         { role: "services" },
         { type: "separator" },

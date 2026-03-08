@@ -3,9 +3,11 @@ import { memo, useEffect, useMemo, useRef } from "react";
 import { useAppStore } from "./app/store";
 import type { DesktopMenuCommand, SystemAppearance } from "./lib/desktopApi";
 import {
+  getUpdateState,
   getSystemAppearance,
   onMenuCommand,
   onSystemAppearanceChanged,
+  onUpdateStateChanged,
   setWindowAppearance,
   showNotification,
 } from "./lib/desktopCommands";
@@ -67,6 +69,8 @@ export default function App() {
   const openSkills = useAppStore((s) => s.openSkills);
   const openSettings = useAppStore((s) => s.openSettings);
   const notifications = useAppStore((s) => s.notifications);
+  const setUpdateState = useAppStore((s) => s.setUpdateState);
+  const checkForUpdates = useAppStore((s) => s.checkForUpdates);
 
   const newThread = useAppStore((s) => s.newThread);
   const seenNotificationIds = useRef(new Set<string>());
@@ -132,6 +136,11 @@ export default function App() {
         openSettings("workspaces");
         return;
       }
+      if (command === "openUpdates") {
+        openSettings("updates");
+        void checkForUpdates();
+        return;
+      }
       if (command === "openSkills") {
         void openSkills();
       }
@@ -139,7 +148,15 @@ export default function App() {
 
     const unsubscribe = onMenuCommand(handleMenuCommand);
     return unsubscribe;
-  }, [newThread, openSettings, openSkills, toggleSidebar]);
+  }, [checkForUpdates, newThread, openSettings, openSkills, toggleSidebar]);
+
+  useEffect(() => {
+    const unsubscribe = onUpdateStateChanged(setUpdateState);
+    void getUpdateState().then(setUpdateState).catch(() => {
+      // Keep the default disabled/idle state if the updater bridge is unavailable.
+    });
+    return unsubscribe;
+  }, [setUpdateState]);
 
   useEffect(() => {
     function applySystemAppearance(appearance: SystemAppearance): void {

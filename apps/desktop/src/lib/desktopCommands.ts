@@ -6,6 +6,7 @@ import type {
   ExplorerEntry,
   SetWindowAppearanceInput,
   SystemAppearance,
+  UpdaterState,
 } from "./desktopApi";
 
 function requireDesktopApi() {
@@ -139,6 +140,18 @@ export async function showNotification(opts: DesktopNotificationInput): Promise<
   return await requireDesktopApi().showNotification(opts);
 }
 
+export async function getUpdateState(): Promise<UpdaterState> {
+  return await requireDesktopApi().getUpdateState();
+}
+
+export async function checkForUpdates(): Promise<void> {
+  await requireDesktopApi().checkForUpdates();
+}
+
+export async function quitAndInstallUpdate(): Promise<void> {
+  await requireDesktopApi().quitAndInstallUpdate();
+}
+
 export async function getSystemAppearance(): Promise<SystemAppearance> {
   return await requireDesktopApi().getSystemAppearance();
 }
@@ -149,6 +162,10 @@ export async function setWindowAppearance(opts: SetWindowAppearanceInput): Promi
 
 export function onSystemAppearanceChanged(listener: (appearance: SystemAppearance) => void): () => void {
   return requireDesktopApi().onSystemAppearanceChanged(listener);
+}
+
+export function onUpdateStateChanged(listener: (state: UpdaterState) => void): () => void {
+  return requireDesktopApi().onUpdateStateChanged(listener);
 }
 
 export function onMenuCommand(listener: (command: DesktopMenuCommand) => void): () => void {

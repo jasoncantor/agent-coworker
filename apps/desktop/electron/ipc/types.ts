@@ -4,10 +4,12 @@ import type { z } from "zod";
 import type { PersistedState } from "../../src/app/types";
 import type { PersistenceService } from "../services/persistence";
 import type { ServerManager } from "../services/serverManager";
+import type { DesktopUpdaterService } from "../services/updater";
 
 export type DesktopIpcDeps = {
   persistence: PersistenceService;
   serverManager: ServerManager;
+  updater: DesktopUpdaterService;
 };
 
 export type HandleDesktopInvoke = <TArgs extends unknown[], TResult>(

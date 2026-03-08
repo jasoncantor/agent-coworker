@@ -1,5 +1,6 @@
 import { UI_DISABLED_PROVIDERS } from "../lib/modelChoices";
 import { startWorkspaceServer } from "../lib/desktopCommands";
+import { createDefaultUpdaterState, type UpdaterState } from "../lib/desktopApi";
 import type { MCPServerConfig, ProviderName, ServerEvent, TodoItem } from "../lib/wsProtocol";
 import { PROVIDER_NAMES } from "../lib/wsProtocol";
 
@@ -153,6 +154,7 @@ export type AppStoreState = {
   injectContext: boolean;
   developerMode: boolean;
   showHiddenFiles: boolean;
+  updateState: UpdaterState;
 
   sidebarCollapsed: boolean;
   sidebarWidth: number;
@@ -184,6 +186,9 @@ export type AppStoreState = {
   setInjectContext: (v: boolean) => void;
   setDeveloperMode: (v: boolean) => void;
   setShowHiddenFiles: (v: boolean) => void;
+  setUpdateState: (state: UpdaterState) => void;
+  checkForUpdates: () => Promise<void>;
+  quitAndInstallUpdate: () => Promise<void>;
 
   openSkills: () => Promise<void>;
   selectSkill: (skillName: string) => Promise<void>;
@@ -253,6 +258,8 @@ export type StoreGet = () => AppStoreState;
 export type StoreSet = (
   partial: Partial<AppStoreState> | ((state: AppStoreState) => Partial<AppStoreState>),
 ) => void;
+
+export { createDefaultUpdaterState };
 
 function pushNotification(notifications: Notification[], entry: Notification): Notification[] {
   const next = [...notifications, entry];

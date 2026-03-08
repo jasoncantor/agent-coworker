@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import { createAppActions } from "./store.actions";
-import type { AppStoreDataState, AppStoreState } from "./store.helpers";
+import { createDefaultUpdaterState, type AppStoreDataState, type AppStoreState } from "./store.helpers";
 
 const initialState: AppStoreDataState = {
   ready: false,
@@ -40,6 +40,7 @@ const initialState: AppStoreDataState = {
   injectContext: false,
   developerMode: false,
   showHiddenFiles: false,
+  updateState: createDefaultUpdaterState(),
 
   sidebarCollapsed: false,
   contextSidebarCollapsed: false,

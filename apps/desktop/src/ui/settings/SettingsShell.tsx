@@ -9,6 +9,7 @@ import type { SettingsPageId } from "../../app/types";
 import { ProvidersPage } from "./pages/ProvidersPage";
 import { WorkspacesPage } from "./pages/WorkspacesPage";
 import { McpServersPage } from "./pages/McpServersPage";
+import { UpdatesPage } from "./pages/UpdatesPage";
 import { DeveloperPage } from "./pages/DeveloperPage";
 
 type SettingsPageDefinition = {
@@ -21,6 +22,7 @@ const SETTINGS_PAGES: SettingsPageDefinition[] = [
   { id: "providers", label: "Providers", render: () => <ProvidersPage /> },
   { id: "workspaces", label: "Workspaces", render: () => <WorkspacesPage /> },
   { id: "mcp", label: "MCP Servers", render: () => <McpServersPage /> },
+  { id: "updates", label: "Updates", render: () => <UpdatesPage /> },
   { id: "developer", label: "Developer", render: () => <DeveloperPage /> },
 ];
 

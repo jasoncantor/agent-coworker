@@ -25,6 +25,7 @@ import {
   type SystemAppearance,
   type TranscriptBatchInput,
   type TrashPathInput,
+  type UpdaterState,
 } from "../src/lib/desktopApi";
 import type { PersistedState } from "../src/app/types";
 import {
@@ -49,6 +50,7 @@ import {
   systemAppearanceSchema,
   transcriptBatchInputSchema,
   trashPathInputSchema,
+  updaterStateSchema,
 } from "../src/lib/desktopSchemas";
 
 function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
@@ -135,6 +137,10 @@ function assertDesktopNotificationInput(opts: DesktopNotificationInput): void {
 
 function assertSetWindowAppearanceInput(opts: SetWindowAppearanceInput): void {
   parseWithSchema(setWindowAppearanceInputSchema, opts, "setWindowAppearance options");
+}
+
+function assertUpdaterState(value: unknown): asserts value is UpdaterState {
+  parseWithSchema(updaterStateSchema, value, "update state");
 }
 
 function assertDesktopMenuCommand(value: unknown): asserts value is DesktopMenuCommand {
@@ -253,6 +259,16 @@ const desktopApi = Object.freeze<DesktopApi>({
     return ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.showNotification, opts);
   },
 
+  getUpdateState: async () => {
+    const state = await ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getUpdateState);
+    assertUpdaterState(state);
+    return state;
+  },
+
+  checkForUpdates: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.checkForUpdates),
+
+  quitAndInstallUpdate: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.quitAndInstallUpdate),
+
   getSystemAppearance: async () => {
     const appearance = await ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getSystemAppearance);
     assertSystemAppearance(appearance);
@@ -277,6 +293,20 @@ const desktopApi = Object.freeze<DesktopApi>({
     ipcRenderer.on(DESKTOP_EVENT_CHANNELS.systemAppearanceChanged, wrapped);
     return () => {
       ipcRenderer.off(DESKTOP_EVENT_CHANNELS.systemAppearanceChanged, wrapped);
+    };
+  },
+
+  onUpdateStateChanged: (listener: (state: UpdaterState) => void) => {
+    if (typeof listener !== "function") {
+      throw new Error("onUpdateStateChanged listener must be a function");
+    }
+    const wrapped = (_event: unknown, payload: unknown) => {
+      assertUpdaterState(payload);
+      listener(payload);
+    };
+    ipcRenderer.on(DESKTOP_EVENT_CHANNELS.updateStateChanged, wrapped);
+    return () => {
+      ipcRenderer.off(DESKTOP_EVENT_CHANNELS.updateStateChanged, wrapped);
     };
   },
 

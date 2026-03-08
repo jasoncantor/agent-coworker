@@ -43,6 +43,18 @@ export function registerSystemIpc(context: DesktopIpcModuleContext): void {
     return true;
   });
 
+  handleDesktopInvoke(DESKTOP_IPC_CHANNELS.getUpdateState, async () => {
+    return context.deps.updater.getState();
+  });
+
+  handleDesktopInvoke(DESKTOP_IPC_CHANNELS.checkForUpdates, async () => {
+    await context.deps.updater.checkForUpdates();
+  });
+
+  handleDesktopInvoke(DESKTOP_IPC_CHANNELS.quitAndInstallUpdate, async () => {
+    context.deps.updater.quitAndInstall();
+  });
+
   handleDesktopInvoke(DESKTOP_IPC_CHANNELS.getSystemAppearance, async () => {
     return getSystemAppearanceSnapshot();
   });

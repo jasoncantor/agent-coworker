@@ -1,5 +1,24 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+const MOCK_SYSTEM_APPEARANCE = {
+  platform: "linux",
+  themeSource: "system",
+  shouldUseDarkColors: false,
+  shouldUseHighContrastColors: false,
+  shouldUseInvertedColorScheme: false,
+  prefersReducedTransparency: false,
+  inForcedColorsMode: false,
+};
+const MOCK_UPDATE_STATE = {
+  phase: "idle",
+  currentVersion: "0.1.0",
+  packaged: false,
+  lastCheckedAt: null,
+  release: null,
+  progress: null,
+  error: null,
+};
+
 mock.module("../src/lib/desktopCommands", () => ({
   appendTranscriptBatch: async () => {},
   appendTranscriptEvent: async () => {},
@@ -26,10 +45,14 @@ mock.module("../src/lib/desktopCommands", () => ({
   trashPath: async () => {},
   confirmAction: async () => true,
   showNotification: async () => true,
-  getSystemAppearance: async () => "light",
-  setWindowAppearance: async () => "light",
+  getSystemAppearance: async () => MOCK_SYSTEM_APPEARANCE,
+  setWindowAppearance: async () => MOCK_SYSTEM_APPEARANCE,
+  getUpdateState: async () => MOCK_UPDATE_STATE,
+  checkForUpdates: async () => {},
+  quitAndInstallUpdate: async () => {},
   onSystemAppearanceChanged: () => () => {},
   onMenuCommand: () => () => {},
+  onUpdateStateChanged: () => () => {},
 }));
 
 mock.module("../src/lib/agentSocket", () => ({
@@ -84,6 +107,12 @@ describe("settings nav (store)", () => {
   test("setSettingsPage accepts mcp page", () => {
     useAppStore.getState().setSettingsPage("mcp");
     expect(useAppStore.getState().settingsPage).toBe("mcp");
+  });
+
+  test("openSettings accepts updates page", () => {
+    useAppStore.getState().openSettings("updates");
+    expect(useAppStore.getState().view).toBe("settings");
+    expect(useAppStore.getState().settingsPage).toBe("updates");
   });
 
   test("setDeveloperMode updates developer mode state", () => {
