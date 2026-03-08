@@ -11,10 +11,13 @@ describe("desktop release workflow", () => {
       /- name: Build macOS desktop artifacts[\s\S]*?CSC_LINK: \$\{\{ secrets\.CSC_LINK \}\}[\s\S]*?CSC_KEY_PASSWORD: \$\{\{ secrets\.CSC_KEY_PASSWORD \}\}/,
     );
     expect(workflow).toMatch(
-      /- name: Build Windows desktop artifacts[\s\S]*?CSC_LINK: \$\{\{ env\.WIN_CSC_LINK \}\}[\s\S]*?CSC_KEY_PASSWORD: \$\{\{ env\.WIN_CSC_KEY_PASSWORD \}\}/,
+      /- name: Build Windows desktop artifacts[\s\S]*?if \(\$env:WIN_CSC_LINK -and \$env:WIN_CSC_KEY_PASSWORD\)[\s\S]*?\$env:CSC_LINK = \$env:WIN_CSC_LINK[\s\S]*?\$env:CSC_KEY_PASSWORD = \$env:WIN_CSC_KEY_PASSWORD/,
     );
     expect(workflow).not.toMatch(
       /- name: Build Windows desktop artifacts[\s\S]*?CSC_LINK: \$\{\{ secrets\.CSC_LINK \}\}/,
+    );
+    expect(workflow).toMatch(
+      /- name: Build Windows desktop artifacts[\s\S]*?Remove-Item Env:CSC_LINK -ErrorAction SilentlyContinue[\s\S]*?Remove-Item Env:CSC_KEY_PASSWORD -ErrorAction SilentlyContinue/,
     );
   });
 

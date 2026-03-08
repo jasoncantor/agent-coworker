@@ -142,10 +142,17 @@ jobs:
 
       - name: Build Windows desktop artifacts
         if: ${{ runner.os == 'Windows' }}
-        env:
-          CSC_LINK: ${{ env.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ env.WIN_CSC_KEY_PASSWORD }}
-        run: bun run desktop:build -- --publish never
+        shell: pwsh
+        run: |
+          if ($env:WIN_CSC_LINK -and $env:WIN_CSC_KEY_PASSWORD) {
+            $env:CSC_LINK = $env:WIN_CSC_LINK
+            $env:CSC_KEY_PASSWORD = $env:WIN_CSC_KEY_PASSWORD
+          } else {
+            Remove-Item Env:CSC_LINK -ErrorAction SilentlyContinue
+            Remove-Item Env:CSC_KEY_PASSWORD -ErrorAction SilentlyContinue
+          }
+
+          bun run desktop:build -- --publish never
 
       - name: Verify macOS signing and notarization
         if: ${{ runner.os == 'macOS' }}
