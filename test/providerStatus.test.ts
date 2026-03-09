@@ -296,4 +296,37 @@ describe("getProviderStatuses", () => {
     expect(codex?.message).toContain("verification failed");
   });
 
+  test("codex-cli: malformed usage payload keeps credentials authorized but unverified", async () => {
+    const home = await makeTmpHome();
+    const paths = getAiCoworkerPaths({ homedir: home });
+
+    const idToken = makeJwt({ iss: "https://auth.example.com", email: "jwt@example.com", chatgpt_account_id: "acct-123" });
+    const accessToken = "access-token";
+    const codexAuthPath = path.join(home, ".cowork", "auth", "codex-cli", "auth.json");
+    await fs.mkdir(path.dirname(codexAuthPath), { recursive: true });
+    await fs.writeFile(
+      codexAuthPath,
+      JSON.stringify({ version: 1, auth_mode: "chatgpt", tokens: { id_token: idToken, access_token: accessToken } }),
+      "utf-8"
+    );
+
+    const statuses = await getProviderStatuses({
+      paths,
+      fetchImpl: async () => new Response(JSON.stringify({
+        credits: {
+          has_credits: "nope",
+          unlimited: false,
+        },
+      }), { status: 200 }),
+    });
+    const codex = statuses.find((s) => s.provider === "codex-cli");
+
+    expect(codex).toBeDefined();
+    expect(codex?.authorized).toBe(true);
+    expect(codex?.verified).toBe(false);
+    expect(codex?.account?.email).toBe("jwt@example.com");
+    expect(codex?.message).toContain("Codex usage endpoint returned an invalid payload.");
+    expect(codex?.usage).toBeUndefined();
+  });
+
 });

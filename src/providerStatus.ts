@@ -315,9 +315,12 @@ async function codexBackendVerification(opts: {
 
     const usageJson = await usageRes.json();
     const parsedUsage = codexUsageStatusSchema.safeParse(usageJson);
-    const planType = parsedUsage.success ? asNonEmptyString(parsedUsage.data.plan_type) : undefined;
+    if (!parsedUsage.success) {
+      return { email, ok: false, message: "Codex usage endpoint returned an invalid payload." };
+    }
+    const planType = asNonEmptyString(parsedUsage.data.plan_type);
     const planSuffix = planType ? ` (${planType})` : "";
-    const usage = parsedUsage.success ? mapCodexUsageStatus(parsedUsage.data) : undefined;
+    const usage = mapCodexUsageStatus(parsedUsage.data);
     const usageEmail = usage?.email ?? email;
     return { email: usageEmail, ok: true, message: `Verified via Codex usage endpoint${planSuffix}.`, usage };
   } catch (err) {

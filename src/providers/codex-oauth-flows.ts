@@ -177,7 +177,7 @@ export async function runCodexBrowserOAuth(opts: {
     settle({ code });
   });
 
-  const redirectUri = `http://localhost:${listener.port}/auth/callback`;
+  const redirectUri = `http://${OAUTH_LOOPBACK_HOST}:${listener.port}/auth/callback`;
   const authUrl = buildCodexAuthorizeUrl(redirectUri, codeChallenge, state);
 
   opts.onLine?.("[auth] opening browser for Codex login");

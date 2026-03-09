@@ -51,7 +51,6 @@ export function replayModelStreamRawEvent(
   runtime: ModelStreamReplayRuntime,
   evt: ModelStreamRawEvent,
 ): ModelStreamUpdate[] {
-  runtime.rawBackedTurns.add(evt.turnId);
   const projector = getOrCreateProjector(runtime, evt);
   const piEvents: Array<Record<string, unknown>> = [];
 
@@ -88,6 +87,10 @@ export function replayModelStreamRawEvent(
       if (mapped) updates.push(mapped);
       derivedIndex += 1;
     }
+  }
+
+  if (updates.length > 0) {
+    runtime.rawBackedTurns.add(evt.turnId);
   }
 
   return updates;

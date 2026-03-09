@@ -1869,3 +1869,22 @@
 - `~/.bun/bin/bun test --cwd apps/desktop test/chat-activity-groups.test.ts test/chat-activity-group-card.test.tsx` -> pass (`17 pass, 0 fail`)
 - `~/.bun/bin/bun run typecheck:desktop` -> pass
 - `~/.bun/bin/bun test --cwd apps/desktop` -> pass (`200 pass, 0 fail`)
+
+# Task: Fix accepted review findings for OpenAI compaction support
+
+## Plan
+- [x] Add the missing direct dependency for the new raw projector and regenerate the lockfile.
+- [x] Fix the Codex browser OAuth callback host so the redirect URI matches the loopback listener binding.
+- [x] Harden raw replay and Codex usage verification so unsupported raw events do not suppress normalized chunks and malformed `/wham/usage` payloads do not mark Codex as verified.
+- [x] Run the targeted provider/runtime/desktop tests plus typecheck, then record the results below.
+
+## Review
+- Added `partial-json` as a direct root dependency in `package.json` and regenerated `bun.lock`, which fixes the clean-install/module-resolution failure for `src/runtime/openaiResponsesProjector.ts`.
+- `src/providers/codex-oauth-flows.ts` now builds the browser redirect URI with `OAUTH_LOOPBACK_HOST`, so the OAuth callback URI stays aligned with the listener that actually binds `127.0.0.1`.
+- `src/client/modelStreamReplay.ts` now marks a turn as raw-backed only after raw replay produces replayable updates, which prevents unsupported raw events from suppressing later normalized reasoning/text/tool chunks.
+- `src/providerStatus.ts` now treats malformed 200 responses from `/wham/usage` as verification failures instead of incorrectly marking `codex-cli` as verified.
+- Added regressions in `test/providers/codex-oauth-flows.test.ts`, `test/providerStatus.test.ts`, and new `test/modelStreamReplay.test.ts`.
+
+### Verification
+- `bun test test/providers/codex-oauth-flows.test.ts test/providerStatus.test.ts test/modelStreamReplay.test.ts apps/desktop/test/store-feed-mapping.test.ts apps/desktop/test/protocol-v2-events.test.ts test/agentSocket.parse.test.ts` -> pass (`51 pass, 0 fail`)
+- `bun run typecheck` -> pass
