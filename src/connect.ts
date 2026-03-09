@@ -1,14 +1,15 @@
-import { loginOpenAICodex } from "@mariozechner/pi-ai";
-
 import {
-  CODEX_OAUTH_CLIENT_ID,
-  CODEX_OAUTH_ISSUER,
+  clearCodexAuthMaterial,
   isTokenExpiring,
   readCodexAuthMaterial,
   refreshCodexAuthMaterial,
-  writeCodexAuthMaterial,
 } from "./providers/codex-auth";
-import { isOauthCliProvider } from "./providers/codex-oauth-flows";
+import {
+  completeCodexBrowserOAuth,
+  isOauthCliProvider,
+  runCodexBrowserOAuth,
+  type CodexBrowserOAuthPending,
+} from "./providers/codex-oauth-flows";
 import {
   getAiCoworkerPaths,
   ensureAiCoworkerHome,
@@ -23,7 +24,7 @@ import {
   type ToolApiKeyName,
 } from "./store/connections";
 import { maskApiKey, readToolApiKey, writeToolApiKey } from "./tools/api-keys";
-import { openExternalUrl, type UrlOpener } from "./utils/browser";
+import type { UrlOpener } from "./utils/browser";
 
 export {
   getAiCoworkerPaths,
@@ -62,66 +63,21 @@ export type ConnectProviderResult =
     }
   | { ok: false; provider: ConnectService; message: string };
 
-async function runPiNativeCodexLogin(opts: {
-  paths: AiCoworkerPaths;
-  code?: string;
-  onOauthLine?: (line: string) => void;
-  openUrl?: UrlOpener;
-}): Promise<string> {
-  const opener = opts.openUrl ?? openExternalUrl;
-  const manualCode = opts.code?.trim() || undefined;
-  let openUrlTask: Promise<void> | null = null;
-
-  opts.onOauthLine?.("[auth] starting PI-native Codex login.");
-  const credentials = await loginOpenAICodex({
-    originator: "pi",
-    onAuth: ({ url, instructions }) => {
-      opts.onOauthLine?.("[auth] opening browser for Codex login");
-      if (instructions?.trim()) {
-        opts.onOauthLine?.(`[auth] ${instructions.trim()}`);
-      }
-      openUrlTask = (async () => {
-        const opened = await opener(url);
-        if (!opened) {
-          opts.onOauthLine?.(`[auth] open this URL to continue: ${url}`);
-        }
-      })().catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        opts.onOauthLine?.(`[auth] failed to open browser automatically: ${message}`);
-      });
-    },
-    onProgress: (message) => {
-      if (message.trim()) opts.onOauthLine?.(`[auth] ${message.trim()}`);
-    },
-    onManualCodeInput: manualCode ? async () => manualCode : undefined,
-    onPrompt: async (prompt) => {
-      if (manualCode) return manualCode;
-      throw new Error(`${prompt.message} Automatic browser callback did not complete.`);
-    },
-  });
-
-  if (openUrlTask) {
-    await openUrlTask;
-  }
-
-  const material = await writeCodexAuthMaterial(opts.paths, {
-    issuer: CODEX_OAUTH_ISSUER,
-    clientId: CODEX_OAUTH_CLIENT_ID,
-    accessToken: credentials.access,
-    refreshToken: credentials.refresh,
-    expiresAtMs: credentials.expires,
-    accountId:
-      typeof credentials.accountId === "string" && credentials.accountId.trim()
-        ? credentials.accountId.trim()
-        : undefined,
-  });
-  return material.file;
-}
+export type DisconnectProviderResult =
+  | {
+      ok: true;
+      provider: ConnectService;
+      storageFile: string;
+      message: string;
+      oauthCredentialsFile?: string;
+    }
+  | { ok: false; provider: ConnectService; message: string };
 
 export async function connectProvider(opts: {
   provider: ConnectService;
   methodId?: string;
   code?: string;
+  codexBrowserAuthPending?: CodexBrowserOAuthPending;
   apiKey?: string;
   cwd?: string;
   paths?: AiCoworkerPaths;
@@ -176,10 +132,7 @@ export async function connectProvider(opts: {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const methodId = (opts.methodId ?? "oauth_cli").trim() || "oauth_cli";
 
-  let existing = await readCodexAuthMaterial(paths, {
-    migrateLegacy: true,
-    onLine: opts.onOauthLine,
-  });
+  let existing = await readCodexAuthMaterial(paths);
   if (existing?.accessToken && isTokenExpiring(existing)) {
     if (existing.refreshToken) {
       try {
@@ -217,14 +170,29 @@ export async function connectProvider(opts: {
 
   try {
     if (methodId !== "oauth_cli") {
-      opts.onOauthLine?.(`[auth] deprecated Codex auth method "${methodId}" requested; using PI-native browser login.`);
+      opts.onOauthLine?.(`[auth] deprecated Codex auth method "${methodId}" requested; using Cowork browser login.`);
     }
-    const oauthCredentialsFile = await runPiNativeCodexLogin({
-      paths,
-      code: opts.code,
-      onOauthLine: opts.onOauthLine,
-      openUrl: opts.openUrl,
-    });
+    const code = opts.code?.trim() || "";
+    let oauthCredentialsFile = "";
+    if (opts.codexBrowserAuthPending) {
+      oauthCredentialsFile = await completeCodexBrowserOAuth({
+        paths,
+        pending: opts.codexBrowserAuthPending,
+        fetchImpl,
+        code: code || undefined,
+        onLine: opts.onOauthLine,
+        openUrl: opts.openUrl,
+      });
+    } else if (code) {
+      throw new Error("Authorization code requires an active Codex OAuth challenge. Start authorization first.");
+    } else {
+      oauthCredentialsFile = await runCodexBrowserOAuth({
+        paths,
+        fetchImpl,
+        onLine: opts.onOauthLine,
+        openUrl: opts.openUrl,
+      });
+    }
 
     store.services[provider] = {
       service: provider,
@@ -249,4 +217,41 @@ export async function connectProvider(opts: {
       message: `Codex OAuth sign-in failed: ${message}`,
     };
   }
+}
+
+export async function disconnectProvider(opts: {
+  provider: ConnectService;
+  paths?: AiCoworkerPaths;
+}): Promise<DisconnectProviderResult> {
+  const paths = opts.paths ?? getAiCoworkerPaths();
+  const store = await readConnectionStore(paths);
+  const now = new Date().toISOString();
+
+  if (opts.provider === "codex-cli") {
+    const cleared = await clearCodexAuthMaterial(paths);
+    if (store.services["codex-cli"]) {
+      delete store.services["codex-cli"];
+    }
+    store.updatedAt = now;
+    await writeConnectionStore(paths, store);
+    return {
+      ok: true,
+      provider: opts.provider,
+      storageFile: paths.connectionsFile,
+      message: cleared.removed ? "Codex OAuth credentials cleared." : "Codex connection cleared.",
+      oauthCredentialsFile: cleared.file,
+    };
+  }
+
+  if (store.services[opts.provider]) {
+    delete store.services[opts.provider];
+  }
+  store.updatedAt = now;
+  await writeConnectionStore(paths, store);
+  return {
+    ok: true,
+    provider: opts.provider,
+    storageFile: paths.connectionsFile,
+    message: `${opts.provider} connection cleared.`,
+  };
 }

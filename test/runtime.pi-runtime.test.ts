@@ -95,6 +95,33 @@ describe("pi runtime regressions", () => {
     expect(resolved.model.headers).toMatchObject({ "ChatGPT-Account-ID": "acct_123" });
   });
 
+  test("codex runtime model resolution does not fall back to legacy ~/.codex auth", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-codex-legacy-"));
+    const legacyPath = path.join(homeDir, ".codex", "auth.json");
+    await fs.mkdir(path.dirname(legacyPath), { recursive: true });
+    await fs.writeFile(
+      legacyPath,
+      JSON.stringify({
+        auth_mode: "chatgpt",
+        tokens: {
+          access_token: "legacy-access-token",
+          refresh_token: "legacy-refresh-token",
+        },
+      }),
+      "utf-8",
+    );
+
+    const config = makeConfig(homeDir, {
+      provider: "codex-cli",
+      model: pickCodexModelId(),
+      subAgentModel: pickCodexModelId(),
+    });
+
+    await expect(piRuntimeInternal.resolvePiModel(makeParams(config))).rejects.toThrow(
+      "Codex auth is missing. Run /connect codex-cli to authenticate.",
+    );
+  });
+
   test("telemetry parsing keeps supported metadata and drops invalid values", () => {
     const parsed = piRuntimeInternal.parseTelemetrySettings({
       isEnabled: true,
@@ -247,4 +274,5 @@ describe("pi runtime regressions", () => {
     expect(result.isError).toBe(false);
     expect(result.content).toEqual(imageResult.content);
   });
+
 });

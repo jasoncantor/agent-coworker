@@ -101,7 +101,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
     });
   });
 
-  test("codex-cli provider can reuse saved openai key", async () => {
+  test("codex-cli provider does not reuse saved openai key", async () => {
     const { home } = await makeTmpDirs();
     const savedKey = "saved-openai-key";
 
@@ -126,8 +126,30 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
 
     const model = getModel(cfg) as any;
     const headers = await model.config.headers();
-    expect(headers.authorization).toBe(`Bearer ${savedKey}`);
+    expect(headers.authorization).toBeUndefined();
     expect(model.provider).toBe("codex-cli.responses");
+  });
+
+  test("codex-cli model headers do not reuse legacy ~/.codex auth when Cowork auth is missing", async () => {
+    const { home } = await makeTmpDirs();
+
+    await writeJson(path.join(home, ".codex", "auth.json"), {
+      auth_mode: "chatgpt",
+      tokens: {
+        access_token: "legacy-access-token",
+        refresh_token: "legacy-refresh-token",
+      },
+    });
+
+    const cfg = makeConfig({
+      provider: "codex-cli",
+      model: "gpt-5-codex",
+      userAgentDir: path.join(home, ".agent"),
+    });
+
+    const model = getModel(cfg) as any;
+    const headers = await model.config.headers();
+    expect(headers.authorization).toBeUndefined();
   });
 
 

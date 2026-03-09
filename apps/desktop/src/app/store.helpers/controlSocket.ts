@@ -250,6 +250,7 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
             providerStatusRefreshing: false,
             providerConnected: connected,
           }));
+          void deps.persist(get);
           return;
         }
 
@@ -289,9 +290,11 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
 
         if (evt.type === "provider_auth_result") {
           const title = evt.ok
-            ? evt.mode === "oauth_pending"
-              ? `Provider auth pending: ${evt.provider}`
-              : `Provider connected: ${evt.provider}`
+            ? evt.methodId === "logout"
+              ? `Provider disconnected: ${evt.provider}`
+              : evt.mode === "oauth_pending"
+                ? `Provider auth pending: ${evt.provider}`
+                : `Provider connected: ${evt.provider}`
             : `Provider auth failed: ${evt.provider}`;
           set((s) => ({
             providerLastAuthResult: evt,

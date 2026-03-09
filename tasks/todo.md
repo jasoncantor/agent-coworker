@@ -1,3 +1,291 @@
+# Task: Harden desktop trace ordering and duplicate suppression
+
+## Plan
+- [x] Audit the desktop feed-mapping and grouped-trace path for duplicate reasoning/tool entries and any accidental reordering between messages and mixed trace content.
+- [x] Add defensive normalization and regression coverage so grouped traces collapse exact duplicate reasoning notes and preserve feed order independent of timestamps.
+- [x] Run the relevant desktop tests, typecheck, and a repo test pass; record any unrelated failures below.
+
+## Review
+- `apps/desktop/src/ui/chat/activityGroups.ts` now defensively collapses only adjacent duplicate reasoning notes in the grouped trace when the mode matches and the text is identical after trimming. This keeps the grouped card from showing the same reasoning summary twice if both a streamed reasoning item and a duplicated final note make it into the same activity block.
+- Added ordering and duplication regression coverage in `apps/desktop/test/chat-activity-groups.test.ts` so grouped chat rendering is pinned to feed order rather than timestamp order, and adjacent duplicate reasoning summaries do not render twice.
+- Added transcript-layer coverage in `apps/desktop/test/store-feed-mapping.test.ts` to verify `mapTranscriptToFeed()` dedupes streamed reasoning against legacy final reasoning events while preserving the original event order, even when timestamps are out of sequence.
+- Strengthened the live desktop reducer regression in `apps/desktop/test/protocol-v2-events.test.ts` so the mixed feed order from streamed assistant/reasoning/tool updates is explicit and any future accidental reordering will fail the test.
+- Verification:
+  - `~/.bun/bin/bun test apps/desktop/test/chat-activity-groups.test.ts apps/desktop/test/store-feed-mapping.test.ts apps/desktop/test/protocol-v2-events.test.ts` -> pass
+  - `~/.bun/bin/bun test --cwd apps/desktop` -> pass (`190 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test` -> pass (`1831 pass, 0 fail`)
+
+# Task: Investigate desktop trace misclassification from persisted session data
+
+## Plan
+- [x] Inspect the affected desktop thread in persisted session state and transcript storage to determine whether the apparent misordering comes from storage order or desktop rendering.
+- [x] Compare the persisted event sequence with desktop feed mapping to identify whether the "reasoning-looking" block is actually stored as reasoning or assistant text.
+- [x] Record the root cause and the storage/rendering recommendation for follow-up implementation.
+
+## Review
+- SQLite `session_events` for session `6dca255f-b103-4476-b542-c9cedd169ca3` only stores coarse lifecycle markers like `session.todos_updated`; it does not preserve the message/reasoning/tool chunk sequence needed to debug this UI issue.
+- The exact mixed stream for desktop is in `/Users/mweinbach/Library/Application Support/Cowork/transcripts/5a551be4-4077-4af6-b6eb-e5bcbf0f6b3c.jsonl`. In that transcript, the relevant sequence is persisted in chronological order as:
+  - assistant text: `Created the PDF at ...`
+  - `todoWrite` tool input/call/result
+  - assistant text: `**Visual QA and verification** ...`
+- That means the trace ordering is correct for this example. The real bug is classification: `**Visual QA and verification**` and later `**Analyzing layout issues**` are persisted as `model_stream_chunk` `text_start` / `text_delta`, while `**Generating PDF and Images**` is persisted as `reasoning_*`.
+- The desktop mapper in `apps/desktop/src/app/store.feedMapping.ts` is therefore behaving consistently with persisted data: once a block is stored as `text_*`, it becomes a normal assistant message instead of grouped reasoning UI.
+- The classification happens before desktop rendering. The normalized transcript row for `Visual QA and verification` already has `rawPart.type = "text-start"` / `"text-delta"`, so the renderer no longer has enough information to distinguish "internal reasoning summary" from "assistant-visible text".
+- Recommendation:
+  - keep a stable normalized event stream for UI rendering,
+  - but also persist provider-raw stream events or a richer pre-normalized form with a `normalizerVersion`,
+  - so future renderer fixes or reclassifiers can rebuild old threads without losing provenance.
+
+# Task: Persist raw model stream events and replay them in desktop rendering
+
+## Plan
+- [x] Extract the OpenAI/Codex raw-response projector into a reusable stateful helper so runtime streaming and desktop replay can share the same normalization logic.
+- [x] Persist provider-raw model stream events alongside normalized chunks in the desktop transcript and add the protocol/runtime plumbing needed to emit them.
+- [x] Update live desktop event handling and transcript hydration to prefer raw replay when available while staying backward-compatible with old transcripts.
+- [x] Add regression coverage for raw replay fixing reasoning/tool classification and rerun the relevant desktop/runtime verification.
+
+## Review
+- Added a reusable OpenAI/Codex raw-response projector in `src/runtime/openaiResponsesProjector.ts` and a lightweight PI-event mapper in `src/runtime/piStreamParts.ts`. The runtime still emits normalized `model_stream_chunk` events, but desktop replay can now rebuild those same reasoning/text/tool boundaries from provider-native raw events without depending on the full server runtime.
+- Introduced `model_stream_raw` as a new websocket/transcript event in `src/server/protocol.ts`, `src/server/protocolEventParser.ts`, and `docs/websocket-protocol.md` (protocol `7.5`). `TurnExecutionManager` now emits raw provider events before the derived normalized chunks and tags normalized chunks with `normalizerVersion`.
+- Added durable raw chunk storage to SQLite via `session_model_stream_chunks` (`src/server/sessionDb.ts`, `src/server/sessionDb/repository.ts`, `src/server/sessionDb/migrations.ts`). This keeps raw model-stream provenance in the canonical session store instead of only in desktop JSONL transcripts.
+- Desktop transcript hydration and live reducer paths now prefer replaying `model_stream_raw` when present, while still keeping synthetic normalized chunks for step boundaries and tool results. This is implemented in `src/client/modelStreamReplay.ts`, `apps/desktop/src/app/store.feedMapping.ts`, and `apps/desktop/src/app/store.helpers/threadEventReducer.ts`.
+- While touching replay, assistant stream state is now keyed by `turnId:streamId` instead of only by turn. That prevents separate streamed text blocks within a single turn from collapsing into one assistant bubble during transcript replay.
+- Verification:
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test apps/desktop/test/store-feed-mapping.test.ts apps/desktop/test/protocol-v2-events.test.ts apps/desktop/test/ws-protocol-parse.test.ts test/session-db.test.ts test/session.stream-pipeline.test.ts test/agentSocket.parse.test.ts` -> pass (`80 pass, 0 fail`)
+  - `~/.bun/bin/bun test test/server.model-stream.test.ts test/docs.check.test.ts` -> pass (`120 pass, 0 fail`)
+  - `~/.bun/bin/bun test` -> pass (`1836 pass, 0 fail`)
+
+# Task: Re-normalize desktop model stream chunks from raw parts and reclassify scratchpad text
+
+## Plan
+- [ ] Rework desktop/client model-stream mapping so transcript hydration and live feed updates can derive normalized updates from stored `rawPart` first, with legacy fallback for old transcripts.
+- [ ] Split assistant streamed text by stream block and reclassify scratchpad-style step text into reasoning summaries when the block ends, without affecting normal assistant progress updates.
+- [ ] Add regression coverage for raw-backed normalization and reasoning reclassification, then run the relevant desktop tests, typecheck, and full repo tests.
+
+# Task: Stop commentary-phase assistant text from leaking into persisted chat/history
+
+## Plan
+- [x] Trace the Dell thread leakage through runtime turn assembly and desktop raw replay to confirm where `phase:"commentary"` assistant items are being treated as normal chat output.
+- [x] Filter commentary-phase assistant text out of persisted assistant/history extraction while preserving final-answer assistant content and non-commentary fallbacks.
+- [x] Update desktop raw replay/feed mapping so stored commentary-phase text does not hydrate as normal assistant chat, then add regressions and run the relevant tests.
+
+## Review
+- The Dell thread root cause was not renderer ordering. In `/Users/mweinbach/Library/Application Support/Cowork/transcripts/8531ab94-0114-4ff5-90d6-2db8077cf13a.jsonl`, the raw `response.output_item.done` payloads explicitly tagged multiple assistant `message` items as `phase:"commentary"` before the final `phase:"final_answer"` message. Our runtime was flattening all assistant text blocks from the turn into one persisted `assistant_message`, so commentary leaked into both visible chat and later turn history.
+- `src/runtime/openaiResponsesProjector.ts` and `src/runtime/piStreamParts.ts` now preserve assistant text `phase` metadata through raw replay, and `src/server/modelStream.ts` / `src/client/modelStream.ts` carry that phase through normalized desktop updates.
+- `src/runtime/piMessageBridge.ts` now drops `phase:"commentary"` assistant text when extracting final assistant text and when converting turn outputs back into `responseMessages` for persisted history. That keeps tool calls and final-answer text, but prevents commentary-only blocks from being appended back into future turn context.
+- `src/server/session/TurnExecutionManager.ts` now also ignores commentary-phase assistant parts in its fallback `responseMessages` text extraction, so even if a runtime hands back phase-tagged assistant content directly, the persisted `assistant_message` still only reflects final-answer text.
+- `apps/desktop/src/app/store.feedMapping.ts` now ignores commentary-phase assistant deltas during transcript/live raw replay, so previously stored raw commentary blocks do not hydrate as normal chat messages in the desktop thread history.
+- Added regressions in `test/runtime.openai-responses-runtime.test.ts`, `test/runtime.pi-message-bridge.test.ts`, `test/session.test.ts`, and `apps/desktop/test/store-feed-mapping.test.ts` that pin the Dell failure shape.
+- Verification:
+  - `~/.bun/bin/bun test test/runtime.pi-message-bridge.test.ts test/runtime.openai-responses-runtime.test.ts test/session.test.ts apps/desktop/test/store-feed-mapping.test.ts` -> pass (`208 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test` -> pass (`1843 pass, 0 fail`)
+
+# Task: Remove duplicated grouped reasoning disclosure in desktop trace
+
+## Plan
+- [x] Inspect the grouped desktop trace row rendering and confirm why reasoning summaries are duplicated inside the expanded card.
+- [x] Replace the nested reasoning disclosure with a single static compact reasoning note in the mixed trace.
+- [x] Update regression coverage and rerun desktop tests, typecheck, and the repo test suite.
+
+## Review
+- `apps/desktop/src/ui/chat/ActivityGroupCard.tsx` now renders grouped reasoning entries as a single compact static note in the mixed trace instead of nesting another expandable reasoning disclosure inside the already-expanded activity card. The card header still keeps the short preview, but the expanded body no longer shows the same reasoning summary twice.
+- `apps/desktop/test/chat-activity-group-card.test.tsx` now verifies the reasoning entry directly: it renders once, keeps the full summary text, and does not contain its own nested disclosure/button controls. The regression now checks the real bug instead of counting generic `aria-controls` attributes from unrelated collapsibles in the card.
+- Verification:
+  - `~/.bun/bin/bun test apps/desktop/test/chat-activity-group-card.test.tsx` -> pass
+  - `~/.bun/bin/bun test --cwd apps/desktop` -> pass (`186 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test` -> 1 unrelated failure in `test/mcp.remote.grep.test.ts` (`remote MCP (mcp.grep.app) > connects, discovers tools, and executes searchGitHub`) returning `Streamable HTTP error ... code: 405`
+
+# Task: Make desktop reasoning/tool trace slimmer and ordered
+
+## Plan
+- [x] Refactor desktop activity grouping to preserve ordered mixed reasoning/tool entries and keep tool merges bounded by reasoning separators.
+- [x] Rebuild the grouped activity card around the shared local `ai-elements` reasoning/tool primitives with a compact trace presentation.
+- [x] Add/update desktop tests for mixed ordering, compact reasoning previews, and trace-mode tool expansion behavior.
+- [x] Run `bun test` and `bun run typecheck`, then record the results below.
+
+## Review
+- `apps/desktop/src/ui/chat/activityGroups.ts` now summarizes grouped activity as an ordered `entries` list instead of separate reasoning/tool buckets. Tool lifecycle merging still dedupes adjacent updates, but only within uninterrupted tool runs, so a reasoning summary now acts as a hard separator and the rendered order matches the original feed chronology.
+- `apps/desktop/src/ui/chat/ActivityGroupCard.tsx` now renders one compact mixed trace list inside the grouped activity card. The card header is smaller, the summary preview is shorter, and the expanded content no longer splits into separate “reasoning” and “trace” sections.
+- `apps/desktop/src/ui/chat/toolCards/ToolCard.tsx`, `apps/desktop/src/components/ai-elements/tool.tsx`, and `apps/desktop/src/components/ai-elements/reasoning.tsx` now support compact trace variants so the grouped card reuses the local `ai-elements` primitives instead of maintaining a bespoke parallel row implementation.
+- Added regression coverage in `apps/desktop/test/chat-activity-groups.test.ts` for mixed ordering and reasoning-boundary merge rules, plus a new SSR UI test in `apps/desktop/test/chat-activity-group-card.test.tsx` that checks chronological rendering, collapsed reasoning previews, and auto-expanded approval rows.
+- Verification:
+  - `~/.bun/bin/bun test apps/desktop/test/chat-activity-groups.test.ts apps/desktop/test/chat-activity-group-card.test.tsx apps/desktop/test/chat-reasoning-ui.test.ts` -> pass
+  - `~/.bun/bin/bun test --cwd apps/desktop` -> pass (`186 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test` -> pass (`1827 pass, 0 fail`)
+
+# Task: Remove the portal app
+
+## Plan
+- [x] Capture all repo wiring that still depends on `apps/portal` and isolate portal-only tests/docs.
+- [x] Remove the portal app, root scripts/CI hooks, and documentation references without disturbing unrelated React/OpenTUI portal mentions.
+- [x] Run the required verification (`bun test` and `bun run typecheck`) and record the result below.
+
+## Review
+- Removed the portal app completely: deleted `apps/portal/`, dropped the root `portal:*` scripts and portal install step from `package.json`, removed the portal-only test (`test/portal.harness.test.ts`), and removed the CI portal build step from `.github/workflows/ci.yml`.
+- Updated the repo docs and metadata that still presented portal as a supported interface, including `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, `docs/architecture.md`, `docs/harness/runbook.md`, and the desktop README/test wording that used the old harness-portal example.
+- Regenerated the root lockfile with `bun install` after removing the portal app from the install flow.
+- Verification:
+  - `bun run typecheck` -> pass
+  - `bun test` -> 1 unrelated failure, `Codex provider (gpt-5.4) > getModel exposes stable adapter shape` in `test/providers/codex-cli.test.ts`
+  - The failing assertion expects API-key auth headers from the Codex provider adapter; this task did not modify provider/runtime code, and the portal-removal surface itself does not produce any test or typecheck failures.
+
+# Task: Update Bun dependencies and verify regressions
+
+## Plan
+- [x] Capture the clean baseline and run `bun update` from the repo root.
+- [x] Inspect the resulting dependency and lockfile changes for anything unexpected.
+- [x] Run the required regression checks (`bun test` and `bun run typecheck`), investigate failures if they appear, and record the outcome below.
+
+## Review
+- `bun update` completed cleanly from the repo root and updated only `/Users/mweinbach/Projects/agent-coworker/package.json` plus `/Users/mweinbach/Projects/agent-coworker/bun.lock`. The refreshed direct versions are `@mariozechner/pi-ai 0.55.4`, `@modelcontextprotocol/sdk 1.27.1`, `@opentui/{core,react,solid} 0.1.86`, `@types/node 25.3.5`, `bun-types 1.3.10`, and `puppeteer-core 24.38.0`.
+- The dependency refresh exposed one real compile regression in `/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/ui/settings/pages/ProvidersPage.tsx`: a `split(...).map(...)` callback started tripping `TS7006` because the surrounding helper was flowing `any`. Narrowing the local intermediate strings fixed the typecheck without changing runtime behavior.
+- The refresh also surfaced one stale provider assertion in `/Users/mweinbach/Projects/agent-coworker/test/providers/codex-cli.test.ts`. The repo’s current runtime/auth contract already treats `codex-cli` API keys separately from raw `OPENAI_API_KEY` fallback, so the test now seeds a real saved `codex-cli` key in `~/.cowork/auth/connections.json` instead of assuming OpenAI env reuse.
+- Verification passed after those fixes:
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test test/providers/codex-cli.test.ts test/providers/index.test.ts test/providers/saved-keys.test.ts` -> pass (`20 pass, 0 fail`)
+  - `~/.bun/bin/bun test` -> pass (`1819 pass, 0 fail`)
+
+# Task: Expose Codex OAuth status and rate limits in provider status
+
+## Plan
+- [x] Inspect the Codex app Rust sources and current Cowork provider-status/UI code to capture the exact usage endpoint fields worth surfacing.
+- [x] Extend the shared `ProviderStatus` shape and Codex verification path to include parsed backend status/rate-limit data without changing editable `providerOptions`.
+- [x] Update the desktop Providers page and focused tests, rerun the relevant verification commands, and record the outcome below.
+
+## Review
+- The Codex app/client sources confirmed the backend contract we should mirror: `GET /wham/usage` returns `plan_type`, a primary `rate_limit`, optional `code_review_rate_limit`, `additional_rate_limits`, and `credits`. Cowork now preserves that shape in a typed `usage` block on `ProviderStatus` instead of trying to overload editable `providerOptions`.
+- `src/providerStatus.ts` now parses the live Codex usage payload into `usage.planType`, `usage.accountId`, and normalized rate-limit snapshots with `allowed`, `limitReached`, `primaryWindow`, `secondaryWindow`, and `credits`. The same status call still drives verification, so the extra data comes from the exact endpoint already proving the OAuth session is valid.
+- `apps/desktop/src/ui/settings/pages/ProvidersPage.tsx` now renders a `Usage status` section for Codex with plan, account id, backend status message, and per-limit cards. Per your correction, windows are shown as remaining headroom (`96% left`, `100% left`) rather than consumed budget (`4% used`, `0% used`).
+- `src/cli/repl.ts` now prints the Codex plan and the primary rate-limit headroom on `/connect` status output, so the new data is visible outside the desktop UI too.
+- Focused verification passed:
+  - `~/.bun/bin/bun test test/providerStatus.test.ts test/providers/codex-auth.test.ts test/runtime.pi-runtime.test.ts apps/desktop/test/providers-page.test.ts` -> pass (`30 pass, 0 fail`)
+  - `~/.bun/bin/bunx tsc --noEmit` -> pass
+- Live verification passed against the current signed-in Codex session:
+  - `getProviderStatuses()` now returns `usage.accountId`, `usage.planType: "pro"`, and live `rateLimits` entries for `codex`, `code_review`, and `codex_bengalfox`
+  - the live payload shape matched the real backend fields from `https://chatgpt.com/backend-api/wham/usage`
+
+# Task: Align Codex OAuth verification with the Codex app contract
+
+## Plan
+- [x] Compare Cowork's current Codex OAuth verification path against the Codex app/client sources to identify where our status check diverges from the real backend contract.
+- [x] Patch `providerStatus` to verify Codex OAuth using the same backend/account-id shape as the Codex app instead of generic OIDC userinfo discovery.
+- [x] Rerun the focused provider/auth/runtime tests plus a live signed-in status/runtime check and record the outcome below.
+
+## Review
+- Root cause: Cowork was treating Codex OAuth verification like a generic OIDC login and probing `/.well-known/openid-configuration` + `userinfo`. Your real signed-in token worked for runtime calls, but that status check returned a false-negative `404`, so the UI showed Codex as unverified even though the transport was healthy.
+- The Codex app sources (`/Users/mweinbach/Downloads/server.rs` and `/Users/mweinbach/Downloads/client.rs`) use a different contract: they persist `chatgpt_account_id` from token claims and talk to the ChatGPT/Codex backend with the `ChatGPT-Account-Id` header. Cowork now matches that in `src/providerStatus.ts` by verifying against `https://chatgpt.com/backend-api/wham/usage` with the bearer token plus account-id header and by keeping account/email data token-derived.
+- Focused verification passed: `~/.bun/bin/bun test test/providerStatus.test.ts test/providers/codex-auth.test.ts test/runtime.pi-runtime.test.ts` (`24 pass, 0 fail`) and `~/.bun/bin/bunx tsc --noEmit`.
+- Live verification passed after the patch:
+  - `getProviderStatuses()` now returns `codex-cli` as `authorized: true`, `verified: true`, `mode: "oauth"`, message `Verified via Codex usage endpoint (pro).`
+  - the signed-in live runtime still succeeds for both a plain prompt (`OK`) and a forced tool loop (`PONG`) through `createRuntime({ runtime: "pi" }).runTurn(...)`
+
+# Task: Audit live Codex auth storage handling
+
+## Plan
+- [x] Inspect the active Codex auth loader path and determine which Cowork home it reads from.
+- [x] Check the live default/common Cowork auth stores on this machine for a Codex auth document without exposing token values.
+- [x] Run focused auth/runtime/status tests to verify parsing, refresh, and no-legacy-fallback behavior, then record the result below.
+
+## Review
+- The live loader path is `/Users/mweinbach/.cowork/auth/codex-cli/auth.json` by default, via `getAiCoworkerPaths()` and `readCodexAuthMaterial(..., { migrateLegacy: false })` in `src/connect.ts`, `src/runtime/piRuntime.ts`, and `src/providers/codex-auth.ts`.
+- After signing in, a direct live call to `readCodexAuthMaterial()` on the default path returned valid Cowork-managed auth metadata from `~/.cowork/auth/codex-cli/auth.json` (account, email, plan type, expiry all parsed cleanly without consulting legacy paths).
+- Live entry-point verification now succeeds through our own logic. `getProviderStatuses()` reports `codex-cli` as authorized in `oauth` mode, but still `verified: false` because the OIDC userinfo verification call returns `404`. Despite that verification warning, a real `createRuntime({ runtime: "pi" }).runTurn(...)` call for `codex-cli` succeeded for both a plain prompt (`OK`) and a forced tool-loop prompt (`PONG`) using the same Cowork auth file.
+- Focused verification passed: `~/.bun/bin/bun test test/providers/codex-auth.test.ts test/runtime.pi-runtime.test.ts test/providerStatus.test.ts` (`24 pass, 0 fail`). This covers JWT/claim parsing, refresh persistence, malformed auth handling, provider status, and the explicit rule that missing Cowork auth must not fall back to legacy `~/.codex`.
+- Conclusion: the live default Cowork auth path is now good, and the Codex runtime transport is working end to end. The remaining issue is narrower: provider verification still shows a false-negative warning because the userinfo check is returning `404` even though the actual Codex runtime calls succeed.
+
+# Task: Fix Codex ChatGPT tool-loop continuation without previous_response_id
+
+## Plan
+- [x] Reproduce the live `No tool call found for function call output with call_id ...` failure against the raw Responses runtime and isolate whether the bug is in `call_id` handling or step continuation state.
+- [x] Patch the OpenAI/Codex Responses runtime so only provider-managed continuation modes send bare tool-result deltas; the ChatGPT-backed Codex path must replay the assistant tool call plus tool results locally on the next step.
+- [x] Add focused regression coverage for the non-`previous_response_id` Codex tool loop, rerun the targeted runtime tests, and record the verified outcome below.
+
+## Review
+- Root cause: the raw Responses runtime treated every OpenAI/Codex tool loop like the OpenAI API-key continuation path. After disabling `previous_response_id` for the ChatGPT-backed Codex transport, step 2 still sent only `function_call_output` items, so the backend had no matching prior `function_call` in context and rejected the request with `400 No tool call found for function call output with call_id ...`.
+- Fixed `src/runtime/openaiResponsesRuntime.ts` so provider-managed continuation modes still send tool-result deltas only, while non-managed modes append the assistant tool call plus tool results into the local turn transcript before the next step. That restores the context the ChatGPT-backed Codex backend requires without regressing the OpenAI API-key path.
+- Added a focused regression in `test/runtime.openai-responses-runtime.test.ts` that proves the second Codex ChatGPT tool-loop step replays `[user, assistant, toolResult]` with no `previous_response_id`, matching the backend contract.
+- Verification:
+  - `~/.bun/bin/bun test test/runtime.openai-responses-runtime.test.ts` -> pass (`9 pass, 0 fail`)
+  - `~/.bun/bin/bunx tsc --noEmit` -> pass
+  - `~/.bun/bin/bun test test/runtime.pi-runtime.test.ts test/session.test.ts` -> pass (`192 pass, 0 fail`)
+
+# Task: Fix Codex auth reuse, add logout, and eliminate legacy token migration
+
+## Plan
+- [ ] Remove automatic `~/.codex/auth.json` migration from the Codex connect, provider-status, runtime, and model-adapter paths so Cowork only uses its own `~/.cowork/auth/codex-cli/auth.json`.
+
+- [ ] Add a first-class Codex provider logout flow through the auth registry, WebSocket protocol/session handling, and desktop provider settings UI.
+- [ ] Update the focused regression tests for auth migration/logout behavior, rerun the provider/session/desktop verification slices, and record the validated outcome below.
+
+## Review
+
+# Task: Harden Cowork-owned Codex auth persistence across desktop restarts
+
+## Plan
+- [x] Remove the mistaken `~/.codex/auth.json` fallback changes and re-align Codex auth reads to Cowork-owned `~/.cowork/auth/codex-cli/auth.json` only.
+- [x] Harden Cowork auth-store writes so `codex-cli/auth.json` and `connections.json` are replaced atomically instead of being written in-place.
+- [x] Make provider catalog/status treat a valid Cowork Codex auth file as connected even if `connections.json` was cleared, then rerun focused core and desktop verification.
+
+## Review
+- The `.codex` migration detour was reverted in `src/connect.ts`, `src/providerStatus.ts`, `src/providers/modelAdapter.ts`, and `src/runtime/piRuntime.ts`; Codex resolution is back to Cowork-owned auth only.
+- `src/providers/codex-auth.ts` and `src/store/connections.ts` now write `~/.cowork/auth/codex-cli/auth.json` and `~/.cowork/auth/connections.json` through `writeTextFileAtomic()`, so desktop/server shutdown can no longer leave those files partially written in place.
+- `src/providers/connectionCatalog.ts` now checks Cowork’s Codex auth file directly (without any legacy migration) when deciding whether `codex-cli` is connected. This keeps the desktop Providers list correct even if `connections.json` loses the `codex-cli` entry while the Cowork auth file is still valid.
+- Live validation against the current machine state showed the exact split-brain bug: `~/.cowork/auth/codex-cli/auth.json` was valid while `connections.json` had an empty `services` object. After the patch, `getProviderCatalog()` still returns `["codex-cli"]` and `getProviderStatuses()` still resolves Codex as verified from the Cowork auth file.
+- Verification:
+  - `~/.bun/bin/bun test test/connect.test.ts test/providerStatus.test.ts test/providers/saved-keys.test.ts test/runtime.pi-runtime.test.ts test/providers/connection-catalog.test.ts test/providers/codex-auth.test.ts` -> pass (`43 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test apps/desktop/test/providers-page.test.ts apps/desktop/test/workspace-settings-sync.test.ts apps/desktop/test/protocol-v2-events.test.ts` -> pass (`40 pass, 0 fail`)
+
+# Task: Own Codex OAuth in Cowork and add explicit Codex logout
+
+## Plan
+- [x] Remove automatic `~/.codex` auth migration and switch Codex browser sign-in back to the in-repo Cowork-owned OAuth flow.
+- [x] Tighten `codex-cli` credential resolution so runtime/model selection does not silently fall back to saved OpenAI API keys when the user expects Codex OAuth ownership.
+- [x] Add a first-class Codex logout path through the WebSocket protocol, server session auth manager, and desktop Providers settings UI.
+- [x] Update docs and focused regression coverage, then rerun the relevant auth/runtime/desktop verification commands and record the outcome below.
+
+## Review
+- Codex browser sign-in now matches the current official Codex CLI authorize flow in `src/providers/codex-oauth-flows.ts`: it uses `http://localhost:<port>/auth/callback`, the full connector-aware scope string, and the official `originator=codex_cli_rs` instead of the previous app-specific authorize parameters that were producing the browser-side `unknown_error`.
+- The Codex runtime path in `src/runtime/openaiNativeResponses.ts` now only rewrites the base URL for the ChatGPT-backed Codex transport. API-key-backed `codex-cli` requests keep the normal OpenAI base URL instead of being incorrectly sent to `.../v1/codex/responses`, and the ChatGPT-backed path now adds the official Codex `originator` header.
+- Desktop provider settings now only show `Log out` for real Codex OAuth sessions (`mode === "oauth"`), and `ProvidersPage` uses the current Zustand snapshot during SSR so the connected/logout state renders correctly in the server-rendered desktop tests.
+- Added focused regression coverage in `test/providers/codex-oauth-flows.test.ts` plus runtime/auth/desktop updates in `test/runtime.openai-responses-runtime.test.ts`, `test/connect.test.ts`, and `apps/desktop/test/providers-page.test.ts`.
+- Verification:
+  - `~/.bun/bin/bunx tsc --noEmit` -> pass
+  - `~/.bun/bin/bun test test/providers/codex-oauth-flows.test.ts test/connect.test.ts test/providers/auth-registry.test.ts test/runtime.openai-responses-runtime.test.ts apps/desktop/test/providers-page.test.ts apps/desktop/test/protocol-v2-events.test.ts` -> pass (`58 pass, 0 fail`)
+  - `~/.bun/bin/bun test test/providers/codex-auth.test.ts test/providers/saved-keys.test.ts test/providerStatus.test.ts` -> pass (`21 pass, 0 fail`)
+
+# Task: Raw Responses runtime for OpenAI/Codex plus durable subagent sessions
+
+## Plan
+- [x] Split runtime execution so `openai` and `codex-cli` use a first-class raw Responses runtime with in-repo adapters, while `google` and `anthropic` stay on PI.
+- [x] Extend session persistence and server/session wiring to support durable child subagent sessions with their own continuation state, metadata, and restart recovery.
+- [x] Add persistent subagent tool and WebSocket lifecycle surfaces, update protocol/docs, and verify runtime/session/tool/protocol behavior with focused tests plus repo checks.
+
+## Review
+- Added a dedicated internal OpenAI/Codex Responses runtime in `src/runtime/openaiResponsesRuntime.ts` and kept `createRuntime()` publicly pinned to `runtime: "pi"` while dispatching `openai` / `codex-cli` through the raw Responses path and leaving `google` / `anthropic` on PI.
+- Removed the PI deep-import bridge from the OpenAI/Codex execution path. The runtime now owns request shaping, tool/message conversion, streaming normalization, `previous_response_id` continuation, and provider-state return values in-repo.
+- Tightened the raw Responses request contract around the locally installed OpenAI SDK surface by keeping `previous_response_id`, `truncation: "auto"`, and `store: true`, and dropping the unsupported `context_management` payload.
+- Follow-up provider fix: the OpenAI API now receives function tools with `strict: false` so optional parameters like `read.offset` remain valid. The ChatGPT-backed Codex transport omits unsupported `previous_response_id`, `truncation`, and `max_output_tokens`, forces `store: false`, and clamps `text.verbosity` to `medium`, while the API-key-backed Codex/OpenAI Responses path still honors low|medium|high verbosity plus continuation fields.
+- Extended persistence to snapshot `v3` with `sessionKind`, `parentSessionId`, `agentType`, and `providerState`, and wired the same metadata through the session DB schema, legacy import path, runtime hydration, and JSON snapshot reader/writer.
+- Durable persistent subagents now flow through normal `AgentSession` instances with their own transcript/provider state, parent-child metadata, reopen-on-new-input behavior, root-delete cascade, and root-only listing semantics.
+- Added persistent subagent tools (`spawnPersistentAgent`, `listPersistentAgents`, `sendAgentInput`, `waitForAgent`, `closeAgent`) without changing the one-shot `spawnAgent` contract, and passed those controls only into root-session turns.
+- Added WebSocket support for `subagent_create` / `subagent_sessions_get`, matching `subagent_created` / `subagent_sessions` events, and child-session identity metadata on `server_hello` / `session_info`. Updated `docs/websocket-protocol.md` accordingly.
+- Verification:
+  - `~/.bun/bin/bunx tsc --noEmit` -> pass
+  - `~/.bun/bin/bun test test/runtime.pi-options.test.ts test/runtime.pi-runtime.test.ts test/runtime.openai-responses-runtime.test.ts test/runtime.selection.test.ts test/session.test.ts test/protocol.test.ts test/agentSocket.parse.test.ts test/session-store.test.ts test/session-db.test.ts test/session-db-mappers.test.ts test/persistentAgents.tool.test.ts` -> pass (`377 pass, 0 fail`)
+  - `~/.bun/bin/bun test test/runtime.openai-responses-runtime.test.ts test/runtime.pi-runtime.test.ts test/session.test.ts` -> pass after the OpenAI/Codex follow-up fix (`195 pass, 0 fail`)
+  - `~/.bun/bin/bun test test/spawnAgent.tool.test.ts test/persistentAgents.tool.test.ts` -> pass (`10 pass, 0 fail`)
+  - `~/.bun/bin/bun test test/spawnAgent.tool.test.ts test/persistentAgents.tool.test.ts test/server.test.ts --max-concurrency 1 --test-name-pattern "spawnAgent tool|persistent agent tools|subagent_create|subagent_sessions_get|research children use model|deleting a root session removes its persistent subagent resume target|child model changes stay session-local"` -> pass (`14 pass, 0 fail`)
+  - `~/.bun/bin/bun test test/server.test.ts --max-concurrency 1 --test-name-pattern "subagent_create|subagent_sessions_get|research children use model|deleting a root session removes its persistent subagent resume target|child model changes stay session-local"` -> pass when rerun outside the sandbox (`4 pass, 0 fail`)
+  - `~/.bun/bin/bun test` -> core/server/runtime paths pass, but the full suite still stops on pre-existing desktop dependency gaps in this workspace (`react-dom/server`, `lucide-react`, `zustand`, etc.); final result was `1717 pass, 2 skip, 13 fail`
+  - `~/.bun/bin/bun test test/server.test.ts` inside the sandbox -> still fails early with `EADDRINUSE` during local port binding, before behavior assertions
+  - `~/.bun/bin/bun run typecheck` -> blocked by missing desktop/Electron modules in this workspace (`Cannot find module 'electron'`, `zustand`, `lucide-react`, etc.), unrelated to these runtime/server changes
+
 # Task: Ship desktop release 0.1.9 with robust updater behavior and Windows installer publishing
 
 ## Plan
@@ -87,6 +375,43 @@
 - [x] Bump the repo and desktop release versions from `0.1.7` to `0.1.8`, keeping the Windows updater runtime fix in the release payload.
 - [x] Rerun the desktop release validation stack and confirm packaged Windows builds show a friendly unavailable state when no signed feed exists.
 - [ ] Commit the hotfix, tag `v0.1.8`, push to `origin/main`, and note any remaining release-management follow-up that cannot be completed from this machine.
+
+# Task: Fix desktop workspace-add lag/timeouts from settings
+
+## Plan
+- [x] Trace the add-workspace flow from settings through renderer actions, desktop preload, Electron IPC, and workspace server startup.
+- [x] Remove main-process blocking work from the workspace-start IPC hot path and keep the startup/error behavior unchanged for callers.
+- [x] Add regression coverage for the desktop startup/diagnostics path, run required verification, and record the outcome below.
+
+## Review
+- The settings UI path was already thin: `WorkspacesPage` calls the store’s `addWorkspace()`, which persists the new workspace and immediately runs `selectWorkspace()`. The lag/timeout risk sits on the Electron side once `selectWorkspace()` reaches `desktop:startWorkspaceServer`.
+- `apps/desktop/electron/services/serverManager.ts` no longer performs synchronous file appends for startup diagnostics or mirrors every child-process stderr chunk to the Electron main process stderr by default. Diagnostics now queue async writes to the desktop log file, and stderr mirroring is opt-in via `COWORK_DESKTOP_DEBUG_SERVER_STDERR=1`.
+- `apps/desktop/electron/services/validation.ts` now validates workspace directories asynchronously before starting the workspace server, so the IPC startup path no longer blocks the Electron main thread on `statSync`.
+- Desktop-started workspace servers now default `COWORK_SKIP_DEFAULT_SKILLS_BOOTSTRAP=1` in `apps/desktop/electron/services/serverManager.ts`, which removes first-run default-skill network/bootstrap work from the critical startup path unless the environment explicitly overrides it.
+- Restart/remove semantics are hardened across the renderer and main process:
+  - `apps/desktop/src/app/store.helpers/runtimeState.ts` now tracks per-workspace startup generations.
+  - `apps/desktop/src/app/store.helpers.ts` ignores stale startup completions/errors once a workspace start has been superseded.
+  - `apps/desktop/src/app/store.actions/workspace.ts` bumps startup generation on restart/remove and no longer does a second state save when adding a brand-new workspace.
+  - `apps/desktop/electron/services/serverManager.ts` tracks pending child startups so `stopWorkspaceServer()` and `stopAll()` can kill a server before `server_listening` is emitted.
+- Regression coverage was extended in `apps/desktop/test/server-manager.test.ts` and the new `apps/desktop/test/workspace-startup.test.ts` to cover async diagnostics flushes, stopping pending starts, single-save add behavior, and restart superseding an in-flight startup.
+- Verification:
+  - `~/.bun/bin/bun test apps/desktop/test/server-manager.test.ts apps/desktop/test/workspace-startup.test.ts apps/desktop/test/protocol-v2-events.test.ts apps/desktop/test/thread-reconnect.test.ts apps/desktop/test/workspace-settings-sync.test.ts` -> pass
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test` -> 1 unrelated failure, `runTurn + remote MCP (mcp.grep.app) > loads the remote MCP tools and can execute them via the tools passed to streamText`, failing with `Streamable HTTP error` / `405` from the remote MCP endpoint; desktop workspace-start changes do not touch that area
+
+# Task: Use app SVG on desktop home empty state
+
+## Plan
+- [x] Locate the desktop home empty-state component and the current app SVG asset.
+- [x] Replace the placeholder tile with the actual Cowork SVG while preserving the existing layout and accessibility semantics.
+- [x] Run focused verification for the desktop renderer path and record the result below.
+
+## Review
+- The desktop home empty state in `apps/desktop/src/ui/ChatView.tsx` now renders the existing app SVG from `apps/desktop/build/icon.icon/Assets/svgviewer-output.svg` instead of the previous placeholder gradient square.
+- The icon is used as a decorative image (`alt=""`, `aria-hidden="true"`) so the accessible content remains the empty-state heading, description, and button text.
+- Verification:
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test apps/desktop/test/settings-nav.test.ts apps/desktop/test/workspaces-page.test.ts apps/desktop/test/protocol-v2-events.test.ts` -> pass (`35 pass, 0 fail`)
 
 ## Review
 - `v0.1.7` fixed the release workflow, but packaged Windows apps still attempted to fetch `latest.yml` even when the release intentionally omitted unsigned Windows update metadata. That surfaced a noisy 404 from `electron-updater` instead of a usable in-app state.
@@ -1474,3 +1799,136 @@
 - The merge commit at `HEAD` was newer than the existing `v0.1.12` release commit, so treating it as the same release would have overwritten the previous release marker instead of minting the next patch.
 - Updated `package.json` and `apps/desktop/package.json` from `0.1.12` to `0.1.13` so the repository version matches the intended next release number.
 - Restored `v0.1.12` to commit `92863a1` (`Fix desktop release validation in v0.1.12`) and reserved the current commit for the new `v0.1.13` release tag.
+
+# Task: Persist desktop provider status across app restarts
+
+## Plan
+- [x] Confirm whether Codex OAuth itself is failing to persist or whether the desktop UI is only losing its in-memory provider status snapshot after restart.
+- [x] Persist a sanitized desktop provider-status snapshot in `state.json` and hydrate it during desktop bootstrap so Codex still shows connected immediately after reopen.
+- [x] Add regression coverage for persistence/bootstrap behavior, rerun the desktop verification slices, and record the outcome below.
+
+## Review
+- Live inspection showed the auth files were already persisting correctly under `/Users/mweinbach/.cowork/auth`: both `codex-cli/auth.json` and `connections.json` existed with a saved Codex OAuth session. The bug was the desktop UI forgetting the last known provider status because that snapshot only lived in renderer memory.
+- Added a shared `persistedProviderState` normalizer in `apps/desktop/src/app/persistedProviderState.ts`, extended `PersistedState` in `apps/desktop/src/app/types.ts`, and taught both the renderer persistence helper and Electron persistence service to save/load a sanitized provider-status snapshot alongside workspaces/threads.
+- Desktop bootstrap now hydrates `providerStatusByName`, `providerStatusLastUpdatedAt`, and `providerConnected` from the persisted snapshot before the first control-socket refresh completes, so reopening the app no longer makes Codex look logged out while the server reconnects.
+- The normal control-socket refresh path still remains authoritative: when a fresh `provider_status` event arrives, the desktop store updates from the server and immediately re-persists the newer snapshot.
+
+### Verification
+- `~/.bun/bin/bun test apps/desktop/test/persistence-state-sanitization.test.ts apps/desktop/test/workspace-settings-sync.test.ts apps/desktop/test/providers-page.test.ts apps/desktop/test/protocol-v2-events.test.ts` -> pass (`46 pass, 0 fail`)
+- `~/.bun/bin/bun run typecheck` -> pass
+- `~/.bun/bin/bun test --cwd apps/desktop` -> pass (`195 pass, 0 fail`)
+
+# Task: Fix desktop renderer protocol alias resolution for Electron dev/build
+
+## Plan
+- [x] Inspect the desktop renderer alias/import path for `@cowork/server/protocol` and identify why electron-vite cannot resolve it during renderer compilation.
+- [x] Patch the desktop alias setup with the minimal change that restores `wsProtocol.ts` resolution without changing renderer protocol behavior.
+- [x] Re-run the desktop build path, desktop typecheck, and any focused tests needed to prove the fix.
+
+## Review
+- Root cause: the desktop renderer wrapper in `apps/desktop/src/lib/wsProtocol.ts` imported core protocol/types through the `@cowork/*` alias, but `electron-vite`/Rollup was not reliably resolving that repo-root alias during renderer compilation even though TypeScript accepted it. The failure reproduced exactly as `Rollup failed to resolve import "@cowork/server/protocol"`.
+- Fixed `apps/desktop/src/lib/wsProtocol.ts` to import the core protocol/types directly from the repo root via relative paths (`../../../../src/...`). That keeps the shared renderer-facing wrapper behavior unchanged while removing the brittle renderer alias dependency.
+- I also tested a renderer-config alias hardening in `apps/desktop/electron.vite.config.ts`, but `electron-vite build` still failed to resolve `@cowork/server/protocol`. I reverted that experiment so the final fix stays minimal and only keeps the proven `wsProtocol.ts` change.
+
+### Verification
+- `~/.bun/bin/bunx electron-vite build` (from `apps/desktop`) -> pass
+- `~/.bun/bin/bun run desktop:dev` -> pass through renderer startup (`dev server running for the electron renderer process at http://localhost:1420/`), then stopped manually
+- `~/.bun/bin/bun run typecheck:desktop` -> pass
+- `~/.bun/bin/bun test --cwd apps/desktop test/ws-protocol-parse.test.ts test/protocol-v2-events.test.ts` -> pass (`30 pass, 0 fail`)
+- `~/.bun/bin/bun test --cwd apps/desktop` -> pass (`196 pass, 0 fail`)
+
+# Task: Keep late reasoning summaries from rendering after the final assistant answer
+
+## Plan
+- [x] Reproduce the MacBook Neo thread ordering bug from the persisted transcript and confirm whether the reversal happens during transcript hydration, live reducer handling, or grouped-trace rendering.
+- [x] Patch desktop feed construction so legacy reasoning summaries that arrive after a raw-backed final-answer stream are anchored before the final assistant message instead of trailing it.
+- [x] Add transcript and live-reducer regressions, then rerun the relevant desktop verification commands.
+
+## Review
+- The persisted transcript for the MacBook Neo thread (`/Users/mweinbach/Library/Application Support/Cowork/transcripts/4affe7fd-a696-4575-855c-76f78fc2e880.jsonl`) was not wrong. It stores the legacy `reasoning` summary at `2026-03-09T17:00:15.987Z` and the fallback `assistant_message` at `2026-03-09T17:00:15.995Z`.
+- The visible reversal came from desktop feed construction on raw-backed turns: the final assistant text was already rendered earlier from `model_stream_raw`, and then the legacy turn-end `reasoning` summary was appended afterward because there was no raw reasoning stream to dedupe it against. So the reasoning card landed below the final assistant bubble even though the persisted tail events themselves were in the expected order.
+- Fixed `apps/desktop/src/app/store.feedMapping.ts` and `apps/desktop/src/app/store.helpers/threadEventReducer.ts` so when a late legacy reasoning summary arrives for a raw-backed turn that already has a streamed assistant message, the summary is inserted immediately before that assistant item instead of being pushed to the end of the feed.
+
+### Verification
+- `~/.bun/bin/bun test --cwd apps/desktop test/store-feed-mapping.test.ts test/protocol-v2-events.test.ts` -> pass (`32 pass, 0 fail`)
+- `~/.bun/bin/bun run typecheck:desktop` -> pass
+- `~/.bun/bin/bun test --cwd apps/desktop` -> pass (`198 pass, 0 fail`)
+
+# Task: Hide standalone reasoning titles in collapsed Thinking card previews
+
+## Plan
+- [x] Inspect the collapsed Thinking-card preview path and confirm where the first reasoning heading is being surfaced.
+- [x] Change only the collapsed preview generation so standalone markdown headings are stripped, while the expanded reasoning content stays unchanged.
+- [x] Add chat-card regressions and rerun the relevant desktop verification commands.
+
+## Review
+- The heading text was coming from the grouped-card preview builder in `apps/desktop/src/ui/chat/activityGroups.ts`, not from the expanded reasoning row. The preview was just taking the first non-empty lines of the reasoning note, so a standalone markdown heading like `**Planning search strategy**` leaked into the in-chat card summary.
+- Updated `reasoningPreviewText(...)` in `apps/desktop/src/ui/chat/activityGroups.ts` to strip leading standalone markdown heading lines (`**...**`, `__...__`, or `# ...`) before building the collapsed preview. This only changes the collapsed summary text; the expanded reasoning content still renders the full original note with its heading intact.
+- Added regressions in `apps/desktop/test/chat-activity-groups.test.ts` and `apps/desktop/test/chat-activity-group-card.test.tsx` to pin the exact behavior you asked for: the collapsed card preview shows the body text (`I need to be careful...`) and not the heading, while the reasoning body itself remains untouched.
+
+### Verification
+- `~/.bun/bin/bun test --cwd apps/desktop test/chat-activity-groups.test.ts test/chat-activity-group-card.test.tsx` -> pass (`17 pass, 0 fail`)
+- `~/.bun/bin/bun run typecheck:desktop` -> pass
+- `~/.bun/bin/bun test --cwd apps/desktop` -> pass (`200 pass, 0 fail`)
+
+# Task: Fix accepted review findings for OpenAI compaction support
+
+## Plan
+- [x] Add the missing direct dependency for the new raw projector and regenerate the lockfile.
+- [x] Fix the Codex browser OAuth callback host so the redirect URI matches the loopback listener binding.
+- [x] Harden raw replay and Codex usage verification so unsupported raw events do not suppress normalized chunks and malformed `/wham/usage` payloads do not mark Codex as verified.
+- [x] Run the targeted provider/runtime/desktop tests plus typecheck, then record the results below.
+
+## Review
+- Added `partial-json` as a direct root dependency in `package.json` and regenerated `bun.lock`, which fixes the clean-install/module-resolution failure for `src/runtime/openaiResponsesProjector.ts`.
+- `src/providers/codex-oauth-flows.ts` now builds the browser redirect URI with `OAUTH_LOOPBACK_HOST`, so the OAuth callback URI stays aligned with the listener that actually binds `127.0.0.1`.
+- `src/client/modelStreamReplay.ts` now marks a turn as raw-backed only after raw replay produces replayable updates, which prevents unsupported raw events from suppressing later normalized reasoning/text/tool chunks.
+- `src/providerStatus.ts` now treats malformed 200 responses from `/wham/usage` as verification failures instead of incorrectly marking `codex-cli` as verified.
+- Added regressions in `test/providers/codex-oauth-flows.test.ts`, `test/providerStatus.test.ts`, and new `test/modelStreamReplay.test.ts`.
+
+### Verification
+- `bun test test/providers/codex-oauth-flows.test.ts test/providerStatus.test.ts test/modelStreamReplay.test.ts apps/desktop/test/store-feed-mapping.test.ts apps/desktop/test/protocol-v2-events.test.ts test/agentSocket.parse.test.ts` -> pass (`51 pass, 0 fail`)
+- `bun run typecheck` -> pass
+
+# Task: Re-check unresolved PR review comments for relevance
+
+## Plan
+- [x] Verify `gh` auth, locate the open PR for the current branch, and fetch unresolved review threads.
+- [x] Inspect the current code for each unresolved comment to determine whether the reported regression still exists at `HEAD`.
+- [x] Record which comments remain relevant and note any stale parts of the `gh-address-comments` skill workflow.
+
+## Review
+- `gh auth status` is healthy, and the current branch `codex/add-openai-compaction-support` has open PR `#31` (`Fix OpenAI compaction support for desktop flows`) with two unresolved review threads from `chatgpt-codex-connector`.
+- Thread 1 on `src/client/modelStreamReplay.ts` is no longer relevant at `HEAD`. GitHub marks it outdated, the current implementation returns `[]` on projection failure (`src/client/modelStreamReplay.ts:57-65`), and it only marks the turn as raw-backed after at least one replay update is produced (`src/client/modelStreamReplay.ts:92-94`).
+- Thread 1 is covered by `test/modelStreamReplay.test.ts`: one test proves normalized chunks are still accepted when raw replay yields no updates, and another proves raw-backed suppression starts only after replayable output exists.
+- Thread 2 on `src/connect.ts` is still relevant. `connectProvider()` accepts `code?: string` (`src/connect.ts:71-82`), but the Codex OAuth path always calls `runCodexBrowserOAuth(...)` (`src/connect.ts:165-174`) and never consumes or forwards `opts.code`, so a `provider_auth_callback` payload with a manual code still cannot complete via this path.
+- The surrounding plumbing still expects manual-code callbacks to work: `callbackProviderAuth()` forwards `code` into the connect handler (`src/providers/authRegistry.ts:170-178`) and the websocket protocol still documents `provider_auth_callback` with an optional `code` field (`docs/websocket-protocol.md:649-665`).
+- Coverage confirms the gap rather than closing it. `test/providers/auth-registry.test.ts` only verifies the registry forwards `code` to the connect handler, `test/session.test.ts` exercises the callback path without a code, and `test/connect.test.ts` only covers browser-based Codex OAuth. There is no `connectProvider()` test asserting a manual authorization code is consumed for Codex.
+- The `gh-address-comments` skill is only partially current: the overall `gh`/PR-comment workflow still applies, but the referenced helper `scripts/fetch_comments.py` is missing from this repo, so the fetching step should be updated to use the current `gh api graphql ... reviewThreads(first: 100)` flow instead.
+
+### Verification
+- `gh pr view --json number,title,headRefName,url,state,isDraft,reviewDecision,comments,reviews` -> open PR `#31`
+- `gh api graphql ... reviewThreads(first: 100)` -> 2 unresolved threads, 1 outdated and 1 current
+- `~/.bun/bin/bun test test/modelStreamReplay.test.ts test/connect.test.ts test/providers/auth-registry.test.ts test/session.test.ts test/protocol.test.ts` -> pass (`354 pass, 0 fail`)
+
+# Task: Fix Codex manual callback auth path for unresolved PR review feedback
+
+## Plan
+- [x] Rework the Codex browser OAuth helpers so an auth challenge can keep the PKCE redirect/code-verifier state alive across `provider_auth_authorize` and `provider_auth_callback`.
+- [x] Thread that pending Codex auth state through the session/provider connect path so manual callback codes are consumed instead of forcing a new browser listener flow.
+- [x] Add focused regression coverage for manual callback completion and rerun the relevant provider/session/protocol tests.
+
+## Review
+- `src/providers/codex-oauth-flows.ts` now separates Codex browser OAuth into `prepareCodexBrowserOAuth()` and `completeCodexBrowserOAuth(...)`. That keeps the generated PKCE verifier and redirect URI alive across the authorize/callback boundary and lets a manual callback code finish the token exchange without reopening the browser.
+- `src/server/session/ProviderAuthManager.ts` now owns the pending Codex browser challenge for the session. `provider_auth_authorize` emits a real challenge URL for `codex-cli/oauth_cli`, and `provider_auth_callback` passes the pending PKCE state into the connect path before clearing it.
+- `src/connect.ts` and `src/providers/authRegistry.ts` now thread optional pending Codex browser auth state through `connectProvider()`. When a manual `code` arrives with an active challenge, Cowork exchanges it directly; if a code arrives without a pending challenge, the call now fails clearly instead of silently starting a fresh browser-only flow.
+- Added regression coverage in `test/session.test.ts`, `test/connect.test.ts`, and `test/providers/codex-oauth-flows.test.ts` for:
+  - emitting a real Codex browser auth challenge URL at authorize time,
+  - keeping the old authorize -> callback browser path working,
+  - accepting a manual callback code after authorize,
+  - and exercising the real PKCE token exchange helper with a manual code.
+
+### Verification
+- `~/.bun/bin/bun test test/connect.test.ts test/providers/auth-registry.test.ts test/session.test.ts test/protocol.test.ts` -> pass (`354 pass, 0 fail`)
+- `~/.bun/bin/bun test test/providers/codex-oauth-flows.test.ts` -> pass (`3 pass, 0 fail`)
+- `~/.bun/bin/bun run typecheck` -> pass

@@ -3,21 +3,60 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const loginOpenAICodexMock = mock(async (options: any) => {
-  options.onAuth({
-    url: "https://auth.openai.com/oauth/authorize?client_id=app_EMoamEEZ73f0CkXaXp7hrann&originator=pi",
-    instructions: "A browser window should open. Complete login to finish.",
-  });
-  return {
-    access: "mock-access-token",
-    refresh: "mock-refresh-token",
-    expires: Date.now() + 3_600_000,
-    accountId: "acc_mock",
-  };
+import { OAUTH_LOOPBACK_HOST } from "../src/auth/oauth-server";
+
+const mockedAuthorizeUrl = `https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=${encodeURIComponent(`http://${OAUTH_LOOPBACK_HOST}:1455/auth/callback`)}&scope=openid+profile+email+offline_access+api.connectors.read+api.connectors.invoke&code_challenge=mock-challenge&code_challenge_method=S256&id_token_add_organizations=true&codex_cli_simplified_flow=true&state=mock-state&originator=codex_cli_rs`;
+
+const runCodexBrowserOAuthMock = mock(async (opts: any) => {
+  await opts.openUrl?.(mockedAuthorizeUrl);
+  const file = path.join(opts.paths.authDir, "codex-cli", "auth.json");
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify({
+    version: 1,
+    auth_mode: "chatgpt",
+    issuer: "https://auth.openai.com",
+    client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+    tokens: {
+      access_token: "mock-access-token",
+      refresh_token: "mock-refresh-token",
+      expires_at: Date.now() + 3_600_000,
+    },
+    account: {
+      account_id: "acc_mock",
+    },
+  }, null, 2), "utf-8");
+  return file;
 });
 
-mock.module("@mariozechner/pi-ai", () => ({
-  loginOpenAICodex: loginOpenAICodexMock,
+const completeCodexBrowserOAuthMock = mock(async (opts: any) => {
+  const file = path.join(opts.paths.authDir, "codex-cli", "auth.json");
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify({
+    version: 1,
+    auth_mode: "chatgpt",
+    issuer: "https://auth.openai.com",
+    client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+    tokens: {
+      access_token: "manual-access-token",
+      refresh_token: "manual-refresh-token",
+      expires_at: Date.now() + 3_600_000,
+    },
+    account: {
+      account_id: "acc_manual",
+    },
+    meta: {
+      code: opts.code,
+      redirect_uri: opts.pending?.redirectUri,
+      verifier: opts.pending?.codeVerifier,
+    },
+  }, null, 2), "utf-8");
+  return file;
+});
+
+mock.module("../src/providers/codex-oauth-flows", () => ({
+  completeCodexBrowserOAuth: completeCodexBrowserOAuthMock,
+  isOauthCliProvider: (provider: string) => provider === "codex-cli",
+  runCodexBrowserOAuth: runCodexBrowserOAuthMock,
 }));
 
 const {
@@ -65,18 +104,51 @@ describe("connect helpers", () => {
 
 describe("connectProvider", () => {
   beforeEach(() => {
-    loginOpenAICodexMock.mockReset();
-    loginOpenAICodexMock.mockImplementation(async (options: any) => {
-      options.onAuth({
-        url: "https://auth.openai.com/oauth/authorize?client_id=app_EMoamEEZ73f0CkXaXp7hrann&originator=pi",
-        instructions: "A browser window should open. Complete login to finish.",
-      });
-      return {
-        access: "mock-access-token",
-        refresh: "mock-refresh-token",
-        expires: Date.now() + 3_600_000,
-        accountId: "acc_mock",
-      };
+    completeCodexBrowserOAuthMock.mockReset();
+    completeCodexBrowserOAuthMock.mockImplementation(async (opts: any) => {
+      const file = path.join(opts.paths.authDir, "codex-cli", "auth.json");
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, JSON.stringify({
+        version: 1,
+        auth_mode: "chatgpt",
+        issuer: "https://auth.openai.com",
+        client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+        tokens: {
+          access_token: "manual-access-token",
+          refresh_token: "manual-refresh-token",
+          expires_at: Date.now() + 3_600_000,
+        },
+        account: {
+          account_id: "acc_manual",
+        },
+        meta: {
+          code: opts.code,
+          redirect_uri: opts.pending?.redirectUri,
+          verifier: opts.pending?.codeVerifier,
+        },
+      }, null, 2), "utf-8");
+      return file;
+    });
+    runCodexBrowserOAuthMock.mockReset();
+    runCodexBrowserOAuthMock.mockImplementation(async (opts: any) => {
+      await opts.openUrl?.(mockedAuthorizeUrl);
+      const file = path.join(opts.paths.authDir, "codex-cli", "auth.json");
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, JSON.stringify({
+        version: 1,
+        auth_mode: "chatgpt",
+        issuer: "https://auth.openai.com",
+        client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+        tokens: {
+          access_token: "mock-access-token",
+          refresh_token: "mock-refresh-token",
+          expires_at: Date.now() + 3_600_000,
+        },
+        account: {
+          account_id: "acc_mock",
+        },
+      }, null, 2), "utf-8");
+      return file;
     });
   });
 
@@ -169,7 +241,7 @@ describe("connectProvider", () => {
     expect(entry?.apiKey).toBeUndefined();
   });
 
-  test("codex-cli PI-native oauth succeeds and stores oauth mode", async () => {
+  test("codex-cli Cowork-owned oauth succeeds and stores oauth mode", async () => {
     const home = await makeTmpHome();
     const paths = getAiCoworkerPaths({ homedir: home });
     const openedUrls: string[] = [];
@@ -185,10 +257,8 @@ describe("connectProvider", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.mode).toBe("oauth");
-    expect(openedUrls).toEqual([
-      "https://auth.openai.com/oauth/authorize?client_id=app_EMoamEEZ73f0CkXaXp7hrann&originator=pi",
-    ]);
-    expect(loginOpenAICodexMock).toHaveBeenCalledTimes(1);
+    expect(openedUrls).toEqual([mockedAuthorizeUrl]);
+    expect(runCodexBrowserOAuthMock).toHaveBeenCalledTimes(1);
 
     const persisted = JSON.parse(
       await fs.readFile(path.join(home, ".cowork", "auth", "codex-cli", "auth.json"), "utf-8")
@@ -203,7 +273,7 @@ describe("connectProvider", () => {
     expect(entry?.mode).toBe("oauth");
   });
 
-  test("codex-cli reuses and migrates legacy .codex credentials", async () => {
+  test("codex-cli ignores legacy .codex credentials and starts a fresh Cowork OAuth flow", async () => {
     const home = await makeTmpHome();
     const paths = getAiCoworkerPaths({ homedir: home });
     const accessToken = makeJwt({ exp: Math.floor(Date.now() / 1000) + 3_600 });
@@ -235,22 +305,25 @@ describe("connectProvider", () => {
     const result = await connectProvider({
       provider: "codex-cli",
       paths,
+      openUrl: async () => true,
       fetchImpl: async () => {
-        throw new Error("Unexpected network call when legacy Codex credentials exist.");
+        throw new Error("Unexpected network call during fresh Codex OAuth login.");
       },
     });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.mode).toBe("oauth");
-    expect(result.message).toContain("Existing Codex OAuth credentials detected.");
+    expect(result.message).toContain("Codex OAuth sign-in completed.");
     expect(result.oauthCredentialsFile).toBe(path.join(home, ".cowork", "auth", "codex-cli", "auth.json"));
+    expect(runCodexBrowserOAuthMock).toHaveBeenCalledTimes(1);
 
-    const migrated = JSON.parse(
+    const persisted = JSON.parse(
       await fs.readFile(path.join(home, ".cowork", "auth", "codex-cli", "auth.json"), "utf-8")
     ) as any;
-    expect(migrated?.tokens?.access_token).toBe(accessToken);
-    expect(migrated?.tokens?.refresh_token).toBe("legacy-refresh-token");
+    expect(persisted?.tokens?.access_token).toBe("mock-access-token");
+    expect(persisted?.tokens?.refresh_token).toBe("mock-refresh-token");
+    expect(persisted?.tokens?.access_token).not.toBe(accessToken);
   });
 
   test("codex-cli stale credentials trigger new oauth flow", async () => {
@@ -277,17 +350,23 @@ describe("connectProvider", () => {
     );
 
     const openedUrls: string[] = [];
-    loginOpenAICodexMock.mockImplementationOnce(async (options: any) => {
-      options.onAuth({
-        url: "https://auth.openai.com/oauth/authorize?client_id=app_EMoamEEZ73f0CkXaXp7hrann&originator=pi",
-        instructions: "A browser window should open. Complete login to finish.",
-      });
-      return {
-        access: "fresh-access-token",
-        refresh: "fresh-refresh-token",
-        expires: Date.now() + 3_600_000,
-        accountId: "acc_789",
-      };
+    runCodexBrowserOAuthMock.mockImplementationOnce(async (opts: any) => {
+      await opts.openUrl?.(mockedAuthorizeUrl);
+      await fs.writeFile(authFile, JSON.stringify({
+        version: 1,
+        auth_mode: "chatgpt",
+        issuer: "https://auth.openai.com",
+        client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+        tokens: {
+          access_token: "fresh-access-token",
+          refresh_token: "fresh-refresh-token",
+          expires_at: Date.now() + 3_600_000,
+        },
+        account: {
+          account_id: "acc_789",
+        },
+      }, null, 2), "utf-8");
+      return authFile;
     });
 
     const result = await connectProvider({
@@ -303,12 +382,48 @@ describe("connectProvider", () => {
     if (!result.ok) return;
     expect(result.mode).toBe("oauth");
     expect(result.message).toContain("Codex OAuth sign-in completed");
-    expect(openedUrls).toEqual([
-      "https://auth.openai.com/oauth/authorize?client_id=app_EMoamEEZ73f0CkXaXp7hrann&originator=pi",
-    ]);
+    expect(openedUrls).toEqual([mockedAuthorizeUrl]);
 
     const persisted = JSON.parse(await fs.readFile(authFile, "utf-8")) as any;
     expect(persisted?.tokens?.access_token).toBe("fresh-access-token");
+  });
+
+  test("codex-cli consumes a manual authorization code when a pending browser challenge exists", async () => {
+    const home = await makeTmpHome();
+    const paths = getAiCoworkerPaths({ homedir: home });
+    const pending = {
+      authUrl: mockedAuthorizeUrl,
+      redirectUri: `http://${OAUTH_LOOPBACK_HOST}:1455/auth/callback`,
+      codeVerifier: "verifier_123",
+      waitForCode: Promise.resolve("unused-browser-code"),
+      close: () => {},
+    };
+
+    const result = await connectProvider({
+      provider: "codex-cli",
+      code: "manual-auth-code",
+      codexBrowserAuthPending: pending,
+      paths,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.mode).toBe("oauth");
+    expect(runCodexBrowserOAuthMock).not.toHaveBeenCalled();
+    expect(completeCodexBrowserOAuthMock).toHaveBeenCalledTimes(1);
+    expect(completeCodexBrowserOAuthMock.mock.calls[0]?.[0]).toMatchObject({
+      code: "manual-auth-code",
+      pending: {
+        redirectUri: pending.redirectUri,
+        codeVerifier: pending.codeVerifier,
+      },
+    });
+
+    const persisted = JSON.parse(
+      await fs.readFile(path.join(home, ".cowork", "auth", "codex-cli", "auth.json"), "utf-8"),
+    ) as any;
+    expect(persisted?.tokens?.access_token).toBe("manual-access-token");
+    expect(persisted?.meta?.code).toBe("manual-auth-code");
   });
 
 });

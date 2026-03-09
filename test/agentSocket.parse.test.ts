@@ -23,11 +23,18 @@ describe("agent socket parser", () => {
       type: "server_hello",
       sessionId: "s-1",
       config: { provider: "google", model: "gemini", workingDirectory: "/" },
+      sessionKind: "subagent",
+      parentSessionId: "root-1",
+      agentType: "general",
     });
 
     const parsed = safeParseServerEvent(raw);
     expect(parsed?.type).toBe("server_hello");
     expect(parsed?.sessionId).toBe("s-1");
+    if (parsed?.type !== "server_hello") return;
+    expect(parsed.sessionKind).toBe("subagent");
+    expect(parsed.parentSessionId).toBe("root-1");
+    expect(parsed.agentType).toBe("general");
   });
 
   test("safeParseServerEvent accepts representative protocol events", () => {
@@ -61,6 +68,17 @@ describe("agent socket parser", () => {
         part: { text: "hello" },
       },
       {
+        type: "model_stream_raw",
+        sessionId: "s-1",
+        turnId: "turn-1",
+        index: 1,
+        provider: "openai",
+        model: "gpt-5.2",
+        format: "openai-responses-v1",
+        normalizerVersion: 1,
+        event: { type: "response.output_item.added", item: { type: "reasoning" } },
+      },
+      {
         type: "session_config",
         sessionId: "s-1",
         config: {
@@ -88,6 +106,22 @@ describe("agent socket parser", () => {
         message: "boom",
         code: "internal_error",
         source: "session",
+      },
+      {
+        type: "subagent_created",
+        sessionId: "s-1",
+        subagent: {
+          sessionId: "child-1",
+          parentSessionId: "s-1",
+          agentType: "general",
+          title: "Child Session",
+          provider: "openai",
+          model: "gpt-5.2",
+          createdAt: "2026-03-08T00:00:00.000Z",
+          updatedAt: "2026-03-08T00:00:01.000Z",
+          status: "active",
+          busy: true,
+        },
       },
     ];
 

@@ -54,6 +54,8 @@ export function dispatchClientMessage({
       return session.emitProviderAuthMethods();
     case "provider_auth_authorize":
       return void session.authorizeProviderAuth(message.provider, message.methodId);
+    case "provider_auth_logout":
+      return void session.logoutProviderAuth(message.provider);
     case "provider_auth_callback":
       return void session.callbackProviderAuth(message.provider, message.methodId, message.code);
     case "provider_auth_set_api_key":
@@ -127,6 +129,10 @@ export function dispatchClientMessage({
       return void session.listSessions();
     case "delete_session":
       return void session.deleteSession(message.targetSessionId);
+    case "subagent_create":
+      return void session.createSubagentSession(message.agentType, message.task);
+    case "subagent_sessions_get":
+      return void session.listSubagentSessions();
     case "set_config":
       return void session.setConfig(message.config);
     case "upload_file":

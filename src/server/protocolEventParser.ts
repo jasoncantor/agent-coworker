@@ -5,6 +5,11 @@ import {
   OPENAI_REASONING_SUMMARY_VALUES,
   OPENAI_TEXT_VERBOSITY_VALUES,
 } from "../shared/openaiCompatibleOptions";
+import {
+  persistentSubagentSummarySchema,
+  sessionKindSchema,
+  subagentAgentTypeSchema,
+} from "../shared/persistentSubagents";
 import type { ServerEvent } from "./protocol";
 
 const jsonObjectSchema = z.record(z.string(), z.unknown());
@@ -62,6 +67,7 @@ const modelStreamChunkSchema = z.object({
   index: z.unknown().optional(),
   provider: z.unknown().optional(),
   model: z.unknown().optional(),
+  normalizerVersion: z.number().int().nonnegative().optional(),
   partType: z.string(),
   part: z.unknown(),
   rawPart: z.unknown().optional(),
@@ -72,6 +78,25 @@ const modelStreamChunkSchema = z.object({
   provider: normalizeChunkField(chunk.provider, "unknown"),
   model: normalizeChunkField(chunk.model, "unknown"),
   part: normalizeChunkPart(chunk.part),
+}));
+
+const modelStreamRawSchema = z.object({
+  type: z.literal("model_stream_raw"),
+  sessionId: nonEmptyTrimmedStringSchema,
+  turnId: z.unknown().optional(),
+  index: z.unknown().optional(),
+  provider: z.unknown().optional(),
+  model: z.unknown().optional(),
+  format: z.string(),
+  normalizerVersion: z.number().int().nonnegative(),
+  event: z.unknown(),
+}).passthrough().transform((chunk) => ({
+  ...chunk,
+  turnId: normalizeChunkField(chunk.turnId, "unknown-turn"),
+  index: normalizeChunkIndex(chunk.index),
+  provider: normalizeChunkField(chunk.provider, "unknown"),
+  model: normalizeChunkField(chunk.model, "unknown"),
+  event: normalizeChunkPart(chunk.event),
 }));
 
 const serverEventSchema = z.discriminatedUnion("type", [
@@ -92,6 +117,9 @@ const serverEventSchema = z.discriminatedUnion("type", [
     messageCount: z.number().optional(),
     hasPendingAsk: z.boolean().optional(),
     hasPendingApproval: z.boolean().optional(),
+    sessionKind: sessionKindSchema.optional(),
+    parentSessionId: z.string().optional(),
+    agentType: subagentAgentTypeSchema.optional(),
   }).passthrough(),
   z.object({
     type: z.literal("session_settings"),
@@ -108,6 +136,9 @@ const serverEventSchema = z.discriminatedUnion("type", [
     updatedAt: z.string(),
     provider: z.string(),
     model: z.string(),
+    sessionKind: sessionKindSchema.optional(),
+    parentSessionId: z.string().optional(),
+    agentType: subagentAgentTypeSchema.optional(),
   }).passthrough(),
   z.object({
     type: z.literal("mcp_servers"),
@@ -189,6 +220,7 @@ const serverEventSchema = z.discriminatedUnion("type", [
     clientMessageId: z.string().optional(),
   }).passthrough(),
   modelStreamChunkSchema,
+  modelStreamRawSchema,
   z.object({
     type: z.literal("assistant_message"),
     sessionId: nonEmptyTrimmedStringSchema,
@@ -302,6 +334,16 @@ const serverEventSchema = z.discriminatedUnion("type", [
     sessions: unknownArraySchema,
   }).passthrough(),
   z.object({
+    type: z.literal("subagent_created"),
+    sessionId: nonEmptyTrimmedStringSchema,
+    subagent: persistentSubagentSummarySchema,
+  }).passthrough(),
+  z.object({
+    type: z.literal("subagent_sessions"),
+    sessionId: nonEmptyTrimmedStringSchema,
+    subagents: z.array(persistentSubagentSummarySchema),
+  }).passthrough(),
+  z.object({
     type: z.literal("session_deleted"),
     sessionId: nonEmptyTrimmedStringSchema,
     targetSessionId: z.string(),
@@ -352,6 +394,7 @@ const KNOWN_SERVER_EVENT_TYPES = new Set<string>([
   "session_busy",
   "user_message",
   "model_stream_chunk",
+  "model_stream_raw",
   "assistant_message",
   "reasoning",
   "log",
@@ -370,6 +413,8 @@ const KNOWN_SERVER_EVENT_TYPES = new Set<string>([
   "turn_usage",
   "messages",
   "sessions",
+  "subagent_created",
+  "subagent_sessions",
   "session_deleted",
   "session_config",
   "file_uploaded",

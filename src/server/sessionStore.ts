@@ -3,6 +3,8 @@ import path from "node:path";
 import { z } from "zod";
 
 import type { AiCoworkerPaths } from "../connect";
+import { sessionKindSchema, subagentAgentTypeSchema, type SessionKind, type SubagentAgentType } from "../shared/persistentSubagents";
+import { openAiContinuationStateSchema, type OpenAiContinuationState } from "../shared/openaiContinuation";
 import { PROVIDER_NAMES } from "../types";
 import type { AgentConfig, HarnessContextState, ModelMessage, TodoItem } from "../types";
 import type { SessionTitleSource } from "./sessionTitleService";
@@ -46,7 +48,71 @@ export type PersistedSessionSnapshotV1 = {
   };
 };
 
-export type PersistedSessionSnapshot = PersistedSessionSnapshotV1;
+export type PersistedSessionSnapshotV2 = {
+  version: 2;
+  sessionId: string;
+  createdAt: string;
+  updatedAt: string;
+  session: {
+    title: string;
+    titleSource: SessionTitleSource;
+    titleModel: string | null;
+    provider: AgentConfig["provider"];
+    model: string;
+  };
+  config: {
+    provider: AgentConfig["provider"];
+    model: string;
+    enableMcp: boolean;
+    workingDirectory: string;
+    outputDirectory?: string;
+    uploadsDirectory?: string;
+  };
+  context: {
+    system: string;
+    messages: ModelMessage[];
+    providerState: OpenAiContinuationState | null;
+    todos: TodoItem[];
+    harnessContext: HarnessContextState | null;
+  };
+};
+
+export type PersistedSessionSnapshotV3 = {
+  version: 3;
+  sessionId: string;
+  createdAt: string;
+  updatedAt: string;
+  session: {
+    title: string;
+    titleSource: SessionTitleSource;
+    titleModel: string | null;
+    provider: AgentConfig["provider"];
+    model: string;
+    sessionKind: SessionKind;
+    parentSessionId: string | null;
+    agentType: SubagentAgentType | null;
+  };
+  config: {
+    provider: AgentConfig["provider"];
+    model: string;
+    enableMcp: boolean;
+    workingDirectory: string;
+    outputDirectory?: string;
+    uploadsDirectory?: string;
+  };
+  context: {
+    system: string;
+    messages: ModelMessage[];
+    providerState: OpenAiContinuationState | null;
+    todos: TodoItem[];
+    harnessContext: HarnessContextState | null;
+  };
+};
+
+export type PersistedSessionSnapshot =
+  | PersistedSessionSnapshotV1
+  | PersistedSessionSnapshotV2
+  | PersistedSessionSnapshotV3;
 
 export type PersistedSessionSummary = {
   sessionId: string;
@@ -82,7 +148,7 @@ const harnessContextStateSchema = z.object({
   updatedAt: isoTimestampSchema,
 }).strict();
 
-const persistedSessionSnapshotSchema = z.object({
+const persistedSessionSnapshotV1Schema = z.object({
   version: z.literal(1),
   sessionId: z.string().trim().min(1),
   createdAt: isoTimestampSchema,
@@ -110,6 +176,73 @@ const persistedSessionSnapshotSchema = z.object({
   }).strict(),
 }).strict();
 
+const persistedSessionSnapshotV2Schema = z.object({
+  version: z.literal(2),
+  sessionId: z.string().trim().min(1),
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema,
+  session: z.object({
+    title: z.string().trim().min(1),
+    titleSource: sessionTitleSourceSchema,
+    titleModel: z.string().trim().min(1).nullable(),
+    provider: providerNameSchema,
+    model: z.string().trim().min(1),
+  }).strict(),
+  config: z.object({
+    provider: providerNameSchema,
+    model: z.string().trim().min(1),
+    enableMcp: z.boolean(),
+    workingDirectory: z.string().trim().min(1),
+    outputDirectory: z.string().trim().min(1).optional(),
+    uploadsDirectory: z.string().trim().min(1).optional(),
+  }).strict(),
+  context: z.object({
+    system: z.string(),
+    messages: z.array(modelMessageSchema),
+    providerState: openAiContinuationStateSchema.nullable(),
+    todos: z.array(todoItemSchema),
+    harnessContext: harnessContextStateSchema.nullable(),
+  }).strict(),
+}).strict();
+
+const persistedSessionSnapshotV3Schema = z.object({
+  version: z.literal(3),
+  sessionId: z.string().trim().min(1),
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema,
+  session: z.object({
+    title: z.string().trim().min(1),
+    titleSource: sessionTitleSourceSchema,
+    titleModel: z.string().trim().min(1).nullable(),
+    provider: providerNameSchema,
+    model: z.string().trim().min(1),
+    sessionKind: sessionKindSchema,
+    parentSessionId: z.string().trim().min(1).nullable(),
+    agentType: subagentAgentTypeSchema.nullable(),
+  }).strict(),
+  config: z.object({
+    provider: providerNameSchema,
+    model: z.string().trim().min(1),
+    enableMcp: z.boolean(),
+    workingDirectory: z.string().trim().min(1),
+    outputDirectory: z.string().trim().min(1).optional(),
+    uploadsDirectory: z.string().trim().min(1).optional(),
+  }).strict(),
+  context: z.object({
+    system: z.string(),
+    messages: z.array(modelMessageSchema),
+    providerState: openAiContinuationStateSchema.nullable(),
+    todos: z.array(todoItemSchema),
+    harnessContext: harnessContextStateSchema.nullable(),
+  }).strict(),
+}).strict();
+
+const persistedSessionSnapshotSchema = z.union([
+  persistedSessionSnapshotV1Schema,
+  persistedSessionSnapshotV2Schema,
+  persistedSessionSnapshotV3Schema,
+]);
+
 export function getPersistedSessionFilePath(paths: Pick<AiCoworkerPaths, "sessionsDir">, sessionId: string): string {
   return path.join(paths.sessionsDir, `${sanitizeSessionId(sessionId)}.json`);
 }
@@ -132,6 +265,71 @@ export function parsePersistedSessionSnapshot(raw: unknown): PersistedSessionSna
   }
 
   const snapshot = parsed.data;
+  if (snapshot.version === 3) {
+    return {
+      version: 3,
+      sessionId: snapshot.sessionId,
+      createdAt: snapshot.createdAt,
+      updatedAt: snapshot.updatedAt,
+      session: {
+        title: snapshot.session.title,
+        titleSource: snapshot.session.titleSource,
+        titleModel: snapshot.session.titleModel,
+        provider: snapshot.session.provider,
+        model: snapshot.session.model,
+        sessionKind: snapshot.session.sessionKind,
+        parentSessionId: snapshot.session.parentSessionId,
+        agentType: snapshot.session.agentType,
+      },
+      config: {
+        provider: snapshot.config.provider,
+        model: snapshot.config.model,
+        enableMcp: snapshot.config.enableMcp,
+        workingDirectory: snapshot.config.workingDirectory,
+        outputDirectory: snapshot.config.outputDirectory,
+        uploadsDirectory: snapshot.config.uploadsDirectory,
+      },
+      context: {
+        system: snapshot.context.system,
+        messages: snapshot.context.messages,
+        providerState: snapshot.context.providerState,
+        todos: snapshot.context.todos,
+        harnessContext: snapshot.context.harnessContext,
+      },
+    };
+  }
+
+  if (snapshot.version === 2) {
+    return {
+      version: 2,
+      sessionId: snapshot.sessionId,
+      createdAt: snapshot.createdAt,
+      updatedAt: snapshot.updatedAt,
+      session: {
+        title: snapshot.session.title,
+        titleSource: snapshot.session.titleSource,
+        titleModel: snapshot.session.titleModel,
+        provider: snapshot.session.provider,
+        model: snapshot.session.model,
+      },
+      config: {
+        provider: snapshot.config.provider,
+        model: snapshot.config.model,
+        enableMcp: snapshot.config.enableMcp,
+        workingDirectory: snapshot.config.workingDirectory,
+        outputDirectory: snapshot.config.outputDirectory,
+        uploadsDirectory: snapshot.config.uploadsDirectory,
+      },
+      context: {
+        system: snapshot.context.system,
+        messages: snapshot.context.messages,
+        providerState: snapshot.context.providerState,
+        todos: snapshot.context.todos,
+        harnessContext: snapshot.context.harnessContext,
+      },
+    };
+  }
+
   return {
     version: 1,
     sessionId: snapshot.sessionId,
@@ -255,6 +453,9 @@ export async function listPersistedSessionSnapshots(
     } catch {
       continue;
     }
+
+    const sessionKind = parsed.version === 3 ? parsed.session.sessionKind : "root";
+    if (sessionKind !== "root") continue;
 
     summaries.push({
       sessionId: parsed.sessionId,

@@ -7,6 +7,7 @@ import {
   OPENAI_REASONING_SUMMARY_VALUES,
   OPENAI_TEXT_VERBOSITY_VALUES,
 } from "../shared/openaiCompatibleOptions";
+import { SUBAGENT_AGENT_TYPE_VALUES } from "../shared/persistentSubagents";
 import { isProviderName } from "../types";
 
 import type { ClientMessage } from "./protocol";
@@ -228,6 +229,7 @@ const sessionOnlyTypes = [
   "list_commands",
   "list_skills",
   "list_sessions",
+  "subagent_sessions_get",
   "refresh_provider_status",
   "provider_catalog_get",
   "provider_auth_methods_get",
@@ -309,6 +311,19 @@ const providerAuthAuthorizeSchema = schemaWithType("provider_auth_authorize", {
     provider: value["provider"],
     methodId: value["methodId"],
   }, "provider_auth_authorize");
+});
+
+const providerAuthLogoutSchema = schemaWithType("provider_auth_logout", {
+  sessionId: requiredSessionId("provider_auth_logout"),
+  provider: z.unknown(),
+}).superRefine((value, ctx) => {
+  if (!isProviderName(value.provider)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["provider"],
+      message: "provider_auth_logout missing/invalid provider",
+    });
+  }
 });
 
 const providerAuthCallbackSchema = schemaWithType("provider_auth_callback", {
@@ -462,6 +477,12 @@ const deleteSessionSchema = schemaWithType("delete_session", {
   targetSessionId: requiredNonEmptyTrimmedString("delete_session missing/invalid targetSessionId"),
 });
 
+const subagentCreateSchema = schemaWithType("subagent_create", {
+  sessionId: requiredSessionId("subagent_create"),
+  agentType: z.enum(SUBAGENT_AGENT_TYPE_VALUES, { error: "subagent_create missing/invalid agentType" }),
+  task: requiredNonEmptyTrimmedString("subagent_create missing/invalid task"),
+});
+
 const setConfigSchema = schemaWithType("set_config", {
   sessionId: requiredSessionId("set_config"),
   config: z.unknown().optional(),
@@ -505,6 +526,7 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   executeCommandSchema,
   setModelSchema,
   providerAuthAuthorizeSchema,
+  providerAuthLogoutSchema,
   providerAuthCallbackSchema,
   providerAuthSetApiKeySchema,
   setEnableMcpSchema,
@@ -518,6 +540,7 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   getMessagesSchema,
   setSessionTitleSchema,
   deleteSessionSchema,
+  subagentCreateSchema,
   setConfigSchema,
   uploadFileSchema,
 ] as unknown as [any, ...any[]]);
@@ -554,6 +577,17 @@ function normalizeClientMessage(parsed: ParsedClientMessage): ClientMessage {
         sessionId,
         provider: parsed.provider,
         methodId,
+      };
+    }
+    case "provider_auth_logout": {
+      const sessionId = parsed.sessionId as string;
+      if (!isProviderName(parsed.provider)) {
+        throw new Error("provider_auth_logout missing/invalid provider");
+      }
+      return {
+        type: "provider_auth_logout",
+        sessionId,
+        provider: parsed.provider,
       };
     }
     case "provider_auth_callback": {

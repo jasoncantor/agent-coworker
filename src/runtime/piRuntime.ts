@@ -1,6 +1,19 @@
 import { SpanStatusCode, trace, type AttributeValue, type Span } from "@opentelemetry/api";
 import { stream as piStream } from "@mariozechner/pi-ai";
-import { asFiniteNumber, asNonEmptyString, asRecord, asString, buildPiStreamOptions, extractToolCallsFromAssistant, isZodSchema, pickKnownPiModel, toPiJsonSchema, toolCallFromPartial, type PiModel, type PiToolCallLike } from "./piRuntimeOptions";
+import {
+  asFiniteNumber,
+  asNonEmptyString,
+  asRecord,
+  asString,
+  buildPiStreamOptions,
+  extractToolCallsFromAssistant,
+  isZodSchema,
+  pickKnownPiModel,
+  toPiJsonSchema,
+  type PiModel,
+  type PiToolCallLike,
+} from "./piRuntimeOptions";
+import { mapPiEventToRawParts } from "./piStreamParts";
 
 import { getSavedProviderApiKey } from "../config";
 import { getAiCoworkerPaths } from "../connect";
@@ -12,6 +25,11 @@ import {
 } from "../providers/codex-auth";
 import type { AgentConfig, ModelMessage, ProviderName } from "../types";
 import type { TelemetrySettings } from "../observability/runtime";
+import {
+  continuationMatchesTarget,
+  type OpenAiContinuationProvider,
+  type OpenAiContinuationState,
+} from "../shared/openaiContinuation";
 
 import {
   extractPiAssistantText,
@@ -65,7 +83,7 @@ function isModelMessageArray(value: unknown): value is ModelMessage[] {
   });
 }
 
-function splitStepOverrides(raw: unknown): RuntimeStepOverrides {
+export function splitStepOverrides(raw: unknown): RuntimeStepOverrides {
   const parsed = asRecord(raw);
   if (!parsed) return {};
 
@@ -88,7 +106,7 @@ function splitStepOverrides(raw: unknown): RuntimeStepOverrides {
   };
 }
 
-function buildStepState(
+export function buildStepState(
   params: RuntimeRunTurnParams,
   resolved: ResolvedPiRuntimeModel,
   overrides: RuntimeStepOverrides,
@@ -113,7 +131,7 @@ function buildStepState(
   };
 }
 
-function isAbortLikeError(error: unknown, signal?: AbortSignal): boolean {
+export function isAbortLikeError(error: unknown, signal?: AbortSignal): boolean {
   if (signal?.aborted) return true;
   if (error instanceof DOMException && error.name === "AbortError") return true;
   if (error instanceof Error) {
@@ -127,10 +145,11 @@ function runtimeHomeFromConfig(config: AgentConfig): string | undefined {
   return resolveCoworkHomedir(config.userAgentDir);
 }
 
-type ResolvedPiRuntimeModel = {
+export type ResolvedPiRuntimeModel = {
   model: PiModel;
   apiKey?: string;
   headers?: Record<string, string>;
+  accountId?: string;
 };
 
 type ResolvedCodexAuth = {
@@ -152,7 +171,7 @@ async function resolveCodexAccessToken(
   log?: (line: string) => void
 ): Promise<ResolvedCodexAuth> {
   const paths = getAiCoworkerPaths({ homedir: runtimeHomeFromConfig(config) });
-  let material = await readCodexAuthMaterial(paths, { migrateLegacy: true });
+  let material = await readCodexAuthMaterial(paths);
   if (!material?.accessToken) {
     throw new Error("Codex auth is missing. Run /connect codex-cli to authenticate.");
   }
@@ -181,7 +200,7 @@ async function resolveCodexAccessToken(
   };
 }
 
-async function resolvePiModel(params: RuntimeRunTurnParams): Promise<ResolvedPiRuntimeModel> {
+export async function resolvePiModel(params: RuntimeRunTurnParams): Promise<ResolvedPiRuntimeModel> {
   const modelId = params.config.model;
   const provider = params.config.provider;
 
@@ -251,6 +270,7 @@ async function resolvePiModel(params: RuntimeRunTurnParams): Promise<ResolvedPiR
         ...(codexHeaders ? { headers: { ...(codexModel.headers ?? {}), ...codexHeaders } } : {}),
       },
       apiKey: codexAuth.accessToken,
+      ...(codexAuth.accountId ? { accountId: codexAuth.accountId } : {}),
       ...(codexHeaders ? { headers: codexHeaders } : {}),
     };
   }
@@ -259,7 +279,7 @@ async function resolvePiModel(params: RuntimeRunTurnParams): Promise<ResolvedPiR
   throw new Error(`Unsupported provider for PI runtime: ${String(exhaustive)}`);
 }
 
-function parseTelemetrySettings(raw: unknown): TelemetrySettings | undefined {
+export function parseTelemetrySettings(raw: unknown): TelemetrySettings | undefined {
   const parsed = asRecord(raw);
   if (!parsed || parsed.isEnabled !== true) return undefined;
 
@@ -286,18 +306,20 @@ function parseTelemetrySettings(raw: unknown): TelemetrySettings | undefined {
   };
 }
 
-function startModelCallSpan(
+export function startModelCallSpan(
   telemetry: TelemetrySettings | undefined,
   params: RuntimeRunTurnParams,
   resolved: ResolvedPiRuntimeModel,
   stepNumber: number,
   stepOptions: Record<string, unknown>,
-  piMessages: unknown
+  piMessages: unknown,
+  runtimeLabel = "pi",
+  defaultFunctionId = "agent.runtime.pi.model_call",
 ): Span | null {
   if (!telemetry?.isEnabled) return null;
 
   const attributes: Record<string, AttributeValue> = {
-    "llm.runtime": "pi",
+    "llm.runtime": runtimeLabel,
     "llm.provider": params.config.provider,
     "llm.model": resolved.model.id,
     "llm.step_number": stepNumber,
@@ -312,10 +334,10 @@ function startModelCallSpan(
 
   return trace
     .getTracer("agent-coworker.runtime")
-    .startSpan(telemetry.functionId ?? "agent.runtime.pi.model_call", { attributes });
+    .startSpan(telemetry.functionId ?? defaultFunctionId, { attributes });
 }
 
-function markModelCallSpanSuccess(
+export function markModelCallSpanSuccess(
   span: Span | null,
   telemetry: TelemetrySettings | undefined,
   assistantRecord: Record<string, unknown>
@@ -339,7 +361,7 @@ function markModelCallSpanSuccess(
   span.end();
 }
 
-function markModelCallSpanError(span: Span | null, error: unknown): void {
+export function markModelCallSpanError(span: Span | null, error: unknown): void {
   if (!span) return;
   const message = error instanceof Error ? error.message : String(error);
   span.setStatus({ code: SpanStatusCode.ERROR, message });
@@ -349,7 +371,7 @@ function markModelCallSpanError(span: Span | null, error: unknown): void {
   span.end();
 }
 
-function toolMapToPiTools(tools: RuntimeRunTurnParams["tools"]): Array<Record<string, unknown>> {
+export function toolMapToPiTools(tools: RuntimeRunTurnParams["tools"]): Array<Record<string, unknown>> {
   return Object.entries(tools).map(([name, def]) => ({
     name,
     description: def.description ?? name,
@@ -386,105 +408,95 @@ function extractToolExecutionErrorMessage(result: unknown): string | undefined {
   return safeJsonStringify(result);
 }
 
-function reasoningModeForProvider(provider: ProviderName): "reasoning" | "summary" {
-  return provider === "openai" || provider === "codex-cli" ? "summary" : "reasoning";
+export function messagesAfterLastAssistant(messages: ModelMessage[]): ModelMessage[] {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const record = asRecord(messages[i]);
+    if (record?.role === "assistant") {
+      return messages.slice(i + 1);
+    }
+  }
+  return [...messages];
 }
 
-async function emitPiEventAsRawPart(
+function continuationTarget(
+  params: RuntimeRunTurnParams,
+  resolved: ResolvedPiRuntimeModel,
+): { provider: OpenAiContinuationProvider; model: string; accountId?: string } {
+  return {
+    provider: params.config.provider as OpenAiContinuationProvider,
+    model: params.config.model,
+    ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
+  };
+}
+
+export function supportsProviderManagedContinuation(
+  params: RuntimeRunTurnParams,
+  resolved: ResolvedPiRuntimeModel,
+): boolean {
+  if (params.config.provider === "openai") return true;
+  if (params.config.provider !== "codex-cli") return false;
+  return resolved.model.api === "openai-responses";
+}
+
+export function matchingProviderState(
+  params: RuntimeRunTurnParams,
+  resolved: ResolvedPiRuntimeModel,
+): OpenAiContinuationState | null {
+  if (!supportsProviderManagedContinuation(params, resolved)) {
+    return null;
+  }
+  const providerState = params.providerState ?? null;
+  if (!providerState) return null;
+  return continuationMatchesTarget(providerState, continuationTarget(params, resolved)) ? providerState : null;
+}
+
+export function buildInitialStepMessages(
+  params: RuntimeRunTurnParams,
+  resolved: ResolvedPiRuntimeModel,
+): ModelMessage[] {
+  if (!supportsProviderManagedContinuation(params, resolved)) {
+    return [...(params.allMessages ?? params.messages)];
+  }
+  const providerState = matchingProviderState(params, resolved);
+  if (providerState) {
+    const deltaMessages = messagesAfterLastAssistant(params.messages);
+    return deltaMessages.length > 0 ? deltaMessages : [...params.messages];
+  }
+  return [...(params.allMessages ?? params.messages)];
+}
+
+export function nextProviderState(
+  params: RuntimeRunTurnParams,
+  resolved: ResolvedPiRuntimeModel,
+  responseId?: string,
+): OpenAiContinuationState | undefined {
+  if (!supportsProviderManagedContinuation(params, resolved)) {
+    return undefined;
+  }
+  const nextResponseId = responseId?.trim();
+  if (!nextResponseId) return undefined;
+
+  return {
+    provider: params.config.provider as OpenAiContinuationProvider,
+    model: params.config.model,
+    responseId: nextResponseId,
+    updatedAt: new Date().toISOString(),
+    ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
+  };
+}
+
+export async function emitPiEventAsRawPart(
   event: any,
   provider: ProviderName,
   includeUnknown: boolean,
   emit: (part: unknown) => Promise<void>
 ): Promise<void> {
-  const mode = reasoningModeForProvider(provider);
-  const contentIndex = typeof event?.contentIndex === "number" ? event.contentIndex : 0;
-  const streamId = `s${contentIndex}`;
-
-  switch (event?.type) {
-    case "start":
-      await emit({ type: "start" });
-      return;
-    case "text_start":
-      await emit({ type: "text-start", id: streamId });
-      return;
-    case "text_delta":
-      await emit({ type: "text-delta", id: streamId, text: String(event.delta ?? "") });
-      return;
-    case "text_end":
-      await emit({ type: "text-end", id: streamId });
-      return;
-    case "thinking_start":
-      await emit({ type: "reasoning-start", id: streamId, mode });
-      return;
-    case "thinking_delta":
-      await emit({ type: "reasoning-delta", id: streamId, mode, text: String(event.delta ?? "") });
-      return;
-    case "thinking_end":
-      await emit({ type: "reasoning-end", id: streamId, mode });
-      return;
-    case "toolcall_start": {
-      const toolCall = toolCallFromPartial(event);
-      await emit({
-        type: "tool-input-start",
-        id: toolCall.toolCallId,
-        toolName: toolCall.toolName,
-      });
-      return;
-    }
-    case "toolcall_delta": {
-      const toolCall = toolCallFromPartial(event);
-      await emit({
-        type: "tool-input-delta",
-        id: toolCall.toolCallId,
-        delta: String(event.delta ?? ""),
-      });
-      return;
-    }
-    case "toolcall_end": {
-      const toolCall = toolCallFromPartial(event);
-      await emit({
-        type: "tool-input-end",
-        id: toolCall.toolCallId,
-      });
-      await emit({
-        type: "tool-call",
-        toolCallId: toolCall.toolCallId,
-        toolName: toolCall.toolName,
-        input: asRecord(toolCall.input) ?? {},
-      });
-      return;
-    }
-    case "done":
-      await emit({
-        type: "finish",
-        finishReason: event.reason,
-        totalUsage: event.message?.usage
-          ? {
-              promptTokens: event.message.usage.input,
-              completionTokens: event.message.usage.output,
-              totalTokens: event.message.usage.totalTokens,
-            }
-          : undefined,
-      });
-      return;
-    case "error":
-      await emit({
-        type: "error",
-        error: event.error?.errorMessage ?? event.error ?? "PI stream error",
-      });
-      return;
-    default:
-      if (!includeUnknown) return;
-      await emit({
-        type: "unknown",
-        sdkType: String(event?.type ?? "unknown"),
-        raw: event,
-      });
-      return;
+  for (const part of mapPiEventToRawParts(event, provider, includeUnknown)) {
+    await emit(part);
   }
 }
 
-async function executeToolCall(
+export async function executeToolCall(
   toolCall: PiToolCallLike,
   params: RuntimeRunTurnParams,
   emitPart: (part: unknown) => Promise<void>
@@ -570,17 +582,36 @@ async function executeToolCall(
   }
 }
 
+type PiRuntimeOverrides = {
+  piStreamImpl?: typeof piStream;
+};
+
 export const __internal = {
-  parseTelemetrySettings,
-  resolvePiModel,
+  asFiniteNumber,
+  asNonEmptyString,
+  asRecord,
+  buildStepState,
   redactTelemetrySecrets,
   splitStepOverrides,
   emitPiEventAsRawPart,
   extractToolExecutionErrorMessage,
   executeToolCall,
+  isAbortLikeError,
+  markModelCallSpanError,
+  markModelCallSpanSuccess,
+  messagesAfterLastAssistant,
+  matchingProviderState,
+  buildInitialStepMessages,
+  nextProviderState,
+  parseTelemetrySettings,
+  resolvePiModel,
+  startModelCallSpan,
+  toolMapToPiTools,
+  toPiJsonSchema,
 } as const;
 
-export function createPiRuntime(): LlmRuntime {
+export function createPiRuntime(overrides: PiRuntimeOverrides = {}): LlmRuntime {
+  const piStreamImpl = overrides.piStreamImpl ?? piStream;
   return {
     name: "pi",
     runTurn: async (params: RuntimeRunTurnParams): Promise<RuntimeRunTurnResult> => {
@@ -639,7 +670,7 @@ export function createPiRuntime(): LlmRuntime {
           );
           let assistantRecord: Record<string, unknown> = {};
           try {
-            const stream = piStream(
+            const stream = piStreamImpl(
               resolved.model as any,
               {
                 systemPrompt: params.system,
@@ -699,9 +730,10 @@ export function createPiRuntime(): LlmRuntime {
             }
             const toolResult = await executeToolCall(toolCall, params, emitPart);
             turnMessages.push(toolResult);
+            const responseToolMessages = piTurnMessagesToModelMessages([toolResult as any]);
             stepMessages = [
               ...stepMessages,
-              ...piTurnMessagesToModelMessages([toolResult as any]),
+              ...responseToolMessages,
             ];
           }
         }

@@ -8,6 +8,7 @@ import {
   authorizeProviderAuth,
   callbackProviderAuth,
   listProviderAuthMethods,
+  logoutProviderAuth,
   resolveProviderAuthMethod,
   setProviderApiKey,
 } from "../../src/providers/authRegistry";
@@ -31,7 +32,7 @@ describe("providers/authRegistry", () => {
     if (!result.ok) return;
     expect(result.challenge.method).toBe("auto");
     expect(result.challenge.url).toBeUndefined();
-    expect(result.challenge.instructions).toContain("PI-native sign-in URL automatically");
+    expect(result.challenge.instructions).toContain("Cowork's Codex sign-in URL automatically");
   });
 
   test("authorizeProviderAuth fails for api key method", () => {
@@ -128,5 +129,23 @@ describe("providers/authRegistry", () => {
     expect(result.ok).toBe(true);
     expect(connect).toHaveBeenCalledTimes(1);
     expect(connect.mock.calls[0]?.[0]?.code).toBe("auth-code-123");
+  });
+
+  test("logoutProviderAuth calls disconnect handler", async () => {
+    const disconnect = mock(async (opts: any) => ({
+      ok: true as const,
+      provider: opts.provider,
+      storageFile: "/tmp/connections.json",
+      message: "Codex OAuth credentials cleared.",
+    }));
+
+    const result = await logoutProviderAuth({
+      provider: "codex-cli",
+      disconnect,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(disconnect.mock.calls[0]?.[0]?.provider).toBe("codex-cli");
   });
 });

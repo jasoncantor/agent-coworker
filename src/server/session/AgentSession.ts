@@ -42,6 +42,7 @@ import type {
   SessionBackupFactory,
   SessionContext,
   SessionDependencies,
+  SessionInfoState,
   SessionRuntimeState,
 } from "./SessionContext";
 import type { SessionConfigPatch } from "../protocol";
@@ -50,9 +51,27 @@ import { SessionRuntimeSupport } from "./SessionRuntimeSupport";
 import { SessionSnapshotBuilder } from "./SessionSnapshotBuilder";
 import { SkillManager } from "./SkillManager";
 import { TurnExecutionManager } from "./TurnExecutionManager";
+import type { SubagentAgentType } from "../../shared/persistentSubagents";
 
 function makeId(): string {
   return crypto.randomUUID();
+}
+
+function contentText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((part) => {
+      if (typeof part === "string") return part.trim();
+      if (!part || typeof part !== "object") return "";
+      const record = part as Record<string, unknown>;
+      if (typeof record.text === "string" && record.text.trim()) return record.text.trim();
+      if (typeof record.inputText === "string" && record.inputText.trim()) return record.inputText.trim();
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
 }
 
 const MAX_DISCONNECTED_REPLAY_EVENTS = 256;
@@ -60,6 +79,7 @@ const DISCONNECTED_REPLAY_EVENT_TYPES = new Set<ServerEvent["type"]>([
   "user_message",
   "session_busy",
   "model_stream_chunk",
+  "model_stream_raw",
   "assistant_message",
   "reasoning",
   "log",
@@ -108,6 +128,7 @@ export class AgentSession {
   constructor(opts: {
     config: AgentConfig;
     system: string;
+    sessionInfoPatch?: Partial<SessionInfoState>;
     discoveredSkills?: Array<{ name: string; description: string }>;
     yolo?: boolean;
     emit: (evt: ServerEvent) => void;
@@ -123,6 +144,12 @@ export class AgentSession {
     generateSessionTitleImpl?: typeof generateSessionTitle;
     sessionDb?: SessionDb | null;
     writePersistedSessionSnapshotImpl?: typeof writePersistedSessionSnapshot;
+    createSubagentSessionImpl?: SessionDependencies["createSubagentSessionImpl"];
+    listSubagentSessionsImpl?: SessionDependencies["listSubagentSessionsImpl"];
+    sendSubagentInputImpl?: SessionDependencies["sendSubagentInputImpl"];
+    waitForSubagentImpl?: SessionDependencies["waitForSubagentImpl"];
+    closeSubagentImpl?: SessionDependencies["closeSubagentImpl"];
+    deleteSessionImpl?: SessionDependencies["deleteSessionImpl"];
     hydratedState?: HydratedSessionState;
     skipInitialPersist?: boolean;
   }) {
@@ -137,6 +164,7 @@ export class AgentSession {
       yolo: opts.yolo === true,
       messages: [],
       allMessages: [...(hydrated?.messages ?? [])],
+      providerState: hydrated?.providerState ?? null,
       running: false,
       connecting: false,
       abortController: null,
@@ -152,6 +180,9 @@ export class AgentSession {
         updatedAt: now,
         provider: opts.config.provider,
         model: opts.config.model,
+        sessionKind: opts.sessionInfoPatch?.sessionKind ?? "root",
+        ...(opts.sessionInfoPatch?.parentSessionId ? { parentSessionId: opts.sessionInfoPatch.parentSessionId } : {}),
+        ...(opts.sessionInfoPatch?.agentType ? { agentType: opts.sessionInfoPatch.agentType } : {}),
       },
       persistenceStatus: hydrated?.status ?? "active",
       hasGeneratedTitle: hydrated?.hasGeneratedTitle ?? false,
@@ -184,6 +215,12 @@ export class AgentSession {
       generateSessionTitleImpl: opts.generateSessionTitleImpl ?? generateSessionTitle,
       sessionDb: opts.sessionDb ?? null,
       writePersistedSessionSnapshotImpl: opts.writePersistedSessionSnapshotImpl ?? writePersistedSessionSnapshot,
+      createSubagentSessionImpl: opts.createSubagentSessionImpl,
+      listSubagentSessionsImpl: opts.listSubagentSessionsImpl,
+      sendSubagentInputImpl: opts.sendSubagentInputImpl,
+      waitForSubagentImpl: opts.waitForSubagentImpl,
+      closeSubagentImpl: opts.closeSubagentImpl,
+      deleteSessionImpl: opts.deleteSessionImpl,
     };
 
     if (hydrated?.harnessContext) {
@@ -292,6 +329,9 @@ export class AgentSession {
       emitTelemetry: (name, status, attributes, durationMs) => this.emitTelemetry(name, status, attributes, durationMs),
       formatError: (err) => this.formatErrorMessage(err),
       log: (line) => this.log(line),
+      clearProviderState: () => {
+        this.state.providerState = null;
+      },
       persistModelSelection: this.deps.persistModelSelectionImpl,
       updateSessionInfo: (patch) => this.metadataManager.updateSessionInfo(patch),
       queuePersistSessionSnapshot: (reason) => this.queuePersistSessionSnapshot(reason),
@@ -334,6 +374,12 @@ export class AgentSession {
     generateSessionTitleImpl?: typeof generateSessionTitle;
     sessionDb?: SessionDb | null;
     writePersistedSessionSnapshotImpl?: typeof writePersistedSessionSnapshot;
+    createSubagentSessionImpl?: SessionDependencies["createSubagentSessionImpl"];
+    listSubagentSessionsImpl?: SessionDependencies["listSubagentSessionsImpl"];
+    sendSubagentInputImpl?: SessionDependencies["sendSubagentInputImpl"];
+    waitForSubagentImpl?: SessionDependencies["waitForSubagentImpl"];
+    closeSubagentImpl?: SessionDependencies["closeSubagentImpl"];
+    deleteSessionImpl?: SessionDependencies["deleteSessionImpl"];
   }): AgentSession {
     const { persisted } = opts;
     const config: AgentConfig = {
@@ -354,6 +400,9 @@ export class AgentSession {
       updatedAt: persisted.updatedAt,
       provider: persisted.provider,
       model: persisted.model,
+      sessionKind: persisted.sessionKind,
+      ...(persisted.parentSessionId ? { parentSessionId: persisted.parentSessionId } : {}),
+      ...(persisted.agentType ? { agentType: persisted.agentType } : {}),
     };
 
     return new AgentSession({
@@ -374,12 +423,19 @@ export class AgentSession {
       generateSessionTitleImpl: opts.generateSessionTitleImpl,
       sessionDb: opts.sessionDb,
       writePersistedSessionSnapshotImpl: opts.writePersistedSessionSnapshotImpl,
+      createSubagentSessionImpl: opts.createSubagentSessionImpl,
+      listSubagentSessionsImpl: opts.listSubagentSessionsImpl,
+      sendSubagentInputImpl: opts.sendSubagentInputImpl,
+      waitForSubagentImpl: opts.waitForSubagentImpl,
+      closeSubagentImpl: opts.closeSubagentImpl,
+      deleteSessionImpl: opts.deleteSessionImpl,
       hydratedState: {
         sessionId: persisted.sessionId,
         sessionInfo,
-        status: "active",
+        status: persisted.status,
         hasGeneratedTitle: persisted.titleSource !== "default" || persisted.messageCount > 0,
         messages: persisted.messages,
+        providerState: persisted.providerState,
         todos: persisted.todos,
         harnessContext: persisted.harnessContext,
       },
@@ -397,6 +453,26 @@ export class AgentSession {
 
   get messageCount(): number {
     return this.state.allMessages.length;
+  }
+
+  get currentTurnOutcome(): "completed" | "cancelled" | "error" {
+    return this.state.currentTurnOutcome;
+  }
+
+  get persistenceStatus() {
+    return this.state.persistenceStatus;
+  }
+
+  get sessionKind() {
+    return this.state.sessionInfo.sessionKind ?? "root";
+  }
+
+  get parentSessionId() {
+    return this.state.sessionInfo.parentSessionId ?? null;
+  }
+
+  get agentType() {
+    return this.state.sessionInfo.agentType ?? null;
   }
 
   get hasPendingAsk(): boolean {
@@ -425,6 +501,20 @@ export class AgentSession {
 
   getSessionInfoEvent() {
     return this.metadataManager.getSessionInfoEvent();
+  }
+
+  isSubagentOf(parentSessionId: string): boolean {
+    return this.sessionKind === "subagent" && this.parentSessionId === parentSessionId;
+  }
+
+  getLatestAssistantText(): string | undefined {
+    for (let i = this.state.allMessages.length - 1; i >= 0; i -= 1) {
+      const message = this.state.allMessages[i];
+      if (!message || message.role !== "assistant") continue;
+      const text = contentText(message.content);
+      if (text) return text;
+    }
+    return undefined;
   }
 
   getObservabilityStatusEvent() {
@@ -543,6 +633,10 @@ export class AgentSession {
     await this.providerAuthManager.authorizeProviderAuth(providerRaw, methodIdRaw);
   }
 
+  async logoutProviderAuth(providerRaw: AgentConfig["provider"]) {
+    await this.providerAuthManager.logoutProviderAuth(providerRaw);
+  }
+
   async callbackProviderAuth(providerRaw: AgentConfig["provider"], methodIdRaw: string, codeRaw?: string) {
     await this.providerAuthManager.callbackProviderAuth(providerRaw, methodIdRaw, codeRaw);
   }
@@ -573,6 +667,12 @@ export class AgentSession {
     await this.persistenceManager.waitForIdle();
   }
 
+  reopenForHistory() {
+    if (this.state.persistenceStatus === "active") return;
+    this.state.persistenceStatus = "active";
+    this.queuePersistSessionSnapshot("session.reopened");
+  }
+
   dispose(reason: string) {
     this.state.abortController?.abort();
     this.interactionManager.rejectAllPending(`Session disposed (${reason})`);
@@ -590,6 +690,14 @@ export class AgentSession {
 
   async listSessions() {
     await this.adminManager.listSessions();
+  }
+
+  async listSubagentSessions() {
+    await this.adminManager.listSubagentSessions();
+  }
+
+  async createSubagentSession(agentType: SubagentAgentType, task: string) {
+    await this.adminManager.createSubagentSession(agentType, task);
   }
 
   async deleteSession(targetSessionId: string) {

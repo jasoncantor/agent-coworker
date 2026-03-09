@@ -41,6 +41,28 @@ globalSettings.AI_SDK_LOG_WARNINGS = false;
 const UI_PROVIDER_NAMES = PROVIDER_NAMES;
 const NOT_CONNECTED_MSG = "unable to send (not connected)";
 
+function formatDurationSeconds(totalSeconds: unknown): string {
+  if (typeof totalSeconds !== "number" || !Number.isFinite(totalSeconds) || totalSeconds < 0) return "unknown";
+  if (totalSeconds < 60) return `${Math.round(totalSeconds)}s`;
+  if (totalSeconds < 3600) return `${Math.round(totalSeconds / 60)}m`;
+  if (totalSeconds < 86400) return `${Math.round(totalSeconds / 3600)}h`;
+  return `${Math.round(totalSeconds / 86400)}d`;
+}
+
+function summarizeRateLimitWindow(window: any): string | null {
+  if (!window || typeof window !== "object") return null;
+  const left =
+    typeof window.usedPercent === "number" && Number.isFinite(window.usedPercent)
+      ? `${Math.max(0, Math.min(100, 100 - window.usedPercent))}% left`
+      : null;
+  const reset =
+    typeof window.resetAfterSeconds === "number" && Number.isFinite(window.resetAfterSeconds)
+      ? `resets in ${formatDurationSeconds(window.resetAfterSeconds)}`
+      : null;
+  if (!left && !reset) return null;
+  return [left, reset].filter(Boolean).join(", ");
+}
+
 export async function resolveAndValidateDir(dirArg: string): Promise<string> {
   const resolved = path.resolve(dirArg);
   let st: { isDirectory: () => boolean } | null = null;
@@ -181,6 +203,16 @@ export async function runCliRepl(
         const verified = status.verified ? "verified" : "unverified";
         const account = status.account?.email ? ` (${status.account.email})` : "";
         console.log(`  - ${service}: ${status.mode}, ${auth}, ${verified}${account}`);
+        if (status.usage?.planType) {
+          console.log(`    plan: ${status.usage.planType}`);
+        }
+        if (Array.isArray(status.usage?.rateLimits)) {
+          for (const entry of status.usage.rateLimits.slice(0, 3)) {
+            const name = entry.limitName ?? entry.limitId ?? "limit";
+            const summary = summarizeRateLimitWindow(entry.primaryWindow);
+            if (summary) console.log(`    ${name}: ${summary}`);
+          }
+        }
       }
       const methods = normalizeProviderAuthMethods(providerAuthMethods[service]);
       console.log(`    methods: ${methods.map((method) => method.id).join(", ")}`);

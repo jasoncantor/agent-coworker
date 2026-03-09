@@ -14,7 +14,7 @@ import {
 
 function makeSnapshot(sessionId: string): PersistedSessionSnapshot {
   return {
-    version: 1,
+    version: 3,
     sessionId,
     createdAt: "2026-02-19T00:00:00.000Z",
     updatedAt: "2026-02-19T00:00:01.000Z",
@@ -24,6 +24,9 @@ function makeSnapshot(sessionId: string): PersistedSessionSnapshot {
       titleModel: "gpt-5-mini",
       provider: "openai",
       model: "gpt-5.2",
+      sessionKind: "root",
+      parentSessionId: null,
+      agentType: null,
     },
     config: {
       provider: "openai",
@@ -39,6 +42,12 @@ function makeSnapshot(sessionId: string): PersistedSessionSnapshot {
         { role: "user", content: "hello" },
         { role: "assistant", content: "world" },
       ] as any,
+      providerState: {
+        provider: "openai",
+        model: "gpt-5.2",
+        responseId: "resp_123",
+        updatedAt: "2026-02-19T00:00:01.000Z",
+      },
       todos: [{ content: "Do thing", status: "pending", activeForm: "Doing thing" }],
       harnessContext: {
         runId: "run-1",
@@ -87,7 +96,7 @@ describe("sessionStore", () => {
   test("parsePersistedSessionSnapshot rejects invalid shape", () => {
     expect(() =>
       parsePersistedSessionSnapshot({
-        version: 1,
+        version: 2,
         sessionId: "sess-1",
         createdAt: "2026-02-19T00:00:00.000Z",
         updatedAt: "2026-02-19T00:00:01.000Z",
@@ -96,12 +105,76 @@ describe("sessionStore", () => {
     ).toThrow("Invalid persisted session snapshot");
   });
 
+  test("parsePersistedSessionSnapshot keeps v1 read compatibility", () => {
+    const parsed = parsePersistedSessionSnapshot({
+      version: 1,
+      sessionId: "legacy-v1",
+      createdAt: "2026-02-19T00:00:00.000Z",
+      updatedAt: "2026-02-19T00:00:01.000Z",
+      session: {
+        title: "Legacy",
+        titleSource: "default",
+        titleModel: null,
+        provider: "openai",
+        model: "gpt-5.2",
+      },
+      config: {
+        provider: "openai",
+        model: "gpt-5.2",
+        enableMcp: false,
+        workingDirectory: "/tmp/legacy",
+      },
+      context: {
+        system: "legacy",
+        messages: [{ role: "user", content: "hello" }],
+        todos: [],
+        harnessContext: null,
+      },
+    });
+
+    expect(parsed.version).toBe(1);
+    expect(parsed.context).not.toHaveProperty("providerState");
+  });
+
+  test("listPersistedSessionSnapshots excludes subagent snapshots from top-level lists", async () => {
+    const sessionsDir = await fs.mkdtemp(path.join(os.tmpdir(), "session-store-subagents-"));
+    await writePersistedSessionSnapshot({
+      paths: { sessionsDir },
+      snapshot: makeSnapshot("root-session"),
+    });
+    await writePersistedSessionSnapshot({
+      paths: { sessionsDir },
+      snapshot: {
+        ...makeSnapshot("child-session"),
+        session: {
+          ...makeSnapshot("child-session").session,
+          sessionKind: "subagent",
+          parentSessionId: "root-session",
+          agentType: "general",
+        },
+      },
+    });
+
+    const summaries = await listPersistedSessionSnapshots({ sessionsDir });
+
+    expect(summaries.map((summary) => summary.sessionId)).toEqual(["root-session"]);
+  });
+
   test("listPersistedSessionSnapshots skips malformed files", async () => {
     const sessionsDir = await fs.mkdtemp(path.join(os.tmpdir(), "session-store-list-test-"));
     const snapshotA = makeSnapshot("sess-a");
     const snapshotB = {
       ...makeSnapshot("sess-b"),
       updatedAt: "2026-02-19T00:00:02.000Z",
+    };
+    const subagentSnapshot = {
+      ...makeSnapshot("sess-child"),
+      session: {
+        ...makeSnapshot("sess-child").session,
+        sessionKind: "subagent" as const,
+        parentSessionId: "sess-a",
+        agentType: "general" as const,
+      },
     };
 
     await writePersistedSessionSnapshot({
@@ -112,9 +185,13 @@ describe("sessionStore", () => {
       paths: { sessionsDir },
       snapshot: snapshotB,
     });
+    await writePersistedSessionSnapshot({
+      paths: { sessionsDir },
+      snapshot: subagentSnapshot,
+    });
 
     await fs.writeFile(path.join(sessionsDir, "broken.json"), "{ invalid", "utf-8");
-    await fs.writeFile(path.join(sessionsDir, "invalid-shape.json"), JSON.stringify({ version: 1 }), "utf-8");
+    await fs.writeFile(path.join(sessionsDir, "invalid-shape.json"), JSON.stringify({ version: 2 }), "utf-8");
 
     const summaries = await listPersistedSessionSnapshots({ sessionsDir });
 

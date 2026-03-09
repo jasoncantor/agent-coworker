@@ -26,6 +26,9 @@ describe("sessionDb", () => {
         sessionId: "s-1",
         eventType: "session.created",
         snapshot: {
+          sessionKind: "root",
+          parentSessionId: null,
+          agentType: null,
           title: "Session One",
           titleSource: "default",
           titleModel: null,
@@ -40,6 +43,12 @@ describe("sessionDb", () => {
           hasPendingApproval: false,
           systemPrompt: "system",
           messages: [{ role: "user", content: "hello" }],
+          providerState: {
+            provider: "openai",
+            model: "gpt-5.2",
+            responseId: "resp_123",
+            updatedAt: now,
+          },
           todos: [],
           harnessContext: null,
         },
@@ -57,9 +66,83 @@ describe("sessionDb", () => {
       const persisted = db.getSessionRecord("s-1");
       expect(persisted?.sessionId).toBe("s-1");
       expect(persisted?.lastEventSeq).toBe(1);
+      expect(persisted?.providerState).toEqual({
+        provider: "openai",
+        model: "gpt-5.2",
+        responseId: "resp_123",
+        updatedAt: now,
+      });
 
       db.deleteSession("s-1");
       expect(db.getSessionRecord("s-1")).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+
+  test("persists raw model stream chunks alongside session state", async () => {
+    const paths = await makeTmpCoworkHome();
+    const db = await SessionDb.create({ paths });
+    try {
+      const now = new Date().toISOString();
+      db.persistSessionMutation({
+        sessionId: "s-raw",
+        eventType: "session.created",
+        snapshot: {
+          sessionKind: "root",
+          parentSessionId: null,
+          agentType: null,
+          title: "Raw Session",
+          titleSource: "default",
+          titleModel: null,
+          provider: "openai",
+          model: "gpt-5.2",
+          workingDirectory: "/tmp/project",
+          enableMcp: true,
+          createdAt: now,
+          updatedAt: now,
+          status: "active",
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello" }],
+          providerState: null,
+          todos: [],
+          harnessContext: null,
+        },
+      });
+
+      db.persistModelStreamChunk({
+        sessionId: "s-raw",
+        turnId: "turn-1",
+        chunkIndex: 0,
+        ts: now,
+        provider: "openai",
+        model: "gpt-5.2",
+        rawFormat: "openai-responses-v1",
+        normalizerVersion: 1,
+        rawEvent: {
+          type: "response.output_item.added",
+          item: { type: "reasoning", id: "rs_1" },
+        },
+      });
+
+      expect(db.listModelStreamChunks("s-raw")).toEqual([
+        {
+          sessionId: "s-raw",
+          turnId: "turn-1",
+          chunkIndex: 0,
+          ts: now,
+          provider: "openai",
+          model: "gpt-5.2",
+          rawFormat: "openai-responses-v1",
+          normalizerVersion: 1,
+          rawEvent: {
+            type: "response.output_item.added",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      ]);
     } finally {
       db.close();
     }
@@ -109,6 +192,84 @@ describe("sessionDb", () => {
       const persisted = db.getSessionRecord("legacy-1");
       expect(persisted?.title).toBe("Legacy Session");
       expect(persisted?.messages).toHaveLength(1);
+      expect(persisted?.providerState).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+
+  test("lists subagent sessions separately and cascades deletion from the parent", async () => {
+    const paths = await makeTmpCoworkHome();
+    const db = await SessionDb.create({ paths });
+    try {
+      const now = new Date().toISOString();
+      db.persistSessionMutation({
+        sessionId: "root-1",
+        eventType: "session.created",
+        snapshot: {
+          sessionKind: "root",
+          parentSessionId: null,
+          agentType: null,
+          title: "Root Session",
+          titleSource: "default",
+          titleModel: null,
+          provider: "openai",
+          model: "gpt-5.2",
+          workingDirectory: "/tmp/project",
+          enableMcp: false,
+          createdAt: now,
+          updatedAt: now,
+          status: "active",
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+          systemPrompt: "root-system",
+          messages: [{ role: "user", content: "root hello" }],
+          providerState: null,
+          todos: [],
+          harnessContext: null,
+        },
+      });
+      db.persistSessionMutation({
+        sessionId: "child-1",
+        eventType: "session.created",
+        snapshot: {
+          sessionKind: "subagent",
+          parentSessionId: "root-1",
+          agentType: "general",
+          title: "Child Session",
+          titleSource: "default",
+          titleModel: null,
+          provider: "openai",
+          model: "gpt-5.2-mini",
+          workingDirectory: "/tmp/project",
+          enableMcp: false,
+          createdAt: now,
+          updatedAt: now,
+          status: "active",
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+          systemPrompt: "child-system",
+          messages: [{ role: "assistant", content: "child hello" }],
+          providerState: null,
+          todos: [],
+          harnessContext: null,
+        },
+      });
+
+      expect(db.listSessions().map((session) => session.sessionId)).toEqual(["root-1"]);
+      const subagents = db.listSubagentSessions("root-1");
+      expect(subagents).toHaveLength(1);
+      expect(subagents[0]).toMatchObject({
+        sessionId: "child-1",
+        parentSessionId: "root-1",
+        agentType: "general",
+        status: "active",
+      });
+
+      db.deleteSession("root-1");
+      expect(db.getSessionRecord("root-1")).toBeNull();
+      expect(db.getSessionRecord("child-1")).toBeNull();
+      expect(db.listSubagentSessions("root-1")).toEqual([]);
     } finally {
       db.close();
     }
@@ -227,6 +388,9 @@ describe("sessionDb", () => {
         sessionId: "s-bad-messages",
         eventType: "session.created",
         snapshot: {
+          sessionKind: "root",
+          parentSessionId: null,
+          agentType: null,
           title: "Session with bad messages",
           titleSource: "default",
           titleModel: null,
@@ -241,6 +405,7 @@ describe("sessionDb", () => {
           hasPendingApproval: false,
           systemPrompt: "system",
           messages: [{ role: "user", content: "hello" }],
+          providerState: null,
           todos: [],
           harnessContext: null,
         },

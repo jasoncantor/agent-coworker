@@ -17,7 +17,7 @@ export class SessionSnapshotBuilder {
 
   buildPersistedSnapshotAt(updatedAt: string): PersistedSessionSnapshot {
     return {
-      version: 1,
+      version: 3,
       sessionId: this.opts.sessionId,
       createdAt: this.opts.state.sessionInfo.createdAt,
       updatedAt,
@@ -27,6 +27,9 @@ export class SessionSnapshotBuilder {
         titleModel: this.opts.state.sessionInfo.titleModel,
         provider: this.opts.state.sessionInfo.provider,
         model: this.opts.state.sessionInfo.model,
+        sessionKind: this.opts.state.sessionInfo.sessionKind ?? "root",
+        parentSessionId: this.opts.state.sessionInfo.parentSessionId ?? null,
+        agentType: this.opts.state.sessionInfo.agentType ?? null,
       },
       config: {
         provider: this.opts.state.config.provider,
@@ -39,6 +42,7 @@ export class SessionSnapshotBuilder {
       context: {
         system: this.opts.state.system,
         messages: this.opts.state.allMessages,
+        providerState: this.opts.state.providerState,
         todos: this.opts.state.todos,
         harnessContext: this.opts.harnessContextStore.get(this.opts.sessionId),
       },
@@ -47,6 +51,9 @@ export class SessionSnapshotBuilder {
 
   buildCanonicalSnapshot(updatedAt: string): PersistedSessionMutation["snapshot"] {
     return {
+      sessionKind: this.opts.state.sessionInfo.sessionKind ?? "root",
+      parentSessionId: this.opts.state.sessionInfo.parentSessionId ?? null,
+      agentType: this.opts.state.sessionInfo.agentType ?? null,
       title: this.opts.state.sessionInfo.title,
       titleSource: this.opts.state.sessionInfo.titleSource,
       titleModel: this.opts.state.sessionInfo.titleModel,
@@ -63,6 +70,7 @@ export class SessionSnapshotBuilder {
       hasPendingApproval: this.opts.hasPendingApproval(),
       systemPrompt: this.opts.state.system,
       messages: this.opts.state.allMessages,
+      providerState: this.opts.state.providerState,
       todos: this.opts.state.todos,
       harnessContext: this.opts.harnessContextStore.get(this.opts.sessionId),
     };

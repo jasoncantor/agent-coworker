@@ -190,6 +190,73 @@ function sendAndWaitForEvent(
   });
 }
 
+function createPersistentSubagent(
+  url: string,
+  task = "subagent task",
+  agentType: "general" | "research" | "explore" = "general",
+  timeoutMs = 5000,
+): Promise<{ parentSessionId: string; subagent: any }> {
+  return new Promise((resolve, reject) => {
+    let parentSessionId = "";
+    const ws = new WebSocket(url);
+    const timer = setTimeout(() => {
+      ws.close();
+      reject(new Error("Timed out waiting for subagent_created"));
+    }, timeoutMs);
+
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(typeof e.data === "string" ? e.data : "");
+      if (!parentSessionId && msg.type === "server_hello") {
+        parentSessionId = msg.sessionId;
+        ws.send(JSON.stringify({ type: "subagent_create", sessionId: parentSessionId, agentType, task }));
+        return;
+      }
+
+      if (msg.type !== "subagent_created" || msg.sessionId !== parentSessionId) return;
+      clearTimeout(timer);
+      ws.close();
+      resolve({ parentSessionId, subagent: msg.subagent });
+    };
+
+    ws.onerror = (e) => {
+      clearTimeout(timer);
+      ws.close();
+      reject(new Error(`WebSocket error: ${e}`));
+    };
+  });
+}
+
+function collectSessionEventsUntil(
+  url: string,
+  resumeSessionId: string,
+  match: (message: any) => boolean,
+  timeoutMs = 5000,
+): Promise<any[]> {
+  return new Promise((resolve, reject) => {
+    const seen: any[] = [];
+    const ws = new WebSocket(`${url}?resumeSessionId=${resumeSessionId}`);
+    const timer = setTimeout(() => {
+      ws.close();
+      reject(new Error("Timed out waiting for matching session event"));
+    }, timeoutMs);
+
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(typeof e.data === "string" ? e.data : "");
+      seen.push(msg);
+      if (!match(msg)) return;
+      clearTimeout(timer);
+      ws.close();
+      resolve(seen);
+    };
+
+    ws.onerror = (e) => {
+      clearTimeout(timer);
+      ws.close();
+      reject(new Error(`WebSocket error: ${e}`));
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -748,6 +815,213 @@ describe("WebSocket Lifecycle", () => {
       expect(resumed[0]?.sessionId).toBe(originalSessionId);
       expect(resumed[0]?.isResume).toBe(true);
       expect(resumed[0]?.resumedFromStorage).toBe(true);
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("subagent_create creates a durable child session with resumable replay and child metadata", async () => {
+    const tmpDir = await makeTmpProject();
+    const runTurnImpl = async (params: any) => {
+      await params.onModelStreamPart?.({ type: "start" });
+      await params.onModelStreamPart?.({ type: "text-delta", id: "txt_child", text: "subagent stream" });
+      await params.onModelStreamPart?.({ type: "finish", finishReason: "stop" });
+      return {
+        text: "subagent finished",
+        responseMessages: [],
+      };
+    };
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: runTurnImpl as any,
+    }));
+
+    try {
+      const created = await createPersistentSubagent(url, "subagent task", "general");
+      const childId = created.subagent.sessionId as string;
+
+      const resumedEvents = await collectSessionEventsUntil(
+        url,
+        childId,
+        (msg) => msg.type === "assistant_message" && msg.text === "subagent finished",
+        5000,
+      );
+
+      const hello = resumedEvents.find((msg) => msg.type === "server_hello");
+      const info = resumedEvents.find((msg) => msg.type === "session_info");
+      expect(hello).toMatchObject({
+        sessionId: childId,
+        isResume: true,
+        sessionKind: "subagent",
+        parentSessionId: created.parentSessionId,
+        agentType: "general",
+      });
+      expect(info).toMatchObject({
+        sessionId: childId,
+        sessionKind: "subagent",
+        parentSessionId: created.parentSessionId,
+        agentType: "general",
+      });
+      expect(
+        resumedEvents.some(
+          (msg) =>
+            msg.type === "model_stream_chunk" &&
+            msg.partType === "text_delta" &&
+            typeof msg.part?.text === "string" &&
+            msg.part.text.includes("subagent stream"),
+        ),
+      ).toBe(true);
+      expect(resumedEvents.some((msg) => msg.type === "assistant_message" && msg.text === "subagent finished")).toBe(
+        true,
+      );
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("subagent_sessions_get lists child sessions and child sessions cannot call list_sessions", async () => {
+    const tmpDir = await makeTmpProject();
+    const runTurnImpl = async () => ({
+      text: "done",
+      responseMessages: [],
+    });
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: runTurnImpl as any,
+    }));
+
+    try {
+      const listing = await new Promise<any>((resolve, reject) => {
+        const ws = new WebSocket(url);
+        let rootId = "";
+        let createdChildId = "";
+        const timer = setTimeout(() => {
+          ws.close();
+          reject(new Error("Timed out waiting for subagent_sessions"));
+        }, 5000);
+
+        ws.onmessage = (e) => {
+          const msg = JSON.parse(typeof e.data === "string" ? e.data : "");
+          if (!rootId && msg.type === "server_hello") {
+            rootId = msg.sessionId;
+            ws.send(JSON.stringify({ type: "subagent_create", sessionId: rootId, agentType: "research", task: "research this" }));
+            return;
+          }
+          if (msg.type === "subagent_created") {
+            createdChildId = msg.subagent.sessionId;
+            ws.send(JSON.stringify({ type: "subagent_sessions_get", sessionId: rootId }));
+            return;
+          }
+          if (msg.type !== "subagent_sessions") return;
+          clearTimeout(timer);
+          ws.close();
+          resolve({ rootId, createdChildId, subagents: msg.subagents });
+        };
+
+        ws.onerror = (e) => {
+          clearTimeout(timer);
+          ws.close();
+          reject(new Error(`WebSocket error: ${e}`));
+        };
+      });
+
+      expect(listing.subagents).toHaveLength(1);
+      expect(listing.subagents[0]).toMatchObject({
+        sessionId: listing.createdChildId,
+        parentSessionId: listing.rootId,
+        agentType: "research",
+      });
+
+      const childError = await sendAndWaitForEvent(
+        `${url}?resumeSessionId=${listing.createdChildId}`,
+        (sessionId) => ({ type: "list_sessions", sessionId }),
+        (msg) => msg.type === "error",
+      );
+      expect(childError.code).toBe("validation_failed");
+      expect(childError.message).toContain("Only root sessions can list sessions");
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("research children use model while general children use subAgentModel", async () => {
+    const tmpDir = await makeTmpProject();
+    await fs.writeFile(
+      path.join(tmpDir, ".agent", "config.json"),
+      `${JSON.stringify({
+        provider: "google",
+        model: "model-main",
+        subAgentModel: "model-sub",
+      }, null, 2)}\n`,
+      "utf-8",
+    );
+    const runTurnImpl = async () => ({
+      text: "done",
+      responseMessages: [],
+    });
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: runTurnImpl as any,
+    }));
+
+    try {
+      const general = await createPersistentSubagent(url, "general task", "general");
+      const research = await createPersistentSubagent(url, "research task", "research");
+
+      expect(general.subagent.model).toBe("model-sub");
+      expect(research.subagent.model).toBe("model-main");
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("deleting a root session removes its persistent subagent resume target", async () => {
+    const tmpDir = await makeTmpProject();
+    const runTurnImpl = async () => ({
+      text: "done",
+      responseMessages: [],
+    });
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: runTurnImpl as any,
+    }));
+
+    try {
+      const created = await createPersistentSubagent(url, "child task", "general");
+
+      await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({ type: "delete_session", sessionId, targetSessionId: created.parentSessionId }),
+        (msg) => msg.type === "session_deleted" && msg.targetSessionId === created.parentSessionId,
+      );
+
+      const hello = (await collectMessages(`${url}?resumeSessionId=${created.subagent.sessionId}`, 1))[0];
+      expect(hello.type).toBe("server_hello");
+      expect(hello.sessionId).not.toBe(created.subagent.sessionId);
+      expect(hello.sessionKind).toBe("root");
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("child session model changes stay session-local and do not persist project defaults", async () => {
+    const tmpDir = await makeTmpProject();
+    const runTurnImpl = async () => ({
+      text: "done",
+      responseMessages: [],
+    });
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: runTurnImpl as any,
+    }));
+
+    try {
+      const created = await createPersistentSubagent(url, "child task", "general");
+      const childId = created.subagent.sessionId as string;
+
+      const update = await sendAndWaitForEvent(
+        `${url}?resumeSessionId=${childId}`,
+        (sessionId) => ({ type: "set_model", sessionId, model: "child-only-model" }),
+        (msg) => msg.type === "config_updated",
+      );
+      expect(update.config.model).toBe("child-only-model");
+
+      await expect(fs.readFile(path.join(tmpDir, ".agent", "config.json"), "utf-8")).rejects.toThrow();
     } finally {
       server.stop();
     }

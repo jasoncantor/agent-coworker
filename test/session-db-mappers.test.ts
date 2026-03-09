@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { mapPersistedSessionRecordRow, mapPersistedSessionSummaryRow } from "../src/server/sessionDb/mappers";
+import {
+  mapPersistedSessionRecordRow,
+  mapPersistedSessionSubagentSummaryRow,
+  mapPersistedSessionSummaryRow,
+} from "../src/server/sessionDb/mappers";
 
 describe("sessionDb mappers", () => {
   test("mapPersistedSessionSummaryRow parses valid rows", () => {
@@ -37,6 +41,9 @@ describe("sessionDb mappers", () => {
   test("mapPersistedSessionRecordRow parses strict row shape and JSON payloads", () => {
     const mapped = mapPersistedSessionRecordRow({
       session_id: "sess-2",
+      session_kind: "subagent",
+      parent_session_id: "sess-1",
+      agent_type: "general",
       title: "Session Title",
       provider: "openai",
       model: "gpt-5",
@@ -55,12 +62,16 @@ describe("sessionDb mappers", () => {
       title_source: "manual",
       title_model: "gpt-5",
       messages_json: "[{\"role\":\"user\",\"content\":\"hello\"}]",
+      provider_state_json: "{\"provider\":\"openai\",\"model\":\"gpt-5\",\"responseId\":\"resp_1\",\"updatedAt\":\"2026-02-19T00:00:01.000Z\"}",
       todos_json: "[]",
       harness_context_json: "{\"runId\":\"r-1\"}",
     });
 
     expect(mapped).toMatchObject({
       sessionId: "sess-2",
+      sessionKind: "subagent",
+      parentSessionId: "sess-1",
+      agentType: "general",
       title: "Session Title",
       provider: "openai",
       model: "gpt-5",
@@ -76,12 +87,45 @@ describe("sessionDb mappers", () => {
       status: "closed",
       titleSource: "manual",
       titleModel: "gpt-5",
+      providerState: {
+        provider: "openai",
+        model: "gpt-5",
+        responseId: "resp_1",
+        updatedAt: "2026-02-19T00:00:01.000Z",
+      },
       todos: [],
       harnessContext: { runId: "r-1" },
     });
     expect((mapped as any).messages).toEqual([{ role: "user", content: "hello" }]);
     expect(Number.isNaN(Date.parse(mapped.createdAt))).toBeFalse();
     expect(Number.isNaN(Date.parse(mapped.updatedAt))).toBeFalse();
+  });
+
+  test("mapPersistedSessionSubagentSummaryRow parses valid child-session rows", () => {
+    const mapped = mapPersistedSessionSubagentSummaryRow({
+      session_id: "child-1",
+      parent_session_id: "root-1",
+      agent_type: "research",
+      title: "Research Child",
+      provider: "openai",
+      model: "gpt-5.2",
+      created_at: "2026-02-19T00:00:00.000Z",
+      updated_at: "2026-02-19T00:00:01.000Z",
+      status: "closed",
+    });
+
+    expect(mapped).toEqual({
+      sessionId: "child-1",
+      parentSessionId: "root-1",
+      agentType: "research",
+      title: "Research Child",
+      provider: "openai",
+      model: "gpt-5.2",
+      createdAt: "2026-02-19T00:00:00.000Z",
+      updatedAt: "2026-02-19T00:00:01.000Z",
+      status: "closed",
+      busy: false,
+    });
   });
 
   test("mapPersistedSessionRecordRow throws when required fields are missing", () => {
@@ -98,6 +142,9 @@ describe("sessionDb mappers", () => {
     expect(() =>
       mapPersistedSessionRecordRow({
         session_id: "sess-2",
+        session_kind: "root",
+        parent_session_id: null,
+        agent_type: null,
         title: "Session Title",
         provider: "openai",
         model: "gpt-5",
@@ -116,6 +163,7 @@ describe("sessionDb mappers", () => {
         title_source: "manual",
         title_model: null,
         messages_json: "not-json",
+        provider_state_json: null,
         todos_json: "[]",
         harness_context_json: null,
       }),

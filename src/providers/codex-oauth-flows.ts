@@ -5,7 +5,13 @@ import { listenOnLocalhost, OAUTH_FAILURE_HTML, OAUTH_LOOPBACK_HOST, OAUTH_SUCCE
 import type { AiCoworkerPaths, ConnectService } from "../store/connections";
 import type { UrlOpener } from "../utils/browser";
 import { openExternalUrl } from "../utils/browser";
-import { CODEX_OAUTH_CLIENT_ID, CODEX_OAUTH_ISSUER, persistCodexAuthFromTokenResponse } from "./codex-auth";
+import {
+  CODEX_OAUTH_CLIENT_ID,
+  CODEX_OAUTH_ISSUER,
+  CODEX_OAUTH_ORIGINATOR,
+  CODEX_OAUTH_SCOPE,
+  persistCodexAuthFromTokenResponse,
+} from "./codex-auth";
 
 const finiteNumberFromUnknownSchema = z.preprocess((value) => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -54,21 +60,29 @@ function generateOauthState(): string {
   return toBase64Url(randomBytes(32));
 }
 
-function buildCodexAuthorizeUrl(redirectUri: string, challenge: string, state: string): string {
+export function buildCodexAuthorizeUrl(redirectUri: string, challenge: string, state: string): string {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: CODEX_OAUTH_CLIENT_ID,
     redirect_uri: redirectUri,
-    scope: "openid profile email offline_access",
+    scope: CODEX_OAUTH_SCOPE,
     code_challenge: challenge,
     code_challenge_method: "S256",
     id_token_add_organizations: "true",
     codex_cli_simplified_flow: "true",
     state,
-    originator: "agent-coworker",
+    originator: CODEX_OAUTH_ORIGINATOR,
   });
   return `${CODEX_OAUTH_ISSUER}/oauth/authorize?${params.toString()}`;
 }
+
+export type CodexBrowserOAuthPending = {
+  authUrl: string;
+  redirectUri: string;
+  codeVerifier: string;
+  waitForCode: Promise<string>;
+  close: () => void;
+};
 
 async function exchangeCodexAuthorizationCode(opts: {
   code: string;
@@ -100,23 +114,18 @@ async function exchangeCodexAuthorizationCode(opts: {
   return parsed.data;
 }
 
-export async function runCodexBrowserOAuth(opts: {
-  paths: AiCoworkerPaths;
-  fetchImpl: typeof fetch;
-  onLine?: (line: string) => void;
-  openUrl?: UrlOpener;
-}): Promise<string> {
+export async function prepareCodexBrowserOAuth(): Promise<CodexBrowserOAuthPending> {
   const codeVerifier = generatePkceVerifier();
   const codeChallenge = generatePkceChallenge(codeVerifier);
   const state = generateOauthState();
-  const opener = opts.openUrl ?? openExternalUrl;
 
   let resolveCode!: (code: string) => void;
   let rejectCode!: (error: Error) => void;
-  const codePromise = new Promise<string>((resolve, reject) => {
+  const waitForCode = new Promise<string>((resolve, reject) => {
     resolveCode = resolve;
     rejectCode = reject;
   });
+  void waitForCode.catch(() => undefined);
 
   let settled = false;
   const settle = (result: { code?: string; error?: Error }) => {
@@ -174,18 +183,41 @@ export async function runCodexBrowserOAuth(opts: {
   const redirectUri = `http://${OAUTH_LOOPBACK_HOST}:${listener.port}/auth/callback`;
   const authUrl = buildCodexAuthorizeUrl(redirectUri, codeChallenge, state);
 
-  opts.onLine?.("[auth] opening browser for Codex login");
-  const opened = await opener(authUrl);
-  if (!opened) {
-    opts.onLine?.(`[auth] open this URL to continue: ${authUrl}`);
-  }
+  return {
+    authUrl,
+    redirectUri,
+    codeVerifier,
+    waitForCode,
+    close: () => {
+      listener.close();
+    },
+  };
+}
 
+export async function completeCodexBrowserOAuth(opts: {
+  paths: AiCoworkerPaths;
+  pending: CodexBrowserOAuthPending;
+  fetchImpl: typeof fetch;
+  code?: string;
+  onLine?: (line: string) => void;
+  openUrl?: UrlOpener;
+}): Promise<string> {
+  const opener = opts.openUrl ?? openExternalUrl;
   try {
-    const code = await codePromise;
+    let code = opts.code?.trim() || "";
+    if (!code) {
+      opts.onLine?.("[auth] opening browser for Codex login");
+      const opened = await opener(opts.pending.authUrl);
+      if (!opened) {
+        opts.onLine?.(`[auth] open this URL to continue: ${opts.pending.authUrl}`);
+      }
+      code = await opts.pending.waitForCode;
+    }
+
     const tokens = await exchangeCodexAuthorizationCode({
       code,
-      redirectUri,
-      codeVerifier,
+      redirectUri: opts.pending.redirectUri,
+      codeVerifier: opts.pending.codeVerifier,
       fetchImpl: opts.fetchImpl,
     });
     const material = await persistCodexAuthFromTokenResponse(opts.paths, tokens, {
@@ -194,8 +226,24 @@ export async function runCodexBrowserOAuth(opts: {
     });
     return material.file;
   } finally {
-    listener.close();
+    opts.pending.close();
   }
+}
+
+export async function runCodexBrowserOAuth(opts: {
+  paths: AiCoworkerPaths;
+  fetchImpl: typeof fetch;
+  onLine?: (line: string) => void;
+  openUrl?: UrlOpener;
+}): Promise<string> {
+  const pending = await prepareCodexBrowserOAuth();
+  return await completeCodexBrowserOAuth({
+    paths: opts.paths,
+    pending,
+    fetchImpl: opts.fetchImpl,
+    onLine: opts.onLine,
+    openUrl: opts.openUrl,
+  });
 }
 
 export async function runCodexDeviceOAuth(opts: {

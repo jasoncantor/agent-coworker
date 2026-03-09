@@ -132,6 +132,7 @@ describe("workspace settings sync", () => {
     RUNTIME.pendingThreadMessages.clear();
     RUNTIME.pendingWorkspaceDefaultApplyThreadIds.clear();
     RUNTIME.workspaceStartPromises.clear();
+    RUNTIME.workspaceStartGenerations.clear();
     RUNTIME.modelStreamByThread.clear();
 
     useAppStore.setState({
@@ -210,6 +211,51 @@ describe("workspace settings sync", () => {
     const loaded = useAppStore.getState().workspaces[0];
     expect(loaded?.defaultModel).toBe("gpt-5.2");
     expect(loaded?.defaultSubAgentModel).toBe("gpt-5.2");
+  });
+
+  test("init hydrates persisted provider status snapshots before the first refresh completes", async () => {
+    mockedLoadedState = {
+      version: 2,
+      workspaces: [
+        {
+          id: "ws-load",
+          name: "Loaded",
+          path: "/tmp/workspace",
+          createdAt: "2026-02-19T00:00:00.000Z",
+          lastOpenedAt: "2026-02-19T00:00:00.000Z",
+          defaultProvider: "openai",
+          defaultModel: "gpt-5.2",
+          defaultEnableMcp: true,
+          yolo: false,
+        },
+      ],
+      threads: [],
+      developerMode: false,
+      showHiddenFiles: false,
+      providerState: {
+        statusByName: {
+          "codex-cli": {
+            provider: "codex-cli",
+            authorized: true,
+            verified: false,
+            mode: "oauth",
+            account: { email: "max@example.com" },
+            message: "Codex credentials present.",
+            checkedAt: "2026-02-19T00:00:00.000Z",
+          },
+        },
+        statusLastUpdatedAt: "2026-02-19T00:00:00.000Z",
+      },
+    };
+
+    await useAppStore.getState().init();
+
+    const state = useAppStore.getState();
+    expect(state.providerStatusByName["codex-cli"]?.authorized).toBe(true);
+    expect(state.providerStatusByName["codex-cli"]?.mode).toBe("oauth");
+    expect(state.providerStatusByName["codex-cli"]?.account?.email).toBe("max@example.com");
+    expect(state.providerStatusLastUpdatedAt).toBe("2026-02-19T00:00:00.000Z");
+    expect(state.providerConnected).toEqual(["codex-cli"]);
   });
 
   test("init reopens the latest workspace thread even when it was persisted disconnected", async () => {

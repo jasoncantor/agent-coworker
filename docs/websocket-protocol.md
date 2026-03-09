@@ -6,7 +6,7 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
 
 - URL: `ws://127.0.0.1:{port}/ws`
 - Session resume: `?resumeSessionId=<sessionId>`
-- Current protocol version: `7.2`
+- Current protocol version: `7.5`
 
 ## Table of Contents
 
@@ -26,27 +26,44 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
 - [Client -> Server Messages](#client---server-messages)
   - Handshake: [client_hello](#client_hello)
   - Conversation: [user_message](#user_message) | [ask_response](#ask_response) | [approval_response](#approval_response) | [cancel](#cancel) | [reset](#reset)
-  - Model & Provider: [set_model](#set_model) | [refresh_provider_status](#refresh_provider_status) | [provider_catalog_get](#provider_catalog_get) | [provider_auth_methods_get](#provider_auth_methods_get) | [provider_auth_authorize](#provider_auth_authorize) | [provider_auth_callback](#provider_auth_callback) | [provider_auth_set_api_key](#provider_auth_set_api_key)
+  - Model & Provider: [set_model](#set_model) | [refresh_provider_status](#refresh_provider_status) | [provider_catalog_get](#provider_catalog_get) | [provider_auth_methods_get](#provider_auth_methods_get) | [provider_auth_authorize](#provider_auth_authorize) | [provider_auth_logout](#provider_auth_logout) | [provider_auth_callback](#provider_auth_callback) | [provider_auth_set_api_key](#provider_auth_set_api_key)
   - Tools & Commands: [list_tools](#list_tools) | [list_commands](#list_commands) | [execute_command](#execute_command)
   - Skills: [list_skills](#list_skills) | [read_skill](#read_skill) | [disable_skill](#disable_skill) | [enable_skill](#enable_skill) | [delete_skill](#delete_skill)
   - MCP: [set_enable_mcp](#set_enable_mcp) | [mcp_servers_get](#mcp_servers_get) | [mcp_server_upsert](#mcp_server_upsert) | [mcp_server_delete](#mcp_server_delete) | [mcp_server_validate](#mcp_server_validate) | [mcp_server_auth_authorize](#mcp_server_auth_authorize) | [mcp_server_auth_callback](#mcp_server_auth_callback) | [mcp_server_auth_set_api_key](#mcp_server_auth_set_api_key) | [mcp_servers_migrate_legacy](#mcp_servers_migrate_legacy)
-  - Session Management: [session_close](#session_close) | [get_messages](#get_messages) | [set_session_title](#set_session_title) | [list_sessions](#list_sessions) | [delete_session](#delete_session) | [set_config](#set_config) | [upload_file](#upload_file)
+  - Session Management: [session_close](#session_close) | [get_messages](#get_messages) | [set_session_title](#set_session_title) | [list_sessions](#list_sessions) | [delete_session](#delete_session) | [subagent_create](#subagent_create) | [subagent_sessions_get](#subagent_sessions_get) | [set_config](#set_config) | [upload_file](#upload_file)
   - Backup: [session_backup_get](#session_backup_get) | [session_backup_checkpoint](#session_backup_checkpoint) | [session_backup_restore](#session_backup_restore) | [session_backup_delete_checkpoint](#session_backup_delete_checkpoint)
   - Harness: [harness_context_get](#harness_context_get) | [harness_context_set](#harness_context_set)
   - Keepalive: [ping](#ping)
 - [Server -> Client Events](#server---client-events)
   - Handshake & Lifecycle: [server_hello](#server_hello) | [session_settings](#session_settings) | [session_info](#session_info) | [session_busy](#session_busy) | [session_config](#session_config)
-  - Conversation: [user_message](#user_message-1) | [model_stream_chunk](#model_stream_chunk) | [assistant_message](#assistant_message) | [reasoning](#reasoning) | [log](#log) | [todos](#todos) | [reset_done](#reset_done)
+  - Conversation: [user_message](#user_message-1) | [model_stream_chunk](#model_stream_chunk) | [model_stream_raw](#model_stream_raw) | [assistant_message](#assistant_message) | [reasoning](#reasoning) | [log](#log) | [todos](#todos) | [reset_done](#reset_done)
   - Prompts: [ask](#ask) | [approval](#approval)
   - Provider: [provider_catalog](#provider_catalog) | [provider_auth_methods](#provider_auth_methods) | [provider_auth_challenge](#provider_auth_challenge) | [provider_auth_result](#provider_auth_result) | [provider_status](#provider_status) | [config_updated](#config_updated)
   - Tools & Skills: [tools](#tools) | [commands](#commands) | [skills_list](#skills_list) | [skill_content](#skill_content)
   - MCP: [mcp_servers](#mcp_servers) | [mcp_server_validation](#mcp_server_validation) | [mcp_server_auth_challenge](#mcp_server_auth_challenge) | [mcp_server_auth_result](#mcp_server_auth_result)
-  - Session Data: [messages](#messages) | [sessions](#sessions) | [session_deleted](#session_deleted) | [file_uploaded](#file_uploaded) | [turn_usage](#turn_usage)
+  - Session Data: [messages](#messages) | [sessions](#sessions) | [subagent_created](#subagent_created) | [subagent_sessions](#subagent_sessions) | [session_deleted](#session_deleted) | [file_uploaded](#file_uploaded) | [turn_usage](#turn_usage)
   - Backup & Observability: [session_backup_state](#session_backup_state) | [observability_status](#observability_status)
   - Harness: [harness_context](#harness_context)
   - Error & Keepalive: [error](#error) | [pong](#pong)
 
 ## Protocol v7 Notes
+
+Changes in `7.5`:
+
+- New server event: `model_stream_raw`.
+- `model_stream_chunk` now includes optional `normalizerVersion` metadata so clients can decide whether to trust persisted normalization or replay provider raw events.
+
+Changes in `7.4`:
+
+- New client message: `provider_auth_logout`.
+- Provider auth results may now report logout completions with `methodId: "logout"`.
+
+Changes in `7.3`:
+
+- New client messages: `subagent_create`, `subagent_sessions_get`.
+- New server events: `subagent_created`, `subagent_sessions`.
+- `server_hello` and `session_info` can now identify child sessions via `sessionKind`, `parentSessionId`, and `agentType`.
+- `list_sessions` remains root-only; persistent subagents are discovered separately.
 
 Changes in `7.2`:
 
@@ -111,6 +128,8 @@ When a WebSocket connection opens, the server sends these events in order:
 10. `session_backup_state` — backup/checkpoint state (async)
 
 If connecting with `?resumeSessionId=<id>`, the server resumes the existing session instead of creating a new one (warm in-memory attach or cold rehydrate from persisted storage). `session_close` disposes active runtime bindings but retains persisted history for later resume/view. On resume, `server_hello` includes additional fields (`isResume`, `busy`, `messageCount`, `hasPendingAsk`, `hasPendingApproval`) and may include `resumedFromStorage: true` for cold rehydrate.
+
+Child sessions created through `subagent_create` are normal persisted sessions. They can be resumed directly with `?resumeSessionId=<childSessionId>`, and the server identifies them with `sessionKind: "subagent"` plus `parentSessionId` and `agentType`.
 
 ## Validation Rules
 
@@ -210,7 +229,24 @@ Returned in `server_hello` and `config_updated`:
   "account": { "email": "user@example.com", "name": "User" },
   "message": "Connected",
   "checkedAt": "2026-02-19T18:00:00.000Z",
-  "savedApiKeyMasks": { "api_key": "sk-...xxxx" }
+  "savedApiKeyMasks": { "api_key": "sk-...xxxx" },
+  "usage": {
+    "planType": "pro",
+    "accountId": "acct-123",
+    "rateLimits": [
+      {
+        "limitId": "codex",
+        "allowed": true,
+        "limitReached": false,
+        "primaryWindow": {
+          "usedPercent": 4,
+          "windowSeconds": 18000,
+          "resetAfterSeconds": 13097,
+          "resetAt": "2026-03-08T03:01:24.000Z"
+        }
+      }
+    ]
+  }
 }
 ```
 
@@ -224,6 +260,7 @@ Returned in `server_hello` and `config_updated`:
 | `message` | `string` | Human-readable status message |
 | `checkedAt` | `string` | ISO 8601 timestamp of last check |
 | `savedApiKeyMasks` | `Record<string, string>?` | Optional masked key values keyed by method id. Never includes raw secrets |
+| `usage` | `{ planType?: string, accountId?: string, email?: string, rateLimits: ProviderRateLimitSnapshot[] }?` | Optional backend usage snapshot data, currently populated for Codex OAuth verification |
 
 ### TodoItem
 
@@ -455,7 +492,7 @@ Send a user prompt to the session.
 **Response:** Triggers a full turn lifecycle:
 1. `user_message` (echo)
 2. `session_busy` (`busy: true`)
-3. Zero or more: `model_stream_chunk`, `log`, `todos`, `ask`, `approval`
+3. Zero or more: `model_stream_raw`, `model_stream_chunk`, `log`, `todos`, `ask`, `approval`
 4. `reasoning` (if applicable)
 5. `assistant_message`
 6. `session_busy` (`busy: false`)
@@ -588,6 +625,24 @@ Start a provider auth challenge flow.
 
 **Response:** `provider_auth_challenge` on success, `error` on failure.
 **Error:** `busy` if a turn is running. `validation_failed` if provider or methodId is invalid/unknown.
+
+---
+
+### provider_auth_logout
+
+Clear the saved auth state for a provider.
+
+```json
+{ "type": "provider_auth_logout", "sessionId": "...", "provider": "codex-cli" }
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `"provider_auth_logout"` | Yes | — |
+| `sessionId` | `string` | Yes | Non-empty session ID |
+| `provider` | `ProviderName` | Yes | Must be a valid provider |
+
+**Response:** `provider_auth_result`, then `provider_status` and `provider_catalog` on success.
 
 ---
 
@@ -1180,7 +1235,7 @@ Manually set the session title.
 
 ### list_sessions
 
-Enumerate all persisted sessions from the server's canonical session store.
+Enumerate persisted root sessions from the server's canonical session store. Persistent child subagents are not included here.
 
 ```json
 { "type": "list_sessions", "sessionId": "..." }
@@ -1192,6 +1247,7 @@ Enumerate all persisted sessions from the server's canonical session store.
 | `sessionId` | `string` | Yes |
 
 **Response:** `sessions`
+**Error:** `validation_failed` when called from a child session.
 
 ---
 
@@ -1211,6 +1267,49 @@ Delete a persisted session by its ID. Cannot delete the active session.
 
 **Response:** `session_deleted`
 **Error:** `validation_failed` if attempting to delete the active session.
+
+---
+
+### subagent_create
+
+Create a durable child session for the current root session and queue its initial task immediately.
+
+```json
+{
+  "type": "subagent_create",
+  "sessionId": "...",
+  "agentType": "general",
+  "task": "Investigate the flaky parser test"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `"subagent_create"` | Yes | — |
+| `sessionId` | `string` | Yes | Root session identifier |
+| `agentType` | `"explore" \| "research" \| "general"` | Yes | Child-session mode |
+| `task` | `string` | Yes | Initial task queued for the child session |
+
+**Response:** `subagent_created`
+**Error:** `validation_failed` when called from a child session.
+
+---
+
+### subagent_sessions_get
+
+List persistent child sessions for the current root session.
+
+```json
+{ "type": "subagent_sessions_get", "sessionId": "..." }
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `type` | `"subagent_sessions_get"` | Yes |
+| `sessionId` | `string` | Yes |
+
+**Response:** `subagent_sessions`
+**Error:** `validation_failed` when called from a child session.
 
 ---
 
@@ -1292,7 +1391,7 @@ Initial handshake event sent immediately on WebSocket connection.
 {
   "type": "server_hello",
   "sessionId": "abc-123-def",
-  "protocolVersion": "7.2",
+  "protocolVersion": "7.3",
   "capabilities": {
     "modelStreamChunk": "v1"
   },
@@ -1301,6 +1400,9 @@ Initial handshake event sent immediately on WebSocket connection.
     "model": "gpt-5.4",
     "workingDirectory": "/path/to/project"
   },
+  "sessionKind": "subagent",
+  "parentSessionId": "root-123",
+  "agentType": "general",
   "isResume": true,
   "resumedFromStorage": true,
   "busy": false,
@@ -1314,9 +1416,12 @@ Initial handshake event sent immediately on WebSocket connection.
 |-------|------|-------------|
 | `type` | `"server_hello"` | — |
 | `sessionId` | `string` | The session identifier. Use this for all subsequent messages |
-| `protocolVersion` | `string?` | Protocol version (currently `"7.2"`) |
+| `protocolVersion` | `string?` | Protocol version (currently `"7.3"`) |
 | `capabilities` | `object?` | Optional capabilities object. Currently: `{ modelStreamChunk: "v1" }` |
 | `config` | `PublicConfig` | Session config: `provider`, `model`, `workingDirectory`, and optionally `outputDirectory` |
+| `sessionKind` | `"root" \| "subagent"` | Session identity. Present for both root and child sessions |
+| `parentSessionId` | `string?` | Present only for child sessions |
+| `agentType` | `"explore" \| "research" \| "general"?` | Present only for child sessions |
 | `isResume` | `boolean?` | Present and `true` only when resuming a disconnected session |
 | `resumedFromStorage` | `boolean?` | Present and `true` on cold resume (rehydrated from persisted store) |
 | `busy` | `boolean?` | Whether the session is mid-turn (only on resume) |
@@ -1360,7 +1465,10 @@ Canonical session metadata snapshot. Sent on connection and whenever title, prov
   "createdAt": "2026-02-19T18:10:00.000Z",
   "updatedAt": "2026-02-19T18:10:03.000Z",
   "provider": "openai",
-  "model": "gpt-5.4"
+  "model": "gpt-5.4",
+  "sessionKind": "subagent",
+  "parentSessionId": "root-123",
+  "agentType": "general"
 }
 ```
 
@@ -1375,6 +1483,9 @@ Canonical session metadata snapshot. Sent on connection and whenever title, prov
 | `updatedAt` | `string` | ISO 8601 last update timestamp |
 | `provider` | `ProviderName` | Current provider |
 | `model` | `string` | Current model |
+| `sessionKind` | `"root" \| "subagent"?` | Session identity |
+| `parentSessionId` | `string?` | Present only for child sessions |
+| `agentType` | `"explore" \| "research" \| "general"?` | Present only for child sessions |
 
 ---
 
@@ -1592,7 +1703,7 @@ Auth challenge payload returned after `provider_auth_authorize`.
 
 ### provider_auth_result
 
-Auth completion result after `provider_auth_callback` or `provider_auth_set_api_key`.
+Auth completion result after `provider_auth_callback`, `provider_auth_set_api_key`, or `provider_auth_logout`.
 
 ```json
 {
@@ -1704,6 +1815,7 @@ Incremental model stream chunk. Emitted during a turn for each streaming part fr
   "index": 0,
   "provider": "openai",
   "model": "gpt-5.4",
+  "normalizerVersion": 1,
   "partType": "text_delta",
   "part": { "text": "Hello" },
   "rawPart": { ... }
@@ -1718,9 +1830,42 @@ Incremental model stream chunk. Emitted during a turn for each streaming part fr
 | `index` | `number` | Sequential chunk index within the turn (starting at 0). Fallback: `-1` |
 | `provider` | `ProviderName \| "unknown"` | Provider that generated this chunk. Fallback: `"unknown"` |
 | `model` | `string` | Model that generated this chunk. Fallback: `"unknown"` |
+| `normalizerVersion` | `number?` | Optional normalization version for the persisted `partType`/`part` mapping |
 | `partType` | `ModelStreamPartType` | Part type (see [ModelStreamPartType](#modelstreamparttype)) |
 | `part` | `object` | Normalized part payload. Shape varies by `partType`. If a non-object part is received, it is normalized to `{ "value": <original> }` |
 | `rawPart` | `unknown?` | Optional raw provider/runtime part (present when `includeRawChunks` is enabled). Default mode is sanitized; set `COWORK_MODEL_STREAM_RAW_MODE=full` to increase payload detail |
+
+---
+
+### model_stream_raw
+
+Provider-native raw model stream event. Emitted before any derived `model_stream_chunk` parts for the same provider event so clients can replay or re-normalize the stream themselves.
+
+```json
+{
+  "type": "model_stream_raw",
+  "sessionId": "...",
+  "turnId": "turn-abc",
+  "index": 0,
+  "provider": "openai",
+  "model": "gpt-5.4",
+  "format": "openai-responses-v1",
+  "normalizerVersion": 1,
+  "event": { "type": "response.output_item.added", "item": { "type": "reasoning" } }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"model_stream_raw"` | — |
+| `sessionId` | `string` | Session identifier |
+| `turnId` | `string` | Unique turn identifier (groups all raw events for one turn). Fallback: `"unknown-turn"` |
+| `index` | `number` | Sequential raw-event index within the turn (starting at 0). Fallback: `-1` |
+| `provider` | `ProviderName \| "unknown"` | Provider that generated this event. Fallback: `"unknown"` |
+| `model` | `string` | Model that generated this event. Fallback: `"unknown"` |
+| `format` | `"openai-responses-v1"` | Raw event envelope format |
+| `normalizerVersion` | `number` | Version identifier for the client/server raw-event normalizer |
+| `event` | `object` | Provider-native raw event payload. If a non-object payload is received, it is normalized to `{ "value": <original> }` |
 
 ---
 
@@ -2187,6 +2332,85 @@ Persisted session list response to `list_sessions`.
 | `createdAt` | `string` | ISO 8601 creation timestamp |
 | `updatedAt` | `string` | ISO 8601 last update timestamp |
 | `messageCount` | `number` | Number of messages in history |
+
+---
+
+### subagent_created
+
+Confirmation that a persistent child session was created.
+
+```json
+{
+  "type": "subagent_created",
+  "sessionId": "root-123",
+  "subagent": {
+    "sessionId": "child-456",
+    "parentSessionId": "root-123",
+    "agentType": "general",
+    "title": "New session",
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "createdAt": "2026-03-08T12:00:00.000Z",
+    "updatedAt": "2026-03-08T12:00:00.000Z",
+    "status": "active",
+    "busy": true
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"subagent_created"` | — |
+| `sessionId` | `string` | Parent session identifier |
+| `subagent` | `PersistentSubagentSummary` | Newly created child session |
+
+---
+
+### subagent_sessions
+
+Persistent child-session list response to `subagent_sessions_get`.
+
+```json
+{
+  "type": "subagent_sessions",
+  "sessionId": "root-123",
+  "subagents": [
+    {
+      "sessionId": "child-456",
+      "parentSessionId": "root-123",
+      "agentType": "research",
+      "title": "Research queue",
+      "provider": "openai",
+      "model": "gpt-5.4",
+      "createdAt": "2026-03-08T12:00:00.000Z",
+      "updatedAt": "2026-03-08T12:05:00.000Z",
+      "status": "active",
+      "busy": false
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"subagent_sessions"` | — |
+| `sessionId` | `string` | Parent session identifier |
+| `subagents` | `PersistentSubagentSummary[]` | Child sessions sorted by `updatedAt` descending |
+
+**PersistentSubagentSummary:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessionId` | `string` | Child session identifier |
+| `parentSessionId` | `string` | Parent/root session identifier |
+| `agentType` | `"explore" \| "research" \| "general"` | Child-session mode |
+| `title` | `string` | Current child-session title |
+| `provider` | `ProviderName` | Current provider |
+| `model` | `string` | Current model |
+| `createdAt` | `string` | ISO 8601 creation timestamp |
+| `updatedAt` | `string` | ISO 8601 last update timestamp |
+| `status` | `"active" \| "closed"` | Persisted child-session state |
+| `busy` | `boolean` | Whether the child session is mid-turn in memory |
 
 ---
 

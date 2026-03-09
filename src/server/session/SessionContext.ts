@@ -4,7 +4,9 @@ import type { HarnessContextStore } from "../../harness/contextStore";
 import type { MCPRegistryServer } from "../../mcp/configRegistry";
 import type { getProviderCatalog } from "../../providers/connectionCatalog";
 import type { getProviderStatuses } from "../../providerStatus";
+import type { OpenAiContinuationState } from "../../shared/openaiContinuation";
 import type { OpenAiCompatibleProviderOptionsByProvider } from "../../shared/openaiCompatibleOptions";
+import type { PersistentSubagentSummary, SubagentAgentType } from "../../shared/persistentSubagents";
 import type {
   AgentConfig,
   HarnessContextState,
@@ -41,6 +43,7 @@ export type HydratedSessionState = {
   status: SessionPersistenceStatus;
   hasGeneratedTitle: boolean;
   messages: ModelMessage[];
+  providerState: OpenAiContinuationState | null;
   todos: TodoItem[];
   harnessContext: HarnessContextState | null;
 };
@@ -52,6 +55,7 @@ export type SessionRuntimeState = {
   yolo: boolean;
   messages: ModelMessage[];
   allMessages: ModelMessage[];
+  providerState: OpenAiContinuationState | null;
   running: boolean;
   connecting: boolean;
   abortController: AbortController | null;
@@ -82,6 +86,36 @@ export type SessionDependencies = {
   generateSessionTitleImpl: typeof generateSessionTitle;
   sessionDb: SessionDb | null;
   writePersistedSessionSnapshotImpl: typeof writePersistedSessionSnapshot;
+  createSubagentSessionImpl?: (opts: {
+    parentSessionId: string;
+    parentConfig: AgentConfig;
+    agentType: SubagentAgentType;
+    task: string;
+  }) => Promise<PersistentSubagentSummary>;
+  listSubagentSessionsImpl?: (parentSessionId: string) => Promise<PersistentSubagentSummary[]>;
+  sendSubagentInputImpl?: (opts: {
+    parentSessionId: string;
+    agentId: string;
+    task: string;
+  }) => Promise<void>;
+  waitForSubagentImpl?: (opts: {
+    parentSessionId: string;
+    agentId: string;
+    timeoutMs?: number;
+  }) => Promise<{
+    sessionId: string;
+    status: "completed" | "running" | "error" | "closed";
+    busy: boolean;
+    text?: string;
+  }>;
+  closeSubagentImpl?: (opts: {
+    parentSessionId: string;
+    agentId: string;
+  }) => Promise<PersistentSubagentSummary>;
+  deleteSessionImpl?: (opts: {
+    requesterSessionId: string;
+    targetSessionId: string;
+  }) => Promise<void>;
 };
 
 export type SessionContext = {

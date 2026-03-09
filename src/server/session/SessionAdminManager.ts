@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import type { SubagentAgentType } from "../../shared/persistentSubagents";
 import { deletePersistedSessionSnapshot, listPersistedSessionSnapshots } from "../sessionStore";
 import type { SessionContext } from "./SessionContext";
 
@@ -14,6 +15,7 @@ export class SessionAdminManager {
     }
     this.context.state.messages = [];
     this.context.state.allMessages = [];
+    this.context.state.providerState = null;
     this.context.state.todos = [];
     this.context.emit({ type: "todos", sessionId: this.context.id, todos: [] });
     this.context.emit({ type: "reset_done", sessionId: this.context.id });
@@ -41,6 +43,10 @@ export class SessionAdminManager {
   }
 
   async listSessions() {
+    if ((this.context.state.sessionInfo.sessionKind ?? "root") !== "root") {
+      this.context.emitError("validation_failed", "session", "Only root sessions can list sessions");
+      return;
+    }
     try {
       const sessions = this.context.deps.sessionDb
         ? this.context.deps.sessionDb.listSessions()
@@ -51,13 +57,57 @@ export class SessionAdminManager {
     }
   }
 
+  async listSubagentSessions() {
+    if ((this.context.state.sessionInfo.sessionKind ?? "root") !== "root") {
+      this.context.emitError("validation_failed", "session", "Only root sessions can list subagents");
+      return;
+    }
+    if (!this.context.deps.listSubagentSessionsImpl) {
+      this.context.emitError("internal_error", "session", "Subagent listing is unavailable");
+      return;
+    }
+    try {
+      const subagents = await this.context.deps.listSubagentSessionsImpl(this.context.id);
+      this.context.emit({ type: "subagent_sessions", sessionId: this.context.id, subagents });
+    } catch (err) {
+      this.context.emitError("internal_error", "session", `Failed to list subagents: ${String(err)}`);
+    }
+  }
+
+  async createSubagentSession(agentType: SubagentAgentType, task: string) {
+    if ((this.context.state.sessionInfo.sessionKind ?? "root") !== "root") {
+      this.context.emitError("validation_failed", "session", "Only root sessions can create subagents");
+      return;
+    }
+    if (!this.context.deps.createSubagentSessionImpl) {
+      this.context.emitError("internal_error", "session", "Subagent creation is unavailable");
+      return;
+    }
+    try {
+      const subagent = await this.context.deps.createSubagentSessionImpl({
+        parentSessionId: this.context.id,
+        parentConfig: this.context.state.config,
+        agentType,
+        task,
+      });
+      this.context.emit({ type: "subagent_created", sessionId: this.context.id, subagent });
+    } catch (err) {
+      this.context.emitError("internal_error", "session", `Failed to create subagent: ${String(err)}`);
+    }
+  }
+
   async deleteSession(targetSessionId: string) {
     if (targetSessionId === this.context.id) {
       this.context.emitError("validation_failed", "session", "Cannot delete the active session");
       return;
     }
     try {
-      if (this.context.deps.sessionDb) {
+      if (this.context.deps.deleteSessionImpl) {
+        await this.context.deps.deleteSessionImpl({
+          requesterSessionId: this.context.id,
+          targetSessionId,
+        });
+      } else if (this.context.deps.sessionDb) {
         this.context.deps.sessionDb.deleteSession(targetSessionId);
       } else {
         const paths = this.context.getCoworkPaths();

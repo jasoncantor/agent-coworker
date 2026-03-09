@@ -375,6 +375,20 @@ describe("safeParseClientMessage", () => {
       }))).toBe("provider_auth_authorize unknown methodId");
     });
 
+    test("provider_auth_logout validation", () => {
+      const msg = expectOk(JSON.stringify({
+        type: "provider_auth_logout",
+        sessionId: "s1",
+        provider: "codex-cli",
+      }));
+      expect(msg.type).toBe("provider_auth_logout");
+      expect(expectErr(JSON.stringify({
+        type: "provider_auth_logout",
+        sessionId: "s1",
+        provider: "nope",
+      }))).toBe("provider_auth_logout missing/invalid provider");
+    });
+
     test("provider_auth_callback validation", () => {
       const msg = expectOk(JSON.stringify({
         type: "provider_auth_callback",
@@ -956,6 +970,40 @@ describe("safeParseClientMessage", () => {
     });
   });
 
+  describe("subagent messages", () => {
+    test("valid subagent_create message", () => {
+      const msg = expectOk(
+        JSON.stringify({ type: "subagent_create", sessionId: "s1", agentType: "general", task: "Investigate this" }),
+      );
+      expect(msg.type).toBe("subagent_create");
+      if (msg.type === "subagent_create") {
+        expect(msg.sessionId).toBe("s1");
+        expect(msg.agentType).toBe("general");
+        expect(msg.task).toBe("Investigate this");
+      }
+    });
+
+    test("subagent_create validates agentType and task", () => {
+      expect(expectErr(JSON.stringify({ type: "subagent_create", sessionId: "s1", task: "do it" }))).toBe(
+        "subagent_create missing/invalid agentType",
+      );
+      expect(expectErr(JSON.stringify({ type: "subagent_create", sessionId: "s1", agentType: "invalid", task: "do it" }))).toBe(
+        "subagent_create missing/invalid agentType",
+      );
+      expect(expectErr(JSON.stringify({ type: "subagent_create", sessionId: "s1", agentType: "general", task: "" }))).toBe(
+        "subagent_create missing/invalid task",
+      );
+    });
+
+    test("valid subagent_sessions_get message", () => {
+      const msg = expectOk(JSON.stringify({ type: "subagent_sessions_get", sessionId: "s1" }));
+      expect(msg.type).toBe("subagent_sessions_get");
+      if (msg.type === "subagent_sessions_get") {
+        expect(msg.sessionId).toBe("s1");
+      }
+    });
+  });
+
   describe("set_config", () => {
     test("valid set_config accepts partial config", () => {
       const msg = expectOk(
@@ -1415,6 +1463,7 @@ describe("safeParseClientMessage", () => {
       expect(CLIENT_MESSAGE_TYPES.includes("provider_catalog_get")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("provider_auth_methods_get")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("provider_auth_authorize")).toBe(true);
+      expect(CLIENT_MESSAGE_TYPES.includes("provider_auth_logout")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("provider_auth_callback")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("provider_auth_set_api_key")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("mcp_servers_get")).toBe(true);
@@ -1425,6 +1474,8 @@ describe("safeParseClientMessage", () => {
       expect(CLIENT_MESSAGE_TYPES.includes("mcp_server_auth_callback")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("mcp_server_auth_set_api_key")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("mcp_servers_migrate_legacy")).toBe(true);
+      expect(CLIENT_MESSAGE_TYPES.includes("subagent_create")).toBe(true);
+      expect(CLIENT_MESSAGE_TYPES.includes("subagent_sessions_get")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("commands")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("provider_catalog")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("provider_auth_methods")).toBe(true);
@@ -1436,6 +1487,8 @@ describe("safeParseClientMessage", () => {
       expect(SERVER_EVENT_TYPES.includes("mcp_server_auth_result")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("session_info")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("session_config")).toBe(true);
+      expect(SERVER_EVENT_TYPES.includes("subagent_created")).toBe(true);
+      expect(SERVER_EVENT_TYPES.includes("subagent_sessions")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("model_stream_chunk")).toBe(true);
     });
 

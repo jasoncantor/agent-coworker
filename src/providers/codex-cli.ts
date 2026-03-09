@@ -8,7 +8,7 @@ export const DEFAULT_CODEX_CLI_PROVIDER_OPTIONS = {
 } as const;
 
 export const codexCliProvider = {
-  keyCandidates: ["codex-cli", "openai"] as const,
+  keyCandidates: ["codex-cli"] as const,
   createModel: ({ config, modelId, savedKey }: { config: AgentConfig; modelId: string; savedKey?: string }) =>
     createCodexCliModelAdapter(config, modelId, savedKey),
 };

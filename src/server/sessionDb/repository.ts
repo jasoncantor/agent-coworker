@@ -1,10 +1,11 @@
 import type { Database } from "bun:sqlite";
 import { z } from "zod";
 
-import type { PersistedSessionMutation, PersistedSessionRecord } from "../sessionDb";
+import type { PersistentSubagentSummary } from "../../shared/persistentSubagents";
+import type { PersistedModelStreamChunk, PersistedSessionMutation, PersistedSessionRecord } from "../sessionDb";
 import type { PersistedSessionSnapshot, PersistedSessionSummary } from "../sessionStore";
 import type { ModelMessage } from "../../types";
-import { mapPersistedSessionRecordRow, mapPersistedSessionSummaryRow } from "./mappers";
+import { mapPersistedSessionRecordRow, mapPersistedSessionSubagentSummaryRow, mapPersistedSessionSummaryRow } from "./mappers";
 import {
   parseBooleanInteger,
   parseJsonStringWithSchema,
@@ -14,6 +15,7 @@ import {
 } from "./normalizers";
 
 const messagesJsonSchema = z.array(z.unknown());
+const modelStreamRawFormatSchema = z.enum(["openai-responses-v1"]);
 
 export class SessionDbRepository {
   private readonly db: Database;
@@ -27,6 +29,7 @@ export class SessionDbRepository {
       .query(
         `SELECT session_id, title, provider, model, created_at, updated_at, message_count
          FROM sessions
+         WHERE session_kind = 'root'
          ORDER BY updated_at DESC`,
       )
       .all() as Array<Record<string, unknown>>;
@@ -34,7 +37,21 @@ export class SessionDbRepository {
     return rows.map(mapPersistedSessionSummaryRow);
   }
 
+  listSubagentSessions(parentSessionId: string): PersistentSubagentSummary[] {
+    const rows = this.db
+      .query(
+        `SELECT session_id, parent_session_id, agent_type, title, provider, model, created_at, updated_at, status
+         FROM sessions
+         WHERE parent_session_id = ?
+         ORDER BY updated_at DESC`,
+      )
+      .all(parentSessionId) as Array<Record<string, unknown>>;
+
+    return rows.map(mapPersistedSessionSubagentSummaryRow);
+  }
+
   deleteSession(sessionId: string): void {
+    this.db.query("DELETE FROM sessions WHERE parent_session_id = ?").run(sessionId);
     this.db.query("DELETE FROM sessions WHERE session_id = ?").run(sessionId);
   }
 
@@ -61,6 +78,9 @@ export class SessionDbRepository {
       .query(
         `SELECT
            s.session_id,
+           s.session_kind,
+           s.parent_session_id,
+           s.agent_type,
            s.title,
            s.title_source,
            s.title_model,
@@ -79,6 +99,7 @@ export class SessionDbRepository {
            s.last_event_seq,
            st.system_prompt,
            st.messages_json,
+           st.provider_state_json,
            st.todos_json,
            st.harness_context_json
          FROM sessions s
@@ -103,6 +124,10 @@ export class SessionDbRepository {
       const snapshot = input.snapshot;
       const outputDirectory = snapshot.outputDirectory ?? null;
       const uploadsDirectory = snapshot.uploadsDirectory ?? null;
+      const providerStateJson =
+        snapshot.providerState === null ? null : toJsonString(snapshot.providerState);
+      const parentSessionId = snapshot.parentSessionId ?? null;
+      const agentType = snapshot.agentType ?? null;
       const createdAt = parseRequiredIsoTimestamp(snapshot.createdAt, "snapshot.createdAt");
       const updatedAt = parseRequiredIsoTimestamp(snapshot.updatedAt, "snapshot.updatedAt");
       const ts = parseRequiredIsoTimestamp(input.eventTs ?? updatedAt, "event timestamp");
@@ -113,6 +138,9 @@ export class SessionDbRepository {
         .query(
           `INSERT INTO sessions (
              session_id,
+             session_kind,
+             parent_session_id,
+             agent_type,
              title,
              title_source,
              title_model,
@@ -129,8 +157,11 @@ export class SessionDbRepository {
              has_pending_approval,
              message_count,
              last_event_seq
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(session_id) DO UPDATE SET
+             session_kind = excluded.session_kind,
+             parent_session_id = excluded.parent_session_id,
+             agent_type = excluded.agent_type,
              title = excluded.title,
              title_source = excluded.title_source,
              title_model = excluded.title_model,
@@ -149,6 +180,9 @@ export class SessionDbRepository {
         )
         .run(
           input.sessionId,
+          snapshot.sessionKind,
+          parentSessionId,
+          agentType,
           snapshot.title,
           snapshot.titleSource,
           snapshot.titleModel,
@@ -173,12 +207,14 @@ export class SessionDbRepository {
              session_id,
              system_prompt,
              messages_json,
+             provider_state_json,
              todos_json,
              harness_context_json
-           ) VALUES (?, ?, ?, ?, ?)
+           ) VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(session_id) DO UPDATE SET
              system_prompt = excluded.system_prompt,
              messages_json = excluded.messages_json,
+             provider_state_json = excluded.provider_state_json,
              todos_json = excluded.todos_json,
              harness_context_json = excluded.harness_context_json`,
         )
@@ -186,6 +222,7 @@ export class SessionDbRepository {
           input.sessionId,
           snapshot.systemPrompt,
           toJsonString(snapshot.messages),
+          providerStateJson,
           toJsonString(snapshot.todos),
           toJsonString(snapshot.harnessContext),
         );
@@ -209,10 +246,84 @@ export class SessionDbRepository {
     return run(opts);
   }
 
+  persistModelStreamChunk(opts: PersistedModelStreamChunk): void {
+    const ts = parseRequiredIsoTimestamp(opts.ts, "model_stream_chunk.ts");
+    const chunkIndex = parseNonNegativeInteger(opts.chunkIndex, "model_stream_chunk.chunkIndex");
+    const rawFormat = modelStreamRawFormatSchema.parse(opts.rawFormat);
+
+    this.db
+      .query(
+        `INSERT INTO session_model_stream_chunks (
+           session_id,
+           turn_id,
+           chunk_index,
+           ts,
+           provider,
+           model,
+           raw_format,
+           normalizer_version,
+           raw_event_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        opts.sessionId,
+        opts.turnId,
+        chunkIndex,
+        ts,
+        opts.provider,
+        opts.model,
+        rawFormat,
+        opts.normalizerVersion,
+        toJsonString(opts.rawEvent),
+      );
+  }
+
+  listModelStreamChunks(sessionId: string, turnId?: string): PersistedModelStreamChunk[] {
+    const rows = turnId
+      ? (this.db
+          .query(
+            `SELECT session_id, turn_id, chunk_index, ts, provider, model, raw_format, normalizer_version, raw_event_json
+             FROM session_model_stream_chunks
+             WHERE session_id = ? AND turn_id = ?
+             ORDER BY chunk_index ASC`,
+          )
+          .all(sessionId, turnId) as Array<Record<string, unknown>>)
+      : (this.db
+          .query(
+            `SELECT session_id, turn_id, chunk_index, ts, provider, model, raw_format, normalizer_version, raw_event_json
+             FROM session_model_stream_chunks
+             WHERE session_id = ?
+             ORDER BY turn_id ASC, chunk_index ASC`,
+          )
+          .all(sessionId) as Array<Record<string, unknown>>);
+
+    return rows.map((row) => ({
+      sessionId: String(row.session_id),
+      turnId: String(row.turn_id),
+      chunkIndex: parseNonNegativeInteger(row.chunk_index, "session_model_stream_chunks.chunk_index"),
+      ts: parseRequiredIsoTimestamp(row.ts, "session_model_stream_chunks.ts"),
+      provider: String(row.provider) as PersistedModelStreamChunk["provider"],
+      model: String(row.model),
+      rawFormat: modelStreamRawFormatSchema.parse(row.raw_format),
+      normalizerVersion: parseNonNegativeInteger(
+        row.normalizer_version,
+        "session_model_stream_chunks.normalizer_version",
+      ),
+      rawEvent: parseJsonStringWithSchema(
+        row.raw_event_json,
+        z.unknown(),
+        "session_model_stream_chunks.raw_event_json",
+      ),
+    }));
+  }
+
   createBaseSchema(): void {
     this.db.exec(
       `CREATE TABLE IF NOT EXISTS sessions (
          session_id TEXT PRIMARY KEY,
+         session_kind TEXT NOT NULL DEFAULT 'root',
+         parent_session_id TEXT NULL,
+         agent_type TEXT NULL,
          title TEXT NOT NULL,
          title_source TEXT NOT NULL,
          title_model TEXT NULL,
@@ -237,6 +348,7 @@ export class SessionDbRepository {
          session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
          system_prompt TEXT NOT NULL,
          messages_json TEXT NOT NULL,
+         provider_state_json TEXT NULL,
          todos_json TEXT NOT NULL,
          harness_context_json TEXT NULL
        )`,
@@ -254,9 +366,28 @@ export class SessionDbRepository {
        )`,
     );
 
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS session_model_stream_chunks (
+         session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+         turn_id TEXT NOT NULL,
+         chunk_index INTEGER NOT NULL,
+         ts TEXT NOT NULL,
+         provider TEXT NOT NULL,
+         model TEXT NOT NULL,
+         raw_format TEXT NOT NULL,
+         normalizer_version INTEGER NOT NULL,
+         raw_event_json TEXT NOT NULL,
+         PRIMARY KEY(session_id, turn_id, chunk_index)
+       )`,
+    );
+
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at DESC)");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_session_events_seq_desc ON session_events(session_id, seq DESC)");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC)");
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_parent_updated ON sessions(parent_session_id, updated_at DESC)");
+    this.db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_session_model_stream_chunks_session_turn ON session_model_stream_chunks(session_id, turn_id, chunk_index)",
+    );
   }
 
   markMigration(version: number): void {
@@ -270,6 +401,55 @@ export class SessionDbRepository {
       (
         this.db.query("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>
       ).map((row) => row.version),
+    );
+  }
+
+  hasSessionStateColumn(columnName: string): boolean {
+    const rows = this.db.query("PRAGMA table_info(session_state)").all() as Array<Record<string, unknown>>;
+    return rows.some((row) => row.name === columnName);
+  }
+
+  addProviderStateColumn(): void {
+    if (this.hasSessionStateColumn("provider_state_json")) return;
+    this.db.exec("ALTER TABLE session_state ADD COLUMN provider_state_json TEXT NULL");
+  }
+
+  hasSessionsColumn(columnName: string): boolean {
+    const rows = this.db.query("PRAGMA table_info(sessions)").all() as Array<Record<string, unknown>>;
+    return rows.some((row) => row.name === columnName);
+  }
+
+  addSubagentMetadataColumns(): void {
+    if (!this.hasSessionsColumn("session_kind")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'root'");
+    }
+    if (!this.hasSessionsColumn("parent_session_id")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN parent_session_id TEXT NULL");
+    }
+    if (!this.hasSessionsColumn("agent_type")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN agent_type TEXT NULL");
+    }
+    this.db.exec("UPDATE sessions SET session_kind = 'root' WHERE session_kind IS NULL OR session_kind = ''");
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_parent_updated ON sessions(parent_session_id, updated_at DESC)");
+  }
+
+  addModelStreamChunksTable(): void {
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS session_model_stream_chunks (
+         session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+         turn_id TEXT NOT NULL,
+         chunk_index INTEGER NOT NULL,
+         ts TEXT NOT NULL,
+         provider TEXT NOT NULL,
+         model TEXT NOT NULL,
+         raw_format TEXT NOT NULL,
+         normalizer_version INTEGER NOT NULL,
+         raw_event_json TEXT NOT NULL,
+         PRIMARY KEY(session_id, turn_id, chunk_index)
+       )`,
+    );
+    this.db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_session_model_stream_chunks_session_turn ON session_model_stream_chunks(session_id, turn_id, chunk_index)",
     );
   }
 
@@ -292,6 +472,11 @@ export class SessionDbRepository {
       const hasPendingApproval = existing
         ? parseBooleanInteger(existing.has_pending_approval, "sessions.has_pending_approval")
         : 0;
+      const providerState =
+        "providerState" in legacy.context ? legacy.context.providerState : null;
+      const sessionKind = legacy.version === 3 ? legacy.session.sessionKind : "root";
+      const parentSessionId = legacy.version === 3 ? legacy.session.parentSessionId : null;
+      const agentType = legacy.version === 3 ? legacy.session.agentType : null;
       const createdAt = parseRequiredIsoTimestamp(legacy.createdAt, "legacy.createdAt");
       const updatedAt = parseRequiredIsoTimestamp(legacy.updatedAt, "legacy.updatedAt");
 
@@ -299,6 +484,9 @@ export class SessionDbRepository {
         .query(
           `INSERT INTO sessions (
              session_id,
+             session_kind,
+             parent_session_id,
+             agent_type,
              title,
              title_source,
              title_model,
@@ -315,8 +503,11 @@ export class SessionDbRepository {
              has_pending_approval,
              message_count,
              last_event_seq
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(session_id) DO UPDATE SET
+             session_kind = excluded.session_kind,
+             parent_session_id = excluded.parent_session_id,
+             agent_type = excluded.agent_type,
              title = excluded.title,
              title_source = excluded.title_source,
              title_model = excluded.title_model,
@@ -336,6 +527,9 @@ export class SessionDbRepository {
         )
         .run(
           legacy.sessionId,
+          sessionKind,
+          parentSessionId,
+          agentType,
           legacy.session.title,
           legacy.session.titleSource,
           legacy.session.titleModel,
@@ -360,12 +554,14 @@ export class SessionDbRepository {
              session_id,
              system_prompt,
              messages_json,
+             provider_state_json,
              todos_json,
              harness_context_json
-           ) VALUES (?, ?, ?, ?, ?)
+           ) VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(session_id) DO UPDATE SET
              system_prompt = excluded.system_prompt,
              messages_json = excluded.messages_json,
+             provider_state_json = excluded.provider_state_json,
              todos_json = excluded.todos_json,
              harness_context_json = excluded.harness_context_json`,
         )
@@ -373,6 +569,7 @@ export class SessionDbRepository {
           legacy.sessionId,
           legacy.context.system,
           toJsonString(legacy.context.messages),
+          providerState === null ? null : toJsonString(providerState),
           toJsonString(legacy.context.todos),
           toJsonString(legacy.context.harnessContext),
         );

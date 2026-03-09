@@ -213,7 +213,9 @@ export function SyncProvider(props: { serverUrl: string; children: JSX.Element }
           setState("feed", (feed) => [...feed, {
             id: nextFeedId(),
             type: "system",
-            line: `provider auth: ${evt.provider}/${evt.methodId} (${evt.mode ?? "ok"})`,
+            line: evt.methodId === "logout"
+              ? `provider disconnected: ${evt.provider}`
+              : `provider auth: ${evt.provider}/${evt.methodId} (${evt.mode ?? "ok"})`,
           }]);
         } else {
           setState("feed", (feed) => [...feed, {

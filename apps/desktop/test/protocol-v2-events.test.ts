@@ -241,6 +241,19 @@ describe("desktop protocol v2 mapping", () => {
     expect(sentTypes).toContain("provider_auth_callback");
   });
 
+  test("logoutProviderAuth sends provider_auth_logout", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+    controlSocket.sent = [];
+
+    await useAppStore.getState().logoutProviderAuth("codex-cli");
+
+    const sent = controlSocket.sent.find((msg) => msg?.type === "provider_auth_logout");
+    expect(sent).toBeDefined();
+    expect(sent?.provider).toBe("codex-cli");
+  });
+
   test("provider auth challenge keeps command metadata for desktop UI", async () => {
     await useAppStore.getState().newThread({ workspaceId });
     const controlSocket = socketByClient("desktop-control");
@@ -253,7 +266,7 @@ describe("desktop protocol v2 mapping", () => {
       methodId: "oauth_cli",
       challenge: {
         method: "auto",
-        instructions: "The app will open the PI-native sign-in URL automatically.",
+        instructions: "The app will open Cowork's Codex sign-in URL automatically.",
         url: "https://auth.openai.com/oauth/authorize",
         command: "optional-command",
       },
@@ -287,6 +300,25 @@ describe("desktop protocol v2 mapping", () => {
     const notification = useAppStore.getState().notifications.at(-1);
     expect(notification?.title).toBe("Provider auth pending: claude-code");
     expect(notification?.detail).toBe("Complete sign-in in terminal.");
+  });
+
+  test("provider auth logout result uses disconnected notification title", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+
+    controlSocket.emit({
+      type: "provider_auth_result",
+      sessionId: "control-session",
+      provider: "codex-cli",
+      methodId: "logout",
+      ok: true,
+      message: "Codex OAuth credentials cleared.",
+    });
+
+    const notification = useAppStore.getState().notifications.at(-1);
+    expect(notification?.title).toBe("Provider disconnected: codex-cli");
+    expect(notification?.detail).toBe("Codex OAuth credentials cleared.");
   });
 
   test("approval prompt keeps required reasonCode", async () => {
@@ -522,12 +554,160 @@ describe("desktop protocol v2 mapping", () => {
     expect(reasoning[0]?.mode).toBe("summary");
     expect(reasoning[0]?.text).toBe("thinking");
 
+    expect(feed.map((item) => item.kind)).toEqual(["message", "reasoning", "tool"]);
+
     const tool = feed.find((item) => item.kind === "tool");
     expect(tool?.kind).toBe("tool");
     if (!tool || tool.kind !== "tool") throw new Error("Expected tool feed item");
     expect(tool.name).toBe("read");
     expect(tool.state).toBe("output-available");
     expect(tool.result).toEqual({ chars: 42 });
+  });
+
+  test("model_stream_raw drives live feed replay and suppresses stale normalized reasoning chunks", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const threadId = useAppStore.getState().selectedThreadId;
+    if (!threadId) throw new Error("Expected selected thread");
+
+    const controlSocket = socketByClient("desktop-control");
+    const threadSocket = socketByClient("desktop");
+    emitServerHello(controlSocket, "control-session");
+    emitServerHello(threadSocket, "thread-session");
+
+    threadSocket.emit({
+      type: "model_stream_raw",
+      sessionId: "thread-session",
+      turnId: "turn-raw",
+      index: 0,
+      provider: "openai",
+      model: "gpt-5.2",
+      format: "openai-responses-v1",
+      normalizerVersion: 1,
+      event: {
+        type: "response.output_item.added",
+        item: { type: "reasoning", id: "rs_live", summary: [] },
+      },
+    });
+    threadSocket.emit({
+      type: "model_stream_raw",
+      sessionId: "thread-session",
+      turnId: "turn-raw",
+      index: 1,
+      provider: "openai",
+      model: "gpt-5.2",
+      format: "openai-responses-v1",
+      normalizerVersion: 1,
+      event: {
+        type: "response.reasoning_summary_part.added",
+        part: { text: "" },
+      },
+    });
+    threadSocket.emit({
+      type: "model_stream_raw",
+      sessionId: "thread-session",
+      turnId: "turn-raw",
+      index: 2,
+      provider: "openai",
+      model: "gpt-5.2",
+      format: "openai-responses-v1",
+      normalizerVersion: 1,
+      event: {
+        type: "response.reasoning_summary_text.delta",
+        delta: "live raw reasoning",
+      },
+    });
+    threadSocket.emit({
+      type: "model_stream_chunk",
+      sessionId: "thread-session",
+      turnId: "turn-raw",
+      index: 3,
+      provider: "openai",
+      model: "gpt-5.2",
+      partType: "reasoning_delta",
+      part: { id: "stale-r1", mode: "summary", text: "stale normalized reasoning" },
+    });
+
+    const feed = useAppStore.getState().threadRuntimeById[threadId]?.feed ?? [];
+    const reasoning = feed.filter((item) => item.kind === "reasoning");
+    expect(reasoning).toHaveLength(1);
+    expect(reasoning[0]?.text).toBe("live raw reasoning");
+  });
+
+  test("late reasoning summaries stay ahead of the raw-backed final assistant message", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const threadId = useAppStore.getState().selectedThreadId;
+    if (!threadId) throw new Error("Expected selected thread");
+
+    const controlSocket = socketByClient("desktop-control");
+    const threadSocket = socketByClient("desktop");
+    emitServerHello(controlSocket, "control-session");
+    emitServerHello(threadSocket, "thread-session");
+
+    threadSocket.emit({
+      type: "model_stream_raw",
+      sessionId: "thread-session",
+      turnId: "turn-late-reasoning",
+      index: 0,
+      provider: "codex-cli",
+      model: "gpt-5.4",
+      format: "openai-responses-v1",
+      normalizerVersion: 1,
+      event: {
+        type: "response.output_item.added",
+        item: { type: "message", id: "msg_final", phase: "final_answer", content: [] },
+      },
+    });
+    threadSocket.emit({
+      type: "model_stream_raw",
+      sessionId: "thread-session",
+      turnId: "turn-late-reasoning",
+      index: 1,
+      provider: "codex-cli",
+      model: "gpt-5.4",
+      format: "openai-responses-v1",
+      normalizerVersion: 1,
+      event: {
+        type: "response.content_part.added",
+        item_id: "msg_final",
+        part: { type: "output_text", text: "" },
+      },
+    });
+    threadSocket.emit({
+      type: "model_stream_raw",
+      sessionId: "thread-session",
+      turnId: "turn-late-reasoning",
+      index: 2,
+      provider: "codex-cli",
+      model: "gpt-5.4",
+      format: "openai-responses-v1",
+      normalizerVersion: 1,
+      event: {
+        type: "response.output_text.delta",
+        item_id: "msg_final",
+        delta: "final answer",
+      },
+    });
+
+    threadSocket.emit({
+      type: "reasoning",
+      sessionId: "thread-session",
+      kind: "summary",
+      text: "late summary",
+    });
+    threadSocket.emit({
+      type: "assistant_message",
+      sessionId: "thread-session",
+      text: "final answer",
+    });
+
+    const feed = useAppStore.getState().threadRuntimeById[threadId]?.feed ?? [];
+    expect(feed.map((item) => item.kind)).toEqual(["reasoning", "message"]);
+    expect(feed[0]?.kind).toBe("reasoning");
+    expect(feed[1]?.kind).toBe("message");
+    if (feed[0]?.kind !== "reasoning") throw new Error("Expected reasoning first");
+    if (feed[1]?.kind !== "message") throw new Error("Expected assistant message second");
+    expect(feed[0].text).toBe("late summary");
+    expect(feed[1].text).toBe("final answer");
   });
 
   test("model stream approval parts render as tool cards while source/file/unknown parts stay in system items", async () => {

@@ -82,7 +82,7 @@ export function createAnthropicModelAdapter(modelId: string, savedKey?: string):
 async function resolveCodexAuthHeaders(config: AgentConfig): Promise<HeaderMap> {
   const paths = getAiCoworkerPaths({ homedir: resolveCoworkHomedir(config.userAgentDir) });
 
-  let material = await readCodexAuthMaterial(paths, { migrateLegacy: true });
+  let material = await readCodexAuthMaterial(paths);
   if (!material?.accessToken) return {};
 
   if (isTokenExpiring(material) && material.refreshToken) {
@@ -112,7 +112,7 @@ export function createCodexCliModelAdapter(
   savedKey?: string
 ): ProviderModelAdapter {
   return createModelAdapter(modelId, "codex-cli.responses", async () => {
-    const key = firstNonEmpty(savedKey, envKey("OPENAI_API_KEY"));
+    const key = firstNonEmpty(savedKey);
     if (key) return { authorization: `Bearer ${key}` };
     return await resolveCodexAuthHeaders(config);
   });

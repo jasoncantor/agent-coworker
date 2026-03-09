@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { getAiCoworkerPaths, maskApiKey, readConnectionStore, type AiCoworkerPaths, type ConnectionStore } from "./connect";
-import { decodeJwtPayload, isTokenExpiring, readCodexAuthMaterial, refreshCodexAuthMaterial } from "./providers/codex-auth";
+import { CODEX_BACKEND_BASE_URL, decodeJwtPayload, isTokenExpiring, readCodexAuthMaterial, refreshCodexAuthMaterial } from "./providers/codex-auth";
 import { PROVIDER_NAMES, type ProviderName } from "./types";
 
 export type ProviderStatusMode = "missing" | "error" | "api_key" | "oauth" | "oauth_pending";
@@ -9,6 +9,36 @@ export type ProviderStatusMode = "missing" | "error" | "api_key" | "oauth" | "oa
 export type ProviderAccount = {
   email?: string;
   name?: string;
+};
+
+export type ProviderRateLimitWindow = {
+  usedPercent: number;
+  windowSeconds: number;
+  resetAfterSeconds?: number;
+  resetAt?: string;
+};
+
+export type ProviderCredits = {
+  hasCredits: boolean;
+  unlimited: boolean;
+  balance?: string;
+};
+
+export type ProviderRateLimitSnapshot = {
+  limitId?: string;
+  limitName?: string;
+  allowed?: boolean;
+  limitReached?: boolean;
+  primaryWindow?: ProviderRateLimitWindow | null;
+  secondaryWindow?: ProviderRateLimitWindow | null;
+  credits?: ProviderCredits | null;
+};
+
+export type ProviderUsageStatus = {
+  accountId?: string;
+  email?: string;
+  planType?: string;
+  rateLimits: ProviderRateLimitSnapshot[];
 };
 
 export type ProviderStatus = {
@@ -20,20 +50,12 @@ export type ProviderStatus = {
   message: string;
   checkedAt: string;
   savedApiKeyMasks?: Partial<Record<string, string>>;
+  usage?: ProviderUsageStatus;
 };
 
 const nonEmptyTrimmedStringSchema = z.string().trim().min(1);
+const finiteNumberSchema = z.number().finite();
 const providerStatusModeSchema = z.enum(["api_key", "oauth", "oauth_pending"]);
-const oidcDiscoverySchema = z.object({
-  userinfo_endpoint: nonEmptyTrimmedStringSchema,
-}).passthrough();
-const oidcUserInfoSchema = z.record(z.string(), z.unknown());
-
-function joinUrl(base: string, suffix: string): string {
-  const b = base.endsWith("/") ? base.slice(0, -1) : base;
-  const s = suffix.startsWith("/") ? suffix : `/${suffix}`;
-  return `${b}${s}`;
-}
 
 function normalizeProviderStatusMode(mode: unknown): ProviderStatusMode {
   const parsed = providerStatusModeSchema.safeParse(mode);
@@ -136,47 +158,173 @@ function statusFromConnectionStore(opts: {
   };
 }
 
-async function codexOidcUserInfo(opts: {
-  issuer?: string;
+const codexRateLimitWindowSchema = z.object({
+  used_percent: finiteNumberSchema,
+  limit_window_seconds: finiteNumberSchema,
+  reset_after_seconds: finiteNumberSchema.optional(),
+  reset_at: finiteNumberSchema.optional(),
+}).passthrough();
+
+const codexRateLimitDetailsSchema = z.object({
+  allowed: z.boolean().optional(),
+  limit_reached: z.boolean().optional(),
+  primary_window: codexRateLimitWindowSchema.nullish(),
+  secondary_window: codexRateLimitWindowSchema.nullish(),
+}).passthrough();
+
+const codexCreditsSchema = z.object({
+  has_credits: z.boolean(),
+  unlimited: z.boolean(),
+  balance: z.union([z.string(), finiteNumberSchema]).optional(),
+}).passthrough();
+
+const codexAdditionalRateLimitSchema = z.object({
+  limit_name: nonEmptyTrimmedStringSchema.optional(),
+  metered_feature: nonEmptyTrimmedStringSchema.optional(),
+  rate_limit: codexRateLimitDetailsSchema.nullish(),
+}).passthrough();
+
+const codexUsageStatusSchema = z.object({
+  account_id: nonEmptyTrimmedStringSchema.optional(),
+  email: nonEmptyTrimmedStringSchema.optional(),
+  plan_type: z.string().trim().min(1).optional(),
+  rate_limit: codexRateLimitDetailsSchema.nullish(),
+  code_review_rate_limit: codexRateLimitDetailsSchema.nullish(),
+  additional_rate_limits: z.array(codexAdditionalRateLimitSchema).nullish(),
+  credits: codexCreditsSchema.nullish(),
+}).passthrough();
+
+function codexUsageEndpoint(): string {
+  return CODEX_BACKEND_BASE_URL.replace(/\/codex$/, "/wham/usage");
+}
+
+function epochSecondsToIso(value: number | undefined): string | undefined {
+  if (!Number.isFinite(value ?? NaN)) return undefined;
+  return new Date((value as number) * 1000).toISOString();
+}
+
+function mapCodexRateLimitWindow(
+  window: z.infer<typeof codexRateLimitWindowSchema> | null | undefined,
+): ProviderRateLimitWindow | null | undefined {
+  if (!window) return null;
+  return {
+    usedPercent: window.used_percent,
+    windowSeconds: window.limit_window_seconds,
+    ...(Number.isFinite(window.reset_after_seconds) ? { resetAfterSeconds: window.reset_after_seconds } : {}),
+    ...(Number.isFinite(window.reset_at) ? { resetAt: epochSecondsToIso(window.reset_at) } : {}),
+  };
+}
+
+function mapCodexCredits(
+  credits: z.infer<typeof codexCreditsSchema> | null | undefined,
+): ProviderCredits | null | undefined {
+  if (!credits) return null;
+  return {
+    hasCredits: credits.has_credits,
+    unlimited: credits.unlimited,
+    ...(credits.balance !== undefined ? { balance: String(credits.balance) } : {}),
+  };
+}
+
+function mapCodexRateLimitSnapshot(opts: {
+  limitId?: string;
+  limitName?: string;
+  details?: z.infer<typeof codexRateLimitDetailsSchema> | null;
+  credits?: z.infer<typeof codexCreditsSchema> | null;
+}): ProviderRateLimitSnapshot {
+  return {
+    ...(opts.limitId ? { limitId: opts.limitId } : {}),
+    ...(opts.limitName ? { limitName: opts.limitName } : {}),
+    ...(opts.details?.allowed !== undefined ? { allowed: opts.details.allowed } : {}),
+    ...(opts.details?.limit_reached !== undefined ? { limitReached: opts.details.limit_reached } : {}),
+    ...(opts.details !== undefined ? { primaryWindow: mapCodexRateLimitWindow(opts.details?.primary_window) } : {}),
+    ...(opts.details !== undefined ? { secondaryWindow: mapCodexRateLimitWindow(opts.details?.secondary_window) } : {}),
+    ...(opts.credits !== undefined ? { credits: mapCodexCredits(opts.credits) } : {}),
+  };
+}
+
+function mapCodexUsageStatus(
+  payload: z.infer<typeof codexUsageStatusSchema>,
+): ProviderUsageStatus {
+  const rateLimits: ProviderRateLimitSnapshot[] = [
+    mapCodexRateLimitSnapshot({
+      limitId: "codex",
+      details: payload.rate_limit ?? undefined,
+      credits: payload.credits ?? undefined,
+    }),
+  ];
+
+  if (payload.code_review_rate_limit) {
+    rateLimits.push(
+      mapCodexRateLimitSnapshot({
+        limitId: "code_review",
+        limitName: "Code Review",
+        details: payload.code_review_rate_limit,
+      }),
+    );
+  }
+
+  for (const additional of payload.additional_rate_limits ?? []) {
+    rateLimits.push(
+      mapCodexRateLimitSnapshot({
+        limitId: additional.metered_feature,
+        limitName: additional.limit_name,
+        details: additional.rate_limit ?? undefined,
+      }),
+    );
+  }
+
+  return {
+    ...(payload.account_id ? { accountId: payload.account_id } : {}),
+    ...(payload.email ? { email: payload.email } : {}),
+    ...(payload.plan_type ? { planType: payload.plan_type } : {}),
+    rateLimits,
+  };
+}
+
+async function codexBackendVerification(opts: {
   idToken?: string;
   accessToken: string;
+  accountId?: string;
   fetchImpl: typeof fetch;
-}): Promise<{ email?: string; name?: string; message: string; ok: boolean }> {
+}): Promise<{ email?: string; name?: string; message: string; ok: boolean; usage?: ProviderUsageStatus }> {
   const idPayload = opts.idToken ? decodeJwtPayload(opts.idToken) : null;
   const accessPayload = decodeJwtPayload(opts.accessToken);
   const email = asNonEmptyString(idPayload?.email) ?? asNonEmptyString(accessPayload?.email);
-  const iss = asNonEmptyString(idPayload?.iss) ?? asNonEmptyString(accessPayload?.iss) ?? asNonEmptyString(opts.issuer);
-  if (!iss) {
-    return { email, ok: false, message: "Codex token missing issuer; cannot resolve userinfo endpoint." };
+  const accountId =
+    asNonEmptyString(opts.accountId) ??
+    asNonEmptyString(idPayload?.chatgpt_account_id) ??
+    asNonEmptyString(accessPayload?.chatgpt_account_id) ??
+    asNonEmptyString((idPayload?.["https://api.openai.com/auth"] as Record<string, unknown> | undefined)?.chatgpt_account_id) ??
+    asNonEmptyString((accessPayload?.["https://api.openai.com/auth"] as Record<string, unknown> | undefined)?.chatgpt_account_id);
+  if (!accountId) {
+    return { email, ok: false, message: "Codex token missing ChatGPT account id; cannot verify backend access." };
   }
 
   try {
-    const wellKnownUrl = joinUrl(iss, "/.well-known/openid-configuration");
-    const wkRes = await opts.fetchImpl(wellKnownUrl, { method: "GET" });
-    if (!wkRes.ok) {
-      return { email, ok: false, message: `Failed to fetch OIDC discovery (${wkRes.status}).` };
-    }
-    const wkJson = await wkRes.json();
-    const discovery = oidcDiscoverySchema.safeParse(wkJson);
-    if (!discovery.success) {
-      return { email, ok: false, message: "OIDC discovery missing userinfo_endpoint." };
-    }
-
-    const uiRes = await opts.fetchImpl(discovery.data.userinfo_endpoint, {
+    const usageRes = await opts.fetchImpl(codexUsageEndpoint(), {
       method: "GET",
-      headers: { authorization: `Bearer ${opts.accessToken}` },
+      headers: {
+        authorization: `Bearer ${opts.accessToken}`,
+        "chatgpt-account-id": accountId,
+      },
     });
-    if (!uiRes.ok) {
-      return { email, ok: false, message: `OIDC userinfo failed (${uiRes.status}).` };
+    if (!usageRes.ok) {
+      return { email, ok: false, message: `Codex usage endpoint failed (${usageRes.status}).` };
     }
 
-    const uiJson = await uiRes.json();
-    const parsedUserInfo = oidcUserInfoSchema.safeParse(uiJson);
-    const name = parsedUserInfo.success ? asNonEmptyString(parsedUserInfo.data.name) : undefined;
-    const uiEmail = parsedUserInfo.success ? asNonEmptyString(parsedUserInfo.data.email) : undefined;
-    return { email: uiEmail ?? email, name, ok: true, message: "Verified via OIDC userinfo." };
+    const usageJson = await usageRes.json();
+    const parsedUsage = codexUsageStatusSchema.safeParse(usageJson);
+    if (!parsedUsage.success) {
+      return { email, ok: false, message: "Codex usage endpoint returned an invalid payload." };
+    }
+    const planType = asNonEmptyString(parsedUsage.data.plan_type);
+    const planSuffix = planType ? ` (${planType})` : "";
+    const usage = mapCodexUsageStatus(parsedUsage.data);
+    const usageEmail = usage?.email ?? email;
+    return { email: usageEmail, ok: true, message: `Verified via Codex usage endpoint${planSuffix}.`, usage };
   } catch (err) {
-    return { email, ok: false, message: `OIDC userinfo error: ${String(err)}` };
+    return { email, ok: false, message: `Codex usage endpoint error: ${String(err)}` };
   }
 }
 
@@ -194,7 +342,7 @@ async function getCodexCliStatus(opts: {
     return { ...base, provider: "codex-cli", authorized: true, mode: "api_key", verified: false, account: null };
   }
 
-  let material = await readCodexAuthMaterial(opts.paths, { migrateLegacy: true });
+  let material = await readCodexAuthMaterial(opts.paths);
   if (!material?.accessToken) {
     return {
       ...base,
@@ -233,10 +381,10 @@ async function getCodexCliStatus(opts: {
     };
   }
 
-  const ui = await codexOidcUserInfo({
-    issuer: material.issuer,
+  const ui = await codexBackendVerification({
     idToken: material.idToken,
     accessToken: material.accessToken,
+    accountId: material.accountId,
     fetchImpl: opts.fetchImpl,
   });
   const account: ProviderAccount | null =
@@ -251,6 +399,7 @@ async function getCodexCliStatus(opts: {
       account,
       message: `${ui.message}${refreshMessage}`.trim(),
       checkedAt: opts.checkedAt,
+      ...(ui.usage ? { usage: ui.usage } : {}),
     };
   }
 
@@ -262,6 +411,7 @@ async function getCodexCliStatus(opts: {
     account,
     message: `Codex credentials present, but verification failed. ${ui.message}${refreshMessage}`,
     checkedAt: opts.checkedAt,
+    ...(ui.usage ? { usage: ui.usage } : {}),
   };
 }
 

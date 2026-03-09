@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { normalizeModelStreamPart, reasoningModeForProvider } from "../modelStream";
+import {
+  MODEL_STREAM_NORMALIZER_VERSION,
+  normalizeModelStreamPart,
+  reasoningModeForProvider,
+} from "../modelStream";
+import { supportsOpenAiContinuation } from "../../shared/openaiContinuation";
 import {
   SERVER_ERROR_CODES,
   SERVER_ERROR_SOURCES,
@@ -16,6 +21,7 @@ const assistantMessageContentArraySchema = z.array(z.unknown());
 const assistantMessageContentPartSchema = z.object({
   type: z.enum(["text", "output_text"]),
   text: z.string(),
+  phase: z.string().optional(),
 }).passthrough();
 const errorWithCodeSchema = z.object({ code: z.unknown() }).passthrough();
 const errorWithCodeAndSourceSchema = z.object({
@@ -73,6 +79,7 @@ function extractAssistantTextFromMessageContent(content: unknown): string {
   for (const part of parsedContent.data) {
     const parsedPart = assistantMessageContentPartSchema.safeParse(part);
     if (!parsedPart.success) continue;
+    if (parsedPart.data.phase === "commentary") continue;
     if (parsedPart.data.text.length > 0) chunks.push(parsedPart.data.text);
   }
   return chunks.join("");
@@ -87,6 +94,24 @@ function extractAssistantTextFromResponseMessages(messages: Array<{ role: string
     chunks.push(text);
   }
   return chunks.join("\n\n");
+}
+
+function isInvalidOpenAiContinuationError(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error);
+  const normalized = text.toLowerCase();
+  const mentionsPreviousResponse =
+    normalized.includes("previous_response_id") ||
+    normalized.includes("previous response") ||
+    normalized.includes("response_id");
+  if (!mentionsPreviousResponse) return false;
+
+  return (
+    normalized.includes("not found") ||
+    normalized.includes("invalid") ||
+    normalized.includes("expired") ||
+    normalized.includes("unknown") ||
+    normalized.includes("does not exist")
+  );
 }
 
 export class TurnExecutionManager {
@@ -104,6 +129,11 @@ export class TurnExecutionManager {
     if (this.context.state.running) {
       this.context.emitError("busy", "session", "Agent is busy");
       return;
+    }
+
+    if (this.context.state.persistenceStatus === "closed") {
+      this.context.state.persistenceStatus = "active";
+      this.context.queuePersistSessionSnapshot("session.reopened");
     }
 
     this.context.state.running = true;
@@ -127,68 +157,171 @@ export class TurnExecutionManager {
       this.context.queuePersistSessionSnapshot("session.user_message");
 
       let streamPartIndex = 0;
+      let rawStreamEventIndex = 0;
       const includeRawChunks = this.context.state.config.includeRawChunks ?? true;
-      const res = await this.context.deps.runTurnImpl({
-        config: this.context.state.config,
-        system: this.context.state.system,
-        messages: this.context.state.messages,
-        log: (line) => this.log(line),
-        askUser: (q, opts) => this.askUser(q, opts),
-        approveCommand: (cmd) => this.approveCommand(cmd),
-        updateTodos: (todos) => this.updateTodos(todos),
-        discoveredSkills: this.context.state.discoveredSkills,
-        maxSteps: this.context.state.maxSteps,
-        enableMcp: this.context.state.config.enableMcp,
-        spawnDepth: 0,
-        telemetryContext: {
-          functionId: "session.turn",
-          metadata: {
-            sessionId: this.context.id,
-            turnId,
+      const invokeRunTurn = async (providerStateOverride = this.context.state.providerState) =>
+        await this.context.deps.runTurnImpl({
+          config: this.context.state.config,
+          system: this.context.state.system,
+          messages: this.context.state.messages,
+          allMessages: this.context.state.allMessages,
+          providerState: providerStateOverride,
+          persistentAgentControl: this.context.state.sessionInfo.sessionKind === "subagent"
+            ? undefined
+            : this.context.deps.createSubagentSessionImpl
+            ? {
+                spawn: async ({ task, agentType }) =>
+                  await this.context.deps.createSubagentSessionImpl!({
+                    parentSessionId: this.context.id,
+                    parentConfig: this.context.state.config,
+                    agentType: agentType ?? "general",
+                    task,
+                  }),
+                list: async () =>
+                  await (this.context.deps.listSubagentSessionsImpl?.(this.context.id) ?? Promise.resolve([])),
+                sendInput: async ({ agentId, task }) => {
+                  await this.context.deps.sendSubagentInputImpl?.({
+                    parentSessionId: this.context.id,
+                    agentId,
+                    task,
+                  });
+                },
+                wait: async ({ agentId, timeoutMs }) => {
+                  const result = await this.context.deps.waitForSubagentImpl?.({
+                    parentSessionId: this.context.id,
+                    agentId,
+                    timeoutMs,
+                  });
+                  if (!result) {
+                    throw new Error("Persistent subagent waiting is unavailable.");
+                  }
+                  return {
+                    agentId,
+                    sessionId: result.sessionId,
+                    status: result.status,
+                    busy: result.busy,
+                    ...(result.text ? { text: result.text } : {}),
+                  };
+                },
+                close: async ({ agentId }) => {
+                  const result = await this.context.deps.closeSubagentImpl?.({
+                    parentSessionId: this.context.id,
+                    agentId,
+                  });
+                  if (!result) {
+                    throw new Error("Persistent subagent closing is unavailable.");
+                  }
+                  return result;
+                },
+              }
+            : undefined,
+          log: (line) => this.log(line),
+          askUser: (q, opts) => this.askUser(q, opts),
+          approveCommand: (cmd) => this.approveCommand(cmd),
+          updateTodos: (todos) => this.updateTodos(todos),
+          discoveredSkills: this.context.state.discoveredSkills,
+          maxSteps: this.context.state.maxSteps,
+          enableMcp: this.context.state.config.enableMcp,
+          spawnDepth: 0,
+          telemetryContext: {
+            functionId: "session.turn",
+            metadata: {
+              sessionId: this.context.id,
+              turnId,
+            },
           },
-        },
-        abortSignal: this.context.state.abortController.signal,
-        includeRawChunks,
-        onModelError: async (error) => {
-          lastStreamError = error;
-          this.context.emitTelemetry("agent.stream.error", "error", {
-            sessionId: this.context.id,
-            provider: this.context.state.config.provider,
-            model: this.context.state.config.model,
-            error: this.context.formatError(error),
-          });
-        },
-        onModelAbort: async () => {
-          this.context.emitTelemetry("agent.stream.aborted", "ok", {
-            sessionId: this.context.id,
-            provider: this.context.state.config.provider,
-            model: this.context.state.config.model,
-          });
-        },
-        onModelStreamPart: async (rawPart) => {
-          const partIndex = streamPartIndex++;
-          const normalized = normalizeModelStreamPart(rawPart, {
-            provider: this.context.state.config.provider,
-            includeRawPart: includeRawChunks,
-            fallbackIdSeed: turnId,
-            rawPartMode: process.env.COWORK_MODEL_STREAM_RAW_MODE === "full" ? "full" : "sanitized",
-          });
-          if (normalized.partType === "error") {
-             lastStreamError = normalized.part.error;
-          }
-          this.context.emit({
-            type: "model_stream_chunk",
-            sessionId: this.context.id,
-            turnId,
-            index: partIndex,
-            provider: this.context.state.config.provider,
-            model: this.context.state.config.model,
-            partType: normalized.partType,
-            part: normalized.part,
-            ...(normalized.rawPart !== undefined ? { rawPart: normalized.rawPart } : {}),
-          });
-        },
-      });
+          abortSignal: this.context.state.abortController!.signal,
+          includeRawChunks,
+          onModelError: async (error) => {
+            lastStreamError = error;
+            this.context.emitTelemetry("agent.stream.error", "error", {
+              sessionId: this.context.id,
+              provider: this.context.state.config.provider,
+              model: this.context.state.config.model,
+              error: this.context.formatError(error),
+            });
+          },
+          onModelAbort: async () => {
+            this.context.emitTelemetry("agent.stream.aborted", "ok", {
+              sessionId: this.context.id,
+              provider: this.context.state.config.provider,
+              model: this.context.state.config.model,
+            });
+          },
+          onModelRawEvent: async (rawEvent) => {
+            const index = rawStreamEventIndex++;
+            const eventPayload = {
+              type: "model_stream_raw" as const,
+              sessionId: this.context.id,
+              turnId,
+              index,
+              provider: this.context.state.config.provider,
+              model: this.context.state.config.model,
+              format: rawEvent.format,
+              normalizerVersion: MODEL_STREAM_NORMALIZER_VERSION,
+              event: rawEvent.event,
+            };
+            this.context.emit(eventPayload);
+            this.context.deps.sessionDb?.persistModelStreamChunk({
+              sessionId: this.context.id,
+              turnId,
+              chunkIndex: index,
+              ts: new Date().toISOString(),
+              provider: this.context.state.config.provider,
+              model: this.context.state.config.model,
+              rawFormat: rawEvent.format,
+              normalizerVersion: MODEL_STREAM_NORMALIZER_VERSION,
+              rawEvent: rawEvent.event,
+            });
+          },
+          onModelStreamPart: async (rawPart) => {
+            const partIndex = streamPartIndex++;
+            const normalized = normalizeModelStreamPart(rawPart, {
+              provider: this.context.state.config.provider,
+              includeRawPart: includeRawChunks,
+              fallbackIdSeed: turnId,
+              rawPartMode: process.env.COWORK_MODEL_STREAM_RAW_MODE === "full" ? "full" : "sanitized",
+            });
+            if (normalized.partType === "error") {
+              lastStreamError = normalized.part.error;
+            }
+            this.context.emit({
+              type: "model_stream_chunk",
+              sessionId: this.context.id,
+              turnId,
+              index: partIndex,
+              provider: this.context.state.config.provider,
+              model: this.context.state.config.model,
+              normalizerVersion: normalized.normalizerVersion,
+              partType: normalized.partType,
+              part: normalized.part,
+              ...(normalized.rawPart !== undefined ? { rawPart: normalized.rawPart } : {}),
+            });
+          },
+        });
+
+      let res;
+      try {
+        res = await invokeRunTurn();
+      } catch (error) {
+        const shouldRetryContinuation =
+          supportsOpenAiContinuation(this.context.state.config.provider) &&
+          this.context.state.providerState !== null &&
+          isInvalidOpenAiContinuationError(error);
+
+        if (!shouldRetryContinuation) {
+          throw error;
+        }
+
+        this.log("[warn] stored OpenAI continuation handle was rejected; retrying from local transcript");
+        this.context.state.providerState = null;
+        this.context.queuePersistSessionSnapshot("session.provider_state_invalidated");
+        res = await invokeRunTurn(null);
+      }
+
+      if (supportsOpenAiContinuation(this.context.state.config.provider)) {
+        this.context.state.providerState = res.providerState ?? null;
+      }
 
       this.deps.historyManager.appendMessagesToHistory(res.responseMessages);
       this.context.queuePersistSessionSnapshot("session.turn_response");

@@ -28,10 +28,56 @@ function formatAccount(account: any): string {
 
 function providerStatusLabel(status: any): string {
   if (!status) return "Not connected";
+  if (Array.isArray(status.usage?.rateLimits) && status.usage.rateLimits.some((entry: any) => entry?.limitReached === true)) {
+    return "Rate limited";
+  }
   if (status.verified) return "Connected";
   if (status.authorized) return "Connected";
   if (status.mode === "oauth_pending") return "Pending";
   return "Not connected";
+}
+
+function formatRateLimitName(entry: any): string {
+  const raw: string = typeof entry?.limitName === "string" && entry.limitName.trim() ? entry.limitName.trim() : "";
+  if (raw) return raw;
+  const limitId: string = typeof entry?.limitId === "string" && entry.limitId.trim() ? entry.limitId.trim() : "";
+  if (!limitId) return "Unknown";
+  return limitId
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatDurationSeconds(totalSeconds: unknown): string {
+  if (typeof totalSeconds !== "number" || !Number.isFinite(totalSeconds) || totalSeconds < 0) return "unknown";
+  if (totalSeconds < 60) return `${Math.round(totalSeconds)}s`;
+  if (totalSeconds < 3600) return `${Math.round(totalSeconds / 60)}m`;
+  if (totalSeconds < 86400) return `${Math.round(totalSeconds / 3600)}h`;
+  return `${Math.round(totalSeconds / 86400)}d`;
+}
+
+function formatWindowSummary(window: any): string {
+  if (!window || typeof window !== "object") return "No usage data";
+  const remainingPercent = typeof window.usedPercent === "number" && Number.isFinite(window.usedPercent)
+    ? `${Math.max(0, Math.min(100, 100 - window.usedPercent))}% left`
+    : "usage unknown";
+  const windowSize = typeof window.windowSeconds === "number" && Number.isFinite(window.windowSeconds)
+    ? `${formatDurationSeconds(window.windowSeconds)} window`
+    : "window unknown";
+  const reset = typeof window.resetAfterSeconds === "number" && Number.isFinite(window.resetAfterSeconds)
+    ? `resets in ${formatDurationSeconds(window.resetAfterSeconds)}`
+      : typeof window.resetAt === "string" && window.resetAt.trim()
+      ? `resets ${window.resetAt}`
+      : "reset unknown";
+  return `${remainingPercent} • ${windowSize} • ${reset}`;
+}
+
+function formatCreditsSummary(credits: any): string {
+  if (!credits || typeof credits !== "object") return "";
+  if (credits.unlimited === true) return "Unlimited credits";
+  if (typeof credits.balance === "string" && credits.balance.trim()) return `Credits balance: ${credits.balance.trim()}`;
+  return credits.hasCredits === true ? "Credits available" : "No credits available";
 }
 
 function isProviderName(value: string): value is ProviderName {
@@ -86,23 +132,33 @@ function exaConnectionSummary(hasSavedApiKey: boolean): string {
 }
 
 export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPageProps = {}) {
-  const workspaces = useAppStore((s) => s.workspaces);
-  const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
+  const workspacesFromStore = useAppStore((s) => s.workspaces);
+  const selectedWorkspaceIdFromStore = useAppStore((s) => s.selectedWorkspaceId);
+  const serverState = typeof window === "undefined" ? useAppStore.getState() : null;
+  const workspaces = serverState?.workspaces ?? workspacesFromStore;
+  const selectedWorkspaceId = serverState?.selectedWorkspaceId ?? selectedWorkspaceIdFromStore;
   const hasWorkspace = workspaces.length > 0;
   const canConnectProvider = hasWorkspace || selectedWorkspaceId !== null;
 
   const setProviderApiKey = useAppStore((s) => s.setProviderApiKey);
   const authorizeProviderAuth = useAppStore((s) => s.authorizeProviderAuth);
+  const logoutProviderAuth = useAppStore((s) => s.logoutProviderAuth);
   const callbackProviderAuth = useAppStore((s) => s.callbackProviderAuth);
   const requestProviderCatalog = useAppStore((s) => s.requestProviderCatalog);
   const requestProviderAuthMethods = useAppStore((s) => s.requestProviderAuthMethods);
   const refreshProviderStatus = useAppStore((s) => s.refreshProviderStatus);
-  const providerStatusByName = useAppStore((s) => s.providerStatusByName);
-  const providerStatusRefreshing = useAppStore((s) => s.providerStatusRefreshing);
-  const providerCatalog = useAppStore((s) => s.providerCatalog);
-  const providerAuthMethodsByProvider = useAppStore((s) => s.providerAuthMethodsByProvider);
-  const providerLastAuthChallenge = useAppStore((s) => s.providerLastAuthChallenge);
-  const providerLastAuthResult = useAppStore((s) => s.providerLastAuthResult);
+  const providerStatusByNameFromStore = useAppStore((s) => s.providerStatusByName);
+  const providerStatusRefreshingFromStore = useAppStore((s) => s.providerStatusRefreshing);
+  const providerCatalogFromStore = useAppStore((s) => s.providerCatalog);
+  const providerAuthMethodsByProviderFromStore = useAppStore((s) => s.providerAuthMethodsByProvider);
+  const providerLastAuthChallengeFromStore = useAppStore((s) => s.providerLastAuthChallenge);
+  const providerLastAuthResultFromStore = useAppStore((s) => s.providerLastAuthResult);
+  const providerStatusByName = serverState?.providerStatusByName ?? providerStatusByNameFromStore;
+  const providerStatusRefreshing = serverState?.providerStatusRefreshing ?? providerStatusRefreshingFromStore;
+  const providerCatalog = serverState?.providerCatalog ?? providerCatalogFromStore;
+  const providerAuthMethodsByProvider = serverState?.providerAuthMethodsByProvider ?? providerAuthMethodsByProviderFromStore;
+  const providerLastAuthChallenge = serverState?.providerLastAuthChallenge ?? providerLastAuthChallengeFromStore;
+  const providerLastAuthResult = serverState?.providerLastAuthResult ?? providerLastAuthResultFromStore;
 
   const [apiKeysByMethod, setApiKeysByMethod] = useState<Record<string, string>>({});
   const [apiKeyEditingByMethod, setApiKeyEditingByMethod] = useState<Record<string, boolean>>({});
@@ -142,6 +198,9 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
 
   useEffect(() => {
     if (!providerLastAuthResult?.ok) return;
+    const providerMethods = authMethodsForProvider(providerLastAuthResult.provider);
+    const method = providerMethods.find((candidate) => candidate.id === providerLastAuthResult.methodId);
+    if (method?.type !== "api") return;
     const stateKey = methodStateKey(providerLastAuthResult.provider, providerLastAuthResult.methodId);
     const refreshedMask = providerStatusByName[providerLastAuthResult.provider]?.savedApiKeyMasks?.[providerLastAuthResult.methodId];
     const nextMask = typeof refreshedMask === "string" && refreshedMask.trim().length > 0 ? refreshedMask : "••••••••";
@@ -149,7 +208,7 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
     setApiKeyEditingByMethod((s) => ({ ...s, [stateKey]: false }));
     setRevealApiKeyByMethod((s) => ({ ...s, [stateKey]: false }));
     setOptimisticApiKeyMaskByMethod((s) => ({ ...s, [stateKey]: nextMask }));
-  }, [providerLastAuthResult, providerStatusByName]);
+  }, [providerAuthMethodsByProvider, providerLastAuthResult, providerStatusByName]);
 
   const startOauthSignIn = (provider: ProviderName, method: ProviderAuthMethod, code?: string) => {
     void (async () => {
@@ -185,6 +244,11 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
       providerLastAuthResult?.provider === opts.provider && providerLastAuthResult?.methodId === opts.method.id
         ? providerLastAuthResult
         : null;
+    const showLogout =
+      opts.provider === "codex-cli" &&
+      opts.method.id === "oauth_cli" &&
+      opts.status?.mode === "oauth" &&
+      Boolean(opts.status?.authorized);
 
     return (
       <div key={stateKey} className="space-y-2 border-t border-border/70 pt-4 first:border-t-0 first:pt-0">
@@ -273,6 +337,19 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
             >
               Sign in
             </Button>
+            {showLogout ? (
+              <Button
+                variant="outline"
+                type="button"
+                disabled={!canConnectProvider}
+                title={!canConnectProvider ? "Add a workspace first." : undefined}
+                onClick={() => {
+                  void logoutProviderAuth(opts.provider);
+                }}
+              >
+                Log out
+              </Button>
+            ) : null}
             {opts.method.oauthMode === "code" ? (
               <>
                 <Input
@@ -418,6 +495,55 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
                         method,
                       }),
                     )}
+
+                    {status?.usage ? (
+                      <div className="space-y-3 border-t border-border/70 pt-4">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Usage status</div>
+                        <div className="space-y-1 text-sm text-muted-foreground">
+                          {typeof status.usage.planType === "string" && status.usage.planType.trim() ? (
+                            <div>Plan: <span className="text-foreground">{status.usage.planType}</span></div>
+                          ) : null}
+                          {typeof status.usage.accountId === "string" && status.usage.accountId.trim() ? (
+                            <div>Account ID: <span className="font-mono text-foreground">{status.usage.accountId}</span></div>
+                          ) : null}
+                          {typeof status.message === "string" && status.message.trim() ? (
+                            <div>Status: <span className="text-foreground">{status.message}</span></div>
+                          ) : null}
+                        </div>
+
+                        {Array.isArray(status.usage.rateLimits) && status.usage.rateLimits.length > 0 ? (
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rate limits</div>
+                            <div className="space-y-2">
+                              {status.usage.rateLimits.map((entry: any, index: number) => {
+                                const creditsSummary = formatCreditsSummary(entry?.credits);
+                                return (
+                                  <div key={`${entry?.limitId ?? "limit"}:${index}`} className="rounded-md border border-border/70 bg-muted/20 p-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div className="text-sm font-medium text-foreground">{formatRateLimitName(entry)}</div>
+                                      <Badge variant={entry?.limitReached ? "destructive" : entry?.allowed === false ? "secondary" : "outline"}>
+                                        {entry?.limitReached ? "Limit reached" : entry?.allowed === false ? "Blocked" : "Allowed"}
+                                      </Badge>
+                                    </div>
+                                    {entry?.primaryWindow ? (
+                                      <div className="mt-2 text-xs text-muted-foreground">Primary: {formatWindowSummary(entry.primaryWindow)}</div>
+                                    ) : null}
+                                    {entry?.secondaryWindow ? (
+                                      <div className="mt-1 text-xs text-muted-foreground">Secondary: {formatWindowSummary(entry.secondaryWindow)}</div>
+                                    ) : null}
+                                    {creditsSummary ? (
+                                      <div className="mt-1 text-xs text-muted-foreground">{creditsSummary}</div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : typeof status?.message === "string" && status.message.trim() ? (
+                      <div className="border-t border-border/70 pt-4 text-sm text-muted-foreground">{status.message}</div>
+                    ) : null}
 
                     {models.length > 0 ? (
                       <div className="space-y-2 border-t border-border/70 pt-4">

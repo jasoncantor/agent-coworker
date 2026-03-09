@@ -1,6 +1,8 @@
 import { z } from "zod";
 
+import { persistentSubagentSummarySchema, sessionKindSchema, subagentAgentTypeSchema } from "../../shared/persistentSubagents";
 import type { HarnessContextState, ModelMessage, TodoItem } from "../../types";
+import { openAiContinuationStateSchema } from "../../shared/openaiContinuation";
 import type { PersistedSessionRecord } from "../sessionDb";
 import type { PersistedSessionSummary } from "../sessionStore";
 import {
@@ -34,8 +36,23 @@ const summaryRowSchema = z.object({
   message_count: nonNegativeIntegerSchema,
 }).strict();
 
+const subagentSummaryRowSchema = z.object({
+  session_id: nonEmptyStringSchema,
+  parent_session_id: nonEmptyStringSchema,
+  agent_type: subagentAgentTypeSchema,
+  title: nonEmptyStringSchema,
+  provider: providerNameSchema,
+  model: nonEmptyStringSchema,
+  created_at: isoTimestampSchema,
+  updated_at: isoTimestampSchema,
+  status: z.enum(["active", "closed"]),
+}).strict();
+
 const recordRowSchema = z.object({
   session_id: nonEmptyStringSchema,
+  session_kind: sessionKindSchema,
+  parent_session_id: z.union([nonEmptyStringSchema, z.null()]),
+  agent_type: subagentAgentTypeSchema.nullable(),
   title: nonEmptyStringSchema,
   provider: providerNameSchema,
   model: nonEmptyStringSchema,
@@ -54,6 +71,7 @@ const recordRowSchema = z.object({
   title_source: sessionTitleSourceSchema,
   title_model: z.union([nonEmptyStringSchema, z.null()]),
   messages_json: z.string(),
+  provider_state_json: z.union([z.string(), z.null()]),
   todos_json: z.string(),
   harness_context_json: z.union([z.string(), z.null()]),
 }).strict();
@@ -75,6 +93,26 @@ export function mapPersistedSessionSummaryRow(row: Record<string, unknown>): Per
   };
 }
 
+export function mapPersistedSessionSubagentSummaryRow(row: Record<string, unknown>) {
+  const parsed = subagentSummaryRowSchema.safeParse(row);
+  if (!parsed.success) {
+    throw new Error(`Invalid subagent summary row: ${parsed.error.issues[0]?.message ?? "validation_failed"}`);
+  }
+
+  return persistentSubagentSummarySchema.parse({
+    sessionId: parsed.data.session_id,
+    parentSessionId: parsed.data.parent_session_id,
+    agentType: parsed.data.agent_type,
+    title: parsed.data.title,
+    provider: parsed.data.provider,
+    model: parsed.data.model,
+    createdAt: parsed.data.created_at,
+    updatedAt: parsed.data.updated_at,
+    status: parsed.data.status,
+    busy: false,
+  });
+}
+
 export function mapPersistedSessionRecordRow(row: Record<string, unknown>): PersistedSessionRecord {
   const parsed = recordRowSchema.safeParse(row);
   if (!parsed.success) {
@@ -83,6 +121,13 @@ export function mapPersistedSessionRecordRow(row: Record<string, unknown>): Pers
 
   const values = parsed.data;
   const messages = parseJsonStringWithSchema(values.messages_json, z.array(modelMessageSchema), "messages_json");
+  const providerState = values.provider_state_json === null
+    ? null
+    : parseJsonStringWithSchema(
+        values.provider_state_json,
+        openAiContinuationStateSchema.nullable(),
+        "provider_state_json",
+      );
   const todos = parseJsonStringWithSchema(values.todos_json, z.array(todoItemSchema), "todos_json");
   const harnessContext = values.harness_context_json === null
     ? null
@@ -94,6 +139,9 @@ export function mapPersistedSessionRecordRow(row: Record<string, unknown>): Pers
 
   return {
     sessionId: values.session_id,
+    sessionKind: values.session_kind,
+    parentSessionId: values.parent_session_id,
+    agentType: values.agent_type,
     title: values.title,
     titleSource: values.title_source,
     titleModel: values.title_model,
@@ -112,6 +160,7 @@ export function mapPersistedSessionRecordRow(row: Record<string, unknown>): Pers
     lastEventSeq: values.last_event_seq,
     systemPrompt: values.system_prompt,
     messages,
+    providerState,
     todos,
     harnessContext: harnessContext as HarnessContextState | null,
   };

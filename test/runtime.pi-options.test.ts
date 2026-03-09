@@ -134,6 +134,16 @@ describe("pi runtime provider option mapping", () => {
     expect(mapped.headers).toEqual({ "ChatGPT-Account-ID": "acct_123" });
   });
 
+  test("builds supported OpenAI continuation request options", () => {
+    expect(__internal.buildOpenAiContinuationRequestOptions("resp_123")).toEqual({
+      truncation: "auto",
+      previous_response_id: "resp_123",
+    });
+    expect(__internal.buildOpenAiContinuationRequestOptions(undefined)).toEqual({
+      truncation: "auto",
+    });
+  });
+
   test("converts zod tool schemas into json schema", () => {
     const schema = z.object({
       path: z.string(),

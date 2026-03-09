@@ -72,6 +72,7 @@ const { EXA_SECTION_ID, ProvidersPage } = await import("../src/ui/settings/pages
 
 describe("desktop providers page", () => {
   beforeEach(() => {
+    (useAppStore as any).getInitialState = useAppStore.getState;
     useAppStore.setState({
       workspaces: [
         {
@@ -181,7 +182,7 @@ describe("desktop providers page", () => {
           url: "https://auth.openai.com/oauth/authorize",
         },
       } as any,
-    }, true);
+    });
 
     expect(useAppStore.getState().selectedWorkspaceId).toBe("ws-1");
     expect(useAppStore.getState().workspaces).toHaveLength(1);
@@ -194,5 +195,161 @@ describe("desktop providers page", () => {
 
     expect(html).not.toContain("Open link");
     expect(html).not.toContain("https://auth.openai.com/oauth/authorize");
+  });
+
+  test("codex oauth card shows logout when connected", () => {
+    useAppStore.setState({
+      workspaces: [
+        {
+          id: "ws-1",
+          name: "Workspace 1",
+          path: "/tmp/ws-1",
+          createdAt: "2026-03-07T00:00:00.000Z",
+          lastOpenedAt: "2026-03-07T00:00:00.000Z",
+          defaultEnableMcp: true,
+          yolo: false,
+        },
+      ],
+      selectedWorkspaceId: "ws-1",
+      providerStatusByName: {
+        google: {
+          provider: "google",
+          authorized: false,
+          verified: false,
+          mode: "missing",
+          account: null,
+          message: "Not connected.",
+          checkedAt: "2026-03-07T00:00:00.000Z",
+        },
+        "codex-cli": {
+          provider: "codex-cli",
+          authorized: true,
+          verified: false,
+          mode: "oauth",
+          account: null,
+          message: "OAuth connected.",
+          checkedAt: "2026-03-07T00:00:00.000Z",
+        },
+      },
+      providerCatalog: [
+        { id: "google", name: "Google" },
+        { id: "openai", name: "OpenAI" },
+        { id: "codex-cli", name: "Codex CLI" },
+      ] as any,
+      providerAuthMethodsByProvider: {
+        google: [
+          { id: "api_key", type: "api", label: "API key" },
+          { id: "exa_api_key", type: "api", label: "Exa API key (web search)" },
+        ],
+        openai: [{ id: "api_key", type: "api", label: "API key" }],
+        "codex-cli": [
+          { id: "oauth_cli", type: "oauth", label: "Sign in with ChatGPT (browser)", oauthMode: "auto" },
+        ],
+      } as any,
+      providerLastAuthChallenge: null,
+      providerLastAuthResult: null,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(ProvidersPage, {
+        initialExpandedSectionId: "provider:codex-cli",
+      }),
+    );
+
+    expect(html).toContain("Log out");
+  });
+
+  test("codex provider card renders usage status and rate limits", () => {
+    useAppStore.setState({
+      workspaces: [
+        {
+          id: "ws-1",
+          name: "Workspace 1",
+          path: "/tmp/ws-1",
+          createdAt: "2026-03-07T00:00:00.000Z",
+          lastOpenedAt: "2026-03-07T00:00:00.000Z",
+          defaultEnableMcp: true,
+          yolo: false,
+        },
+      ],
+      selectedWorkspaceId: "ws-1",
+      providerStatusByName: {
+        google: {
+          provider: "google",
+          authorized: false,
+          verified: false,
+          mode: "missing",
+          account: null,
+          message: "Not connected.",
+          checkedAt: "2026-03-07T00:00:00.000Z",
+        },
+        "codex-cli": {
+          provider: "codex-cli",
+          authorized: true,
+          verified: true,
+          mode: "oauth",
+          account: { email: "max@example.com" },
+          message: "Verified via Codex usage endpoint (pro).",
+          checkedAt: "2026-03-07T00:00:00.000Z",
+          usage: {
+            accountId: "acct-123",
+            email: "max@example.com",
+            planType: "pro",
+            rateLimits: [
+              {
+                limitId: "codex",
+                allowed: true,
+                limitReached: false,
+                primaryWindow: {
+                  usedPercent: 4,
+                  windowSeconds: 18_000,
+                  resetAfterSeconds: 1_800,
+                  resetAt: "2026-03-07T01:00:00.000Z",
+                },
+                secondaryWindow: null,
+                credits: {
+                  hasCredits: false,
+                  unlimited: false,
+                  balance: "0",
+                },
+              },
+            ],
+          },
+        },
+      },
+      providerCatalog: [
+        { id: "google", name: "Google" },
+        { id: "openai", name: "OpenAI" },
+        { id: "codex-cli", name: "Codex CLI" },
+      ] as any,
+      providerAuthMethodsByProvider: {
+        google: [
+          { id: "api_key", type: "api", label: "API key" },
+          { id: "exa_api_key", type: "api", label: "Exa API key (web search)" },
+        ],
+        openai: [{ id: "api_key", type: "api", label: "API key" }],
+        "codex-cli": [
+          { id: "oauth_cli", type: "oauth", label: "Sign in with ChatGPT (browser)", oauthMode: "auto" },
+        ],
+      } as any,
+      providerLastAuthChallenge: null,
+      providerLastAuthResult: null,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(ProvidersPage, {
+        initialExpandedSectionId: "provider:codex-cli",
+      }),
+    );
+
+    expect(html).toContain("Usage status");
+    expect(html).toContain("Plan:");
+    expect(html).toContain("pro");
+    expect(html).toContain("Account ID:");
+    expect(html).toContain("acct-123");
+    expect(html).toContain("Rate limits");
+    expect(html).toContain("Codex");
+    expect(html).toContain("96% left");
+    expect(html).toContain("Credits balance: 0");
   });
 });

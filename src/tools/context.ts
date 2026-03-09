@@ -1,5 +1,22 @@
+import type { PersistentSubagentSummary, SubagentAgentType } from "../shared/persistentSubagents";
 import type { AgentConfig } from "../types";
 import type { TodoItem } from "../types";
+
+export type PersistentAgentWaitResult = {
+  agentId: string;
+  sessionId: string;
+  status: "completed" | "running" | "error" | "closed";
+  busy: boolean;
+  text?: string;
+};
+
+export interface PersistentAgentControl {
+  spawn: (opts: { task: string; agentType?: SubagentAgentType }) => Promise<PersistentSubagentSummary>;
+  list: () => Promise<PersistentSubagentSummary[]>;
+  sendInput: (opts: { agentId: string; task: string }) => Promise<void>;
+  wait: (opts: { agentId: string; timeoutMs?: number }) => Promise<PersistentAgentWaitResult>;
+  close: (opts: { agentId: string }) => Promise<PersistentSubagentSummary>;
+}
 
 export interface ToolContext {
   config: AgentConfig;
@@ -28,4 +45,7 @@ export interface ToolContext {
    * Tools can use this as context when a provider-native-style tool call omits explicit arguments.
    */
   turnUserPrompt?: string;
+
+  /** Session-backed persistent agent lifecycle callbacks. */
+  persistentAgentControl?: PersistentAgentControl;
 }

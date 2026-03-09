@@ -137,6 +137,15 @@ export function buildPiStreamOptions(
   return options;
 }
 
+export function buildOpenAiContinuationRequestOptions(
+  previousResponseId?: string,
+): Record<string, unknown> {
+  return {
+    truncation: "auto",
+    ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
+  };
+}
+
 export function isZodSchema(value: unknown): value is z.ZodTypeAny {
   const maybe = value as { safeParse?: unknown; _zod?: unknown };
   return !!maybe && typeof maybe.safeParse === "function" && typeof maybe._zod === "object";
