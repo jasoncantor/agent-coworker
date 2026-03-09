@@ -32,7 +32,7 @@ describe("providers/authRegistry", () => {
     if (!result.ok) return;
     expect(result.challenge.method).toBe("auto");
     expect(result.challenge.url).toBeUndefined();
-    expect(result.challenge.instructions).toContain("Cowork's Codex sign-in URL automatically");
+    expect(result.challenge.instructions).toContain("official Codex sign-in flow automatically");
   });
 
   test("authorizeProviderAuth fails for api key method", () => {

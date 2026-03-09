@@ -88,7 +88,7 @@ export function authorizeProviderAuth(opts: {
       ok: true,
       challenge: {
         method: method.oauthMode ?? "auto",
-        instructions: "Continue to open browser-based ChatGPT OAuth and finish sign-in. The app will open Cowork's Codex sign-in URL automatically.",
+        instructions: "Continue to open browser-based ChatGPT OAuth and finish sign-in. The app will open the official Codex sign-in flow automatically.",
       },
     };
   }

@@ -1153,8 +1153,7 @@ describe("AgentSession", () => {
         expect(evt.provider).toBe("codex-cli");
         expect(evt.methodId).toBe("oauth_cli");
         expect(evt.challenge.method).toBe("auto");
-        expect(typeof evt.challenge.url).toBe("string");
-        expect(evt.challenge.url).toContain("https://auth.openai.com/oauth/authorize");
+        expect(evt.challenge.url).toBeUndefined();
       }
     });
   });
@@ -1287,8 +1286,7 @@ describe("AgentSession", () => {
       expect(challengeEvt).toBeDefined();
       if (challengeEvt && challengeEvt.type === "provider_auth_challenge") {
         expect(challengeEvt.challenge.method).toBe("auto");
-        expect(typeof challengeEvt.challenge.url).toBe("string");
-        expect(challengeEvt.challenge.url).toContain("https://auth.openai.com/oauth/authorize");
+        expect(challengeEvt.challenge.url).toBeUndefined();
       }
 
       await session.callbackProviderAuth("codex-cli", "oauth_cli", "manual-auth-code");

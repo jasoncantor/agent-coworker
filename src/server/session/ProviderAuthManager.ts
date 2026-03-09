@@ -1,5 +1,5 @@
 import type { getAiCoworkerPaths } from "../../connect";
-import { prepareCodexBrowserOAuth, type CodexBrowserOAuthPending } from "../../providers/codex-oauth-flows";
+import { createCodexBrowserOAuthChallenge, type CodexBrowserOAuthPending } from "../../providers/codex-oauth-flows";
 import {
   type ConnectProviderHandler,
   authorizeProviderAuth,
@@ -153,7 +153,9 @@ export class ProviderAuthManager {
     if (providerRaw === "codex-cli" && methodId === "oauth_cli") {
       try {
         this.clearPendingCodexBrowserAuth();
-        this.pendingCodexBrowserAuth = await prepareCodexBrowserOAuth();
+        // Keep manual-code fallback state, but do not bind a localhost server at
+        // authorize time. The live browser-login flow starts during callback.
+        this.pendingCodexBrowserAuth = createCodexBrowserOAuthChallenge();
       } catch (err) {
         const message = this.opts.formatError(err);
         this.opts.emitError("provider_error", "provider", `Codex OAuth initialization failed: ${message}`);
@@ -174,7 +176,6 @@ export class ProviderAuthManager {
       challenge: this.pendingCodexBrowserAuth && providerRaw === "codex-cli" && methodId === "oauth_cli"
         ? {
             ...result.challenge,
-            url: this.pendingCodexBrowserAuth.authUrl,
           }
         : result.challenge,
     });

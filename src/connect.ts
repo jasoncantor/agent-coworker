@@ -1,13 +1,18 @@
+import { loginOpenAICodex } from "@mariozechner/pi-ai";
+
 import {
+  CODEX_OAUTH_CLIENT_ID,
+  CODEX_OAUTH_ISSUER,
+  CODEX_OAUTH_ORIGINATOR,
   clearCodexAuthMaterial,
   isTokenExpiring,
   readCodexAuthMaterial,
   refreshCodexAuthMaterial,
+  writeCodexAuthMaterial,
 } from "./providers/codex-auth";
 import {
   completeCodexBrowserOAuth,
   isOauthCliProvider,
-  runCodexBrowserOAuth,
   type CodexBrowserOAuthPending,
 } from "./providers/codex-oauth-flows";
 import {
@@ -24,7 +29,7 @@ import {
   type ToolApiKeyName,
 } from "./store/connections";
 import { maskApiKey, readToolApiKey, writeToolApiKey } from "./tools/api-keys";
-import type { UrlOpener } from "./utils/browser";
+import { openExternalUrl, type UrlOpener } from "./utils/browser";
 
 export {
   getAiCoworkerPaths,
@@ -51,7 +56,7 @@ export type {
 const connectOauthDepsDefaults = {
   completeCodexBrowserOAuth,
   isOauthCliProvider,
-  runCodexBrowserOAuth,
+  runCodexLogin: runPiNativeCodexLogin,
 };
 
 const connectOauthDeps = {
@@ -93,6 +98,62 @@ export type DisconnectProviderResult =
       oauthCredentialsFile?: string;
     }
   | { ok: false; provider: ConnectService; message: string };
+
+async function runPiNativeCodexLogin(opts: {
+  paths: AiCoworkerPaths;
+  code?: string;
+  onOauthLine?: (line: string) => void;
+  openUrl?: UrlOpener;
+}): Promise<string> {
+  const opener = opts.openUrl ?? openExternalUrl;
+  const manualCode = opts.code?.trim() || undefined;
+  let openUrlTask: Promise<void> | null = null;
+
+  opts.onOauthLine?.("[auth] starting Codex-native login flow.");
+  const credentials = await loginOpenAICodex({
+    originator: CODEX_OAUTH_ORIGINATOR,
+    onAuth: ({ url, instructions }) => {
+      opts.onOauthLine?.("[auth] opening browser for Codex login");
+      if (instructions?.trim()) {
+        opts.onOauthLine?.(`[auth] ${instructions.trim()}`);
+      }
+      openUrlTask = (async () => {
+        const opened = await opener(url);
+        if (!opened) {
+          opts.onOauthLine?.(`[auth] open this URL to continue: ${url}`);
+        }
+      })().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        opts.onOauthLine?.(`[auth] failed to open browser automatically: ${message}`);
+      });
+    },
+    onProgress: (message) => {
+      if (message.trim()) opts.onOauthLine?.(`[auth] ${message.trim()}`);
+    },
+    onManualCodeInput: manualCode ? async () => manualCode : undefined,
+    onPrompt: async (prompt) => {
+      if (manualCode) return manualCode;
+      throw new Error(`${prompt.message} Automatic browser callback did not complete.`);
+    },
+  });
+
+  if (openUrlTask) {
+    await openUrlTask;
+  }
+
+  const material = await writeCodexAuthMaterial(opts.paths, {
+    issuer: CODEX_OAUTH_ISSUER,
+    clientId: CODEX_OAUTH_CLIENT_ID,
+    accessToken: credentials.access,
+    refreshToken: credentials.refresh,
+    expiresAtMs: credentials.expires,
+    accountId:
+      typeof credentials.accountId === "string" && credentials.accountId.trim()
+        ? credentials.accountId.trim()
+        : undefined,
+  });
+  return material.file;
+}
 
 export async function connectProvider(opts: {
   provider: ConnectService;
@@ -191,26 +252,25 @@ export async function connectProvider(opts: {
 
   try {
     if (methodId !== "oauth_cli") {
-      opts.onOauthLine?.(`[auth] deprecated Codex auth method "${methodId}" requested; using Cowork browser login.`);
+      opts.onOauthLine?.(`[auth] deprecated Codex auth method "${methodId}" requested; using Codex-native browser login.`);
     }
     const code = opts.code?.trim() || "";
     let oauthCredentialsFile = "";
-    if (opts.codexBrowserAuthPending) {
+    if (opts.codexBrowserAuthPending && code) {
       oauthCredentialsFile = await connectOauthDeps.completeCodexBrowserOAuth({
         paths,
         pending: opts.codexBrowserAuthPending,
         fetchImpl,
-        code: code || undefined,
+        code,
         onLine: opts.onOauthLine,
         openUrl: opts.openUrl,
       });
     } else if (code) {
       throw new Error("Authorization code requires an active Codex OAuth challenge. Start authorization first.");
     } else {
-      oauthCredentialsFile = await connectOauthDeps.runCodexBrowserOAuth({
+      oauthCredentialsFile = await connectOauthDeps.runCodexLogin({
         paths,
-        fetchImpl,
-        onLine: opts.onOauthLine,
+        onOauthLine: opts.onOauthLine,
         openUrl: opts.openUrl,
       });
     }

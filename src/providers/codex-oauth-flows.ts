@@ -93,6 +93,24 @@ export type CodexBrowserOAuthPending = {
   close: () => void;
 };
 
+export function createCodexBrowserOAuthChallenge(port = 1455): CodexBrowserOAuthPending {
+  const codeVerifier = generatePkceVerifier();
+  const codeChallenge = generatePkceChallenge(codeVerifier);
+  const state = generateOauthState();
+  const redirectUri = `http://${OAUTH_LOOPBACK_HOST}:${port}/auth/callback`;
+  const authUrl = buildCodexAuthorizeUrl(redirectUri, codeChallenge, state);
+  const waitForCode = new Promise<string>(() => {});
+  void waitForCode.catch(() => undefined);
+
+  return {
+    authUrl,
+    redirectUri,
+    codeVerifier,
+    waitForCode,
+    close: () => {},
+  };
+}
+
 async function exchangeCodexAuthorizationCode(opts: {
   code: string;
   redirectUri: string;
@@ -124,9 +142,11 @@ async function exchangeCodexAuthorizationCode(opts: {
 }
 
 export async function prepareCodexBrowserOAuth(): Promise<CodexBrowserOAuthPending> {
-  const codeVerifier = generatePkceVerifier();
-  const codeChallenge = generatePkceChallenge(codeVerifier);
-  const state = generateOauthState();
+  const pending = createCodexBrowserOAuthChallenge();
+  const state = new URL(pending.authUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Codex OAuth challenge missing state.");
+  }
 
   let resolveCode!: (code: string) => void;
   let rejectCode!: (error: Error) => void;
@@ -189,16 +209,17 @@ export async function prepareCodexBrowserOAuth(): Promise<CodexBrowserOAuthPendi
     settle({ code });
   });
 
-  // DO NOT TOUCH THIS CONTRACT.
-  // The browser-facing redirect must remain http://localhost:{port}/auth/callback
-  // to match the reference Codex auth implementation exactly.
   const redirectUri = `http://${OAUTH_LOOPBACK_HOST}:${listener.port}/auth/callback`;
-  const authUrl = buildCodexAuthorizeUrl(redirectUri, codeChallenge, state);
+  const authUrl = buildCodexAuthorizeUrl(
+    redirectUri,
+    generatePkceChallenge(pending.codeVerifier),
+    state,
+  );
 
   return {
     authUrl,
     redirectUri,
-    codeVerifier,
+    codeVerifier: pending.codeVerifier,
     waitForCode,
     close: () => {
       listener.close();

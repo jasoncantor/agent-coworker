@@ -17,6 +17,43 @@
   - `~/.bun/bin/bun test` -> pass (`1856 pass, 0 fail, 2 skip`)
   - `~/.bun/bin/bun run desktop:build -- --publish never` -> pass for local unsigned packaging; produced `apps/desktop/release/Cowork-0.1.15-mac-arm64.dmg`, `apps/desktop/release/Cowork-0.1.15-mac-arm64.zip`, blockmaps, and refreshed updater metadata before the dual-stack listener follow-up.
 
+# Task: Restore Codex OAuth acquisition parity without prebinding the callback port
+
+## Plan
+- [x] Replace the current auto browser-login acquisition path with the native Codex login flow while keeping Cowork-owned token persistence.
+- [x] Preserve manual-code fallback state, but stop binding a localhost callback server during `authorize` so the real login flow can claim the callback port during `callback`.
+- [x] Revalidate connect/session/auth-registry behavior plus the full repo test suite, then record the regression and prevention note below.
+
+## Review
+- `src/connect.ts` now uses `loginOpenAICodex()` for the automatic browser sign-in path with the pinned Codex originator `codex_cli_rs`, then persists the resulting access/refresh tokens into Cowork’s own `~/.cowork/auth/codex-cli/auth.json` format. That restores the upstream acquisition logic without giving up Cowork-owned token storage and refresh handling.
+- Manual code completion still works through Cowork’s own token-exchange helper when a pending Codex challenge exists, but the authorize step no longer pre-binds the callback server. `src/providers/codex-oauth-flows.ts` now has a lightweight `createCodexBrowserOAuthChallenge()` helper that only generates PKCE/state/auth URL for fallback/manual use.
+- `src/server/session/ProviderAuthManager.ts` now stores that lightweight challenge during `authorizeProviderAuth("codex-cli", "oauth_cli")` and intentionally does not emit a live `challenge.url` for Codex auto OAuth. That avoids stale/dead browser links in the UI and prevents the old port collision where authorize-time setup could occupy `1455` before the real login flow started.
+- `src/providers/authRegistry.ts` now describes Codex auto OAuth as opening the official Codex sign-in flow automatically, matching the new behavior.
+- Verification:
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test test/connect.test.ts test/session.test.ts test/providers/auth-registry.test.ts test/providers/codex-oauth-flows.test.ts` -> pass (`210 pass, 0 fail`)
+  - `~/.bun/bin/bun test` -> pass (`1856 pass, 0 fail, 2 skip`)
+
+# Task: Hunt the Codex OAuth browser-login regression across recent commits
+
+## Plan
+- [x] Audit the last 5-10 commits that touched Codex OAuth/browser login, including authorize URL, redirect host, scope, originator, and desktop callback flow.
+- [x] Identify the concrete regression-causing change and patch the minimal code path instead of continuing speculative contract tweaks.
+- [x] Rerun focused auth tests plus repo validation, then record the exact regression point and final fix below.
+
+## Review
+- History audit over `8cbadc7` through `fdca432` shows the first real browser-login regression point is commit `8cbadc7` (`Review Codex compaction support`). That change replaced a hardcoded browser redirect `http://localhost:${listener.port}/auth/callback` in `src/providers/codex-oauth-flows.ts` with `http://${OAUTH_LOOPBACK_HOST}:${listener.port}/auth/callback` while `src/auth/oauth-server.ts` still defined `OAUTH_LOOPBACK_HOST = "127.0.0.1"`. That is the first commit in the recent window that changed the actual browser authorize URL from provider-accepted `localhost` to rejected `127.0.0.1`.
+- Commit `d09b341` (`Fix connect provider oauth flow`) materially changed the desktop/provider callback plumbing and emitted a real `provider_auth_challenge.url`, but it did not change client ID, originator, scope, or the browser redirect host. It is less plausible as the cause of an `auth.openai.com` failure before localhost callback.
+- Commits `25d7c3a` and `18f7e88` are attempted host-fix follow-ups: they change `OAUTH_LOOPBACK_HOST` back to `localhost` and then harden dual-stack loopback binding. Those commits address the `8cbadc7` regression but still leave the browser redirect host coupled to the bind-host constant, which is fragile.
+- Commits `57808e1`, `b44dbf1`, and `fdca432` are later local follow-ups. `57808e1` is comment-only, `b44dbf1` changes raw query encoding from `+` to `%20`, and `fdca432` narrows the scope to the live current browser-login scope. None of those are in the published `v0.1.16` release, because `main` is currently ahead of `origin/main` by 2 commits.
+- Verification:
+  - `git log --oneline -n 12` -> relevant auth/browser commits are `8cbadc7`, `d09b341`, `25d7c3a`, `18f7e88`, `57808e1`, `b44dbf1`, `fdca432`
+  - `git show 8cbadc7^:src/providers/codex-oauth-flows.ts` vs `git show 8cbadc7:src/providers/codex-oauth-flows.ts` -> confirms the first browser-facing redirect regression from hardcoded `localhost` to `${OAUTH_LOOPBACK_HOST}` while the host constant still equaled `127.0.0.1`
+  - `git rev-list --left-right --count main...origin/main` -> `2  0`, so the later scope/encoding fixes are still local and not in the published release build
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test test/providers/codex-oauth-flows.test.ts test/connect.test.ts` -> currently fails in this environment while trying to bind localhost loopback sockets
+  - `node` loopback bind probes (`createServer().listen(..., "::1"/"127.0.0.1")`) -> `EPERM` here, which explains why the localhost-listener tests are not trustworthy in this current session even though the auth code itself was already previously validated before this audit turn
+
 # Task: Fix Codex OAuth authorize URL parity with the live Codex flow
 
 ## Plan

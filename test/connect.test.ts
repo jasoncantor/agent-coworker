@@ -8,7 +8,7 @@ import { __internal as connectInternal } from "../src/connect";
 
 const mockedAuthorizeUrl = `https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=${encodeURIComponent(`http://${OAUTH_LOOPBACK_HOST}:1455/auth/callback`)}&scope=openid%20profile%20email%20offline_access&code_challenge=mock-challenge&code_challenge_method=S256&id_token_add_organizations=true&codex_cli_simplified_flow=true&state=mock-state&originator=codex_cli_rs`;
 
-const runCodexBrowserOAuthMock = mock(async (opts: any) => {
+const runCodexLoginMock = mock(async (opts: any) => {
   await opts.openUrl?.(mockedAuthorizeUrl);
   const file = path.join(opts.paths.authDir, "codex-cli", "auth.json");
   await fs.mkdir(path.dirname(file), { recursive: true });
@@ -100,9 +100,9 @@ describe("connect helpers", () => {
 describe("connectProvider", () => {
   beforeEach(() => {
     connectInternal.setOauthDepsForTests({
-      completeCodexBrowserOAuth: completeCodexBrowserOAuthMock,
       isOauthCliProvider: (provider: string) => provider === "codex-cli",
-      runCodexBrowserOAuth: runCodexBrowserOAuthMock,
+      completeCodexBrowserOAuth: completeCodexBrowserOAuthMock,
+      runCodexLogin: runCodexLoginMock,
     });
     completeCodexBrowserOAuthMock.mockReset();
     completeCodexBrowserOAuthMock.mockImplementation(async (opts: any) => {
@@ -129,8 +129,8 @@ describe("connectProvider", () => {
       }, null, 2), "utf-8");
       return file;
     });
-    runCodexBrowserOAuthMock.mockReset();
-    runCodexBrowserOAuthMock.mockImplementation(async (opts: any) => {
+    runCodexLoginMock.mockReset();
+    runCodexLoginMock.mockImplementation(async (opts: any) => {
       await opts.openUrl?.(mockedAuthorizeUrl);
       const file = path.join(opts.paths.authDir, "codex-cli", "auth.json");
       await fs.mkdir(path.dirname(file), { recursive: true });
@@ -262,7 +262,7 @@ describe("connectProvider", () => {
     if (!result.ok) return;
     expect(result.mode).toBe("oauth");
     expect(openedUrls).toEqual([mockedAuthorizeUrl]);
-    expect(runCodexBrowserOAuthMock).toHaveBeenCalledTimes(1);
+    expect(runCodexLoginMock).toHaveBeenCalledTimes(1);
 
     const persisted = JSON.parse(
       await fs.readFile(path.join(home, ".cowork", "auth", "codex-cli", "auth.json"), "utf-8")
@@ -320,7 +320,7 @@ describe("connectProvider", () => {
     expect(result.mode).toBe("oauth");
     expect(result.message).toContain("Codex OAuth sign-in completed.");
     expect(result.oauthCredentialsFile).toBe(path.join(home, ".cowork", "auth", "codex-cli", "auth.json"));
-    expect(runCodexBrowserOAuthMock).toHaveBeenCalledTimes(1);
+    expect(runCodexLoginMock).toHaveBeenCalledTimes(1);
 
     const persisted = JSON.parse(
       await fs.readFile(path.join(home, ".cowork", "auth", "codex-cli", "auth.json"), "utf-8")
@@ -354,7 +354,7 @@ describe("connectProvider", () => {
     );
 
     const openedUrls: string[] = [];
-    runCodexBrowserOAuthMock.mockImplementationOnce(async (opts: any) => {
+    runCodexLoginMock.mockImplementationOnce(async (opts: any) => {
       await opts.openUrl?.(mockedAuthorizeUrl);
       await fs.writeFile(authFile, JSON.stringify({
         version: 1,
@@ -413,7 +413,7 @@ describe("connectProvider", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.mode).toBe("oauth");
-    expect(runCodexBrowserOAuthMock).not.toHaveBeenCalled();
+    expect(runCodexLoginMock).not.toHaveBeenCalled();
     expect(completeCodexBrowserOAuthMock).toHaveBeenCalledTimes(1);
     expect(completeCodexBrowserOAuthMock.mock.calls[0]?.[0]).toMatchObject({
       code: "manual-auth-code",
