@@ -17,19 +17,19 @@
   - `~/.bun/bin/bun test` -> pass (`1856 pass, 0 fail, 2 skip`)
   - `~/.bun/bin/bun run desktop:build -- --publish never` -> pass for local unsigned packaging; produced `apps/desktop/release/Cowork-0.1.15-mac-arm64.dmg`, `apps/desktop/release/Cowork-0.1.15-mac-arm64.zip`, blockmaps, and refreshed updater metadata before the dual-stack listener follow-up.
 
-# Task: Fix Codex OAuth authorize URL parity with the Rust reference
+# Task: Fix Codex OAuth authorize URL parity with the live Codex flow
 
 ## Plan
 - [x] Re-audit the live browser authorize URL emitted by Cowork against the Rust reference implementation, including raw query encoding and parameter ordering rather than only decoded values.
-- [x] Patch the TS Codex OAuth builder so the emitted authorize URL matches the Rust contract byte-for-byte where it matters, and keep the existing immutable-contract warnings in place.
+- [x] Patch the TS Codex OAuth builder so the emitted authorize URL matches the live Codex contract byte-for-byte where it matters, and keep the existing immutable-contract warnings in place.
 - [x] Add regression coverage for the raw authorize URL shape, rerun the focused auth tests plus repo validation, and record the outcome below.
 
 ## Review
-- Root cause: the browser authorize URL builder was still using `URLSearchParams`, which serialized the Codex `scope` as `openid+profile+...` instead of the Rust reference flow’s percent-encoded `openid%20profile%20...`. The earlier tests only compared decoded `searchParams`, so they incorrectly passed while the live upstream auth page could still reject the raw request before callback with `unknown_error`.
-- Fixed `src/providers/codex-oauth-flows.ts` to build the authorize query manually with percent encoding, preserving the existing parameter order and the explicit immutable-contract warning. The emitted URL now matches the Rust reference shape for `client_id`, `redirect_uri`, `scope`, `originator`, and the rest of the browser-login query.
-- Tightened `test/providers/codex-oauth-flows.test.ts` so it asserts on the raw URL string, specifically that `scope` is emitted with `%20` separators and never with `+`.
+- Root cause: there were two separate authorize-url mismatches. First, Cowork used `URLSearchParams`, which serialized the Codex `scope` as `openid+profile+...` instead of percent-encoded spaces. Second, and more importantly for the still-failing live flow, Cowork was pinned to an older connector-expanded scope (`openid profile email offline_access api.connectors.read api.connectors.invoke`) while current official Codex browser-login URLs use the smaller live scope `openid profile email offline_access`. The earlier tests only compared decoded `searchParams`, so they missed both wire-level issues.
+- Fixed `src/providers/codex-oauth-flows.ts` to build the authorize query manually with percent encoding, preserving the existing parameter order and the explicit immutable-contract warning. Fixed `src/providers/codex-auth.ts` to pin `CODEX_OAUTH_SCOPE` to the live current Codex browser-login scope instead of the older connector-expanded variant that can trip `auth.openai.com` `unknown_error` before callback.
+- Tightened `test/providers/codex-oauth-flows.test.ts` and `test/connect.test.ts` so they assert the current raw authorize URL shape, including `%20` separators and the live minimal scope.
 - Verification:
-  - `~/.bun/bin/bun -e 'import { buildCodexAuthorizeUrl } from "./src/providers/codex-oauth-flows"; console.log(buildCodexAuthorizeUrl("http://localhost:1455/auth/callback","challenge_123","state_123"));'` -> emitted `scope=openid%20profile%20email%20offline_access%20api.connectors.read%20api.connectors.invoke`
+  - `~/.bun/bin/bun -e 'import { buildCodexAuthorizeUrl } from "./src/providers/codex-oauth-flows"; console.log(buildCodexAuthorizeUrl("http://localhost:1455/auth/callback","challenge_123","state_123"));'` -> emitted `scope=openid%20profile%20email%20offline_access`
   - `~/.bun/bin/bun test test/providers/codex-oauth-flows.test.ts` -> pass (`4 pass, 0 fail`)
   - `~/.bun/bin/bun run typecheck` -> pass
   - `~/.bun/bin/bun test` -> pass (`1856 pass, 0 fail, 2 skip`)
@@ -322,7 +322,7 @@
 - [x] Update docs and focused regression coverage, then rerun the relevant auth/runtime/desktop verification commands and record the outcome below.
 
 ## Review
-- Codex browser sign-in now matches the current official Codex CLI authorize flow in `src/providers/codex-oauth-flows.ts`: it uses `http://localhost:<port>/auth/callback`, the full connector-aware scope string, and the official `originator=codex_cli_rs` instead of the previous app-specific authorize parameters that were producing the browser-side `unknown_error`.
+- Codex browser sign-in now uses `http://localhost:<port>/auth/callback`, the live current browser-login scope, and the official `originator=codex_cli_rs` instead of the previous app-specific authorize parameters that were producing the browser-side `unknown_error`.
 - The Codex runtime path in `src/runtime/openaiNativeResponses.ts` now only rewrites the base URL for the ChatGPT-backed Codex transport. API-key-backed `codex-cli` requests keep the normal OpenAI base URL instead of being incorrectly sent to `.../v1/codex/responses`, and the ChatGPT-backed path now adds the official Codex `originator` header.
 - Desktop provider settings now only show `Log out` for real Codex OAuth sessions (`mode === "oauth"`), and `ProvidersPage` uses the current Zustand snapshot during SSR so the connected/logout state renders correctly in the server-rendered desktop tests.
 - Added focused regression coverage in `test/providers/codex-oauth-flows.test.ts` plus runtime/auth/desktop updates in `test/runtime.openai-responses-runtime.test.ts`, `test/connect.test.ts`, and `apps/desktop/test/providers-page.test.ts`.

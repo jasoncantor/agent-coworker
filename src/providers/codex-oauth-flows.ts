@@ -66,7 +66,7 @@ function encodeOauthQueryValue(value: string): string {
 
 export function buildCodexAuthorizeUrl(redirectUri: string, challenge: string, state: string): string {
   // DO NOT TOUCH THIS CONTRACT.
-  // These params must stay aligned with the upstream Codex CLI flow:
+  // These params must stay aligned with the live upstream Codex CLI flow:
   // same client ID, scope, originator, localhost redirect behavior, and raw
   // query encoding. Do not replace this with URLSearchParams: it serializes
   // spaces as `+`, while the reference Codex flow percent-encodes them as `%20`.

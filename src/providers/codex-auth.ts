@@ -7,7 +7,10 @@ import { writeTextFileAtomic } from "../utils/atomicFile";
 export const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 export const CODEX_OAUTH_ISSUER = "https://auth.openai.com";
 export const CODEX_BACKEND_BASE_URL = "https://chatgpt.com/backend-api/codex";
-export const CODEX_OAUTH_SCOPE = "openid profile email offline_access api.connectors.read api.connectors.invoke";
+// Keep this pinned to the live official Codex browser-login scope. The older
+// connector-expanded scope can trigger auth.openai.com unknown_error before the
+// localhost callback ever runs.
+export const CODEX_OAUTH_SCOPE = "openid profile email offline_access";
 export const CODEX_OAUTH_ORIGINATOR = "codex_cli_rs";
 
 export type CodexAuthPaths = {

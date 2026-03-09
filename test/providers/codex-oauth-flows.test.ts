@@ -33,14 +33,14 @@ describe("providers/codex-oauth-flows", () => {
 
     expect(url.origin + url.pathname).toBe("https://auth.openai.com/oauth/authorize");
     expect(rawUrl).toContain(
-      "scope=openid%20profile%20email%20offline_access%20api.connectors.read%20api.connectors.invoke",
+      "scope=openid%20profile%20email%20offline_access",
     );
     expect(rawUrl.includes("scope=openid+profile")).toBe(false);
     expect(url.searchParams.get("response_type")).toBe("code");
     expect(url.searchParams.get("client_id")).toBe("app_EMoamEEZ73f0CkXaXp7hrann");
     expect(url.searchParams.get("redirect_uri")).toBe("http://localhost:1455/auth/callback");
     expect(url.searchParams.get("scope")).toBe(
-      "openid profile email offline_access api.connectors.read api.connectors.invoke",
+      "openid profile email offline_access",
     );
     expect(url.searchParams.get("code_challenge")).toBe("challenge_123");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
