@@ -48,6 +48,27 @@ export type {
   UrlOpener,
 };
 
+const connectOauthDepsDefaults = {
+  completeCodexBrowserOAuth,
+  isOauthCliProvider,
+  runCodexBrowserOAuth,
+};
+
+const connectOauthDeps = {
+  ...connectOauthDepsDefaults,
+};
+
+export const __internal = {
+  setOauthDepsForTests(
+    overrides: Partial<typeof connectOauthDepsDefaults>,
+  ): void {
+    Object.assign(connectOauthDeps, overrides);
+  },
+  resetOauthDepsForTests(): void {
+    Object.assign(connectOauthDeps, connectOauthDepsDefaults);
+  },
+};
+
 export type OauthStdioMode = "pipe" | "inherit";
 
 export type ConnectProviderResult =
@@ -112,7 +133,7 @@ export async function connectProvider(opts: {
     };
   }
 
-  if (!isOauthCliProvider(provider)) {
+  if (!connectOauthDeps.isOauthCliProvider(provider)) {
     store.services[provider] = {
       service: provider,
       mode: "oauth_pending",
@@ -175,7 +196,7 @@ export async function connectProvider(opts: {
     const code = opts.code?.trim() || "";
     let oauthCredentialsFile = "";
     if (opts.codexBrowserAuthPending) {
-      oauthCredentialsFile = await completeCodexBrowserOAuth({
+      oauthCredentialsFile = await connectOauthDeps.completeCodexBrowserOAuth({
         paths,
         pending: opts.codexBrowserAuthPending,
         fetchImpl,
@@ -186,7 +207,7 @@ export async function connectProvider(opts: {
     } else if (code) {
       throw new Error("Authorization code requires an active Codex OAuth challenge. Start authorization first.");
     } else {
-      oauthCredentialsFile = await runCodexBrowserOAuth({
+      oauthCredentialsFile = await connectOauthDeps.runCodexBrowserOAuth({
         paths,
         fetchImpl,
         onLine: opts.onOauthLine,

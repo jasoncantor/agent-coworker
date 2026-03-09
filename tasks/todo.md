@@ -1,3 +1,21 @@
+# Task: Ship desktop release v0.1.14
+
+## Plan
+- [x] Audit the current desktop release workflow, current published tag, and in-repo version references so the next release bump is internally consistent.
+- [x] Bump the release version to `0.1.14` across the root/desktop package manifests and any user-visible/runtime version strings that would otherwise remain stale.
+- [x] Run the practical local release validation steps, record any remaining known failures, then commit the release bump, tag `v0.1.14`, push, and monitor the GitHub release workflow through publish completion.
+
+## Review
+- Bumped the release version from `0.1.13` to `0.1.14` in the root package, desktop package, CLI/TUI/desktop websocket handshake version strings, and the MCP runtime client version so the shipped surfaces report the same release.
+- Added a small test seam in `src/connect.ts` and rewrote `test/connect.test.ts` to stop using a file-scope `mock.module()` for `src/providers/codex-oauth-flows`. That removes the cross-suite module mock leak that was causing `test/providers/codex-oauth-flows.test.ts` to fail only during the full repo run.
+- Local release validation:
+  - `~/.bun/bin/bun run docs:check` -> pass
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `~/.bun/bin/bun test test/connect.test.ts test/providers/codex-oauth-flows.test.ts` -> pass (`15 pass, 0 fail`)
+  - `~/.bun/bin/bun test` -> pass (`1855 pass, 0 fail, 2 skip`)
+  - `~/.bun/bin/bun test --cwd apps/desktop` -> pass (`200 pass, 0 fail`)
+  - `~/.bun/bin/bun run desktop:build -- --publish never` -> pass for local unsigned packaging; produced `apps/desktop/release/Cowork-0.1.14-mac-arm64.dmg`, `apps/desktop/release/Cowork-0.1.14-mac-arm64.zip`, blockmaps, and `apps/desktop/release/latest-mac.yml`. Local code signing/notarization were skipped because the required Apple credentials were not present, which is expected for a workstation build.
+
 # Task: Rewrite the root README into an accurate open-source front door
 
 ## Plan

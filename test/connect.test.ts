@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { OAUTH_LOOPBACK_HOST } from "../src/auth/oauth-server";
+import { __internal as connectInternal } from "../src/connect";
 
 const mockedAuthorizeUrl = `https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=${encodeURIComponent(`http://${OAUTH_LOOPBACK_HOST}:1455/auth/callback`)}&scope=openid+profile+email+offline_access+api.connectors.read+api.connectors.invoke&code_challenge=mock-challenge&code_challenge_method=S256&id_token_add_organizations=true&codex_cli_simplified_flow=true&state=mock-state&originator=codex_cli_rs`;
 
@@ -53,12 +54,6 @@ const completeCodexBrowserOAuthMock = mock(async (opts: any) => {
   return file;
 });
 
-mock.module("../src/providers/codex-oauth-flows", () => ({
-  completeCodexBrowserOAuth: completeCodexBrowserOAuthMock,
-  isOauthCliProvider: (provider: string) => provider === "codex-cli",
-  runCodexBrowserOAuth: runCodexBrowserOAuthMock,
-}));
-
 const {
   connectProvider,
   getAiCoworkerPaths,
@@ -104,6 +99,11 @@ describe("connect helpers", () => {
 
 describe("connectProvider", () => {
   beforeEach(() => {
+    connectInternal.setOauthDepsForTests({
+      completeCodexBrowserOAuth: completeCodexBrowserOAuthMock,
+      isOauthCliProvider: (provider: string) => provider === "codex-cli",
+      runCodexBrowserOAuth: runCodexBrowserOAuthMock,
+    });
     completeCodexBrowserOAuthMock.mockReset();
     completeCodexBrowserOAuthMock.mockImplementation(async (opts: any) => {
       const file = path.join(opts.paths.authDir, "codex-cli", "auth.json");
@@ -150,6 +150,10 @@ describe("connectProvider", () => {
       }, null, 2), "utf-8");
       return file;
     });
+  });
+
+  afterEach(() => {
+    connectInternal.resetOauthDepsForTests();
   });
 
   test("readConnectionStore ignores legacy path and only uses cowork auth store", async () => {
