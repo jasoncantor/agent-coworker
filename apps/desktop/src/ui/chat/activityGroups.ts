@@ -29,6 +29,15 @@ function truncate(text: string, max = 180): string {
   return `${text.slice(0, max - 1)}…`;
 }
 
+function isStandaloneReasoningHeading(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (/^#{1,6}\s+\S/.test(trimmed)) return true;
+  if (/^\*\*[^*]+\*\*$/.test(trimmed)) return true;
+  if (/^__[^_]+__$/.test(trimmed)) return true;
+  return false;
+}
+
 function reasoningPreviewText(text: string, maxLines = 2): string {
   const lines = text
     .split("\n")
@@ -37,8 +46,13 @@ function reasoningPreviewText(text: string, maxLines = 2): string {
 
   if (lines.length === 0) return "";
 
-  const preview = lines.slice(0, maxLines).join(" ");
-  return lines.length > maxLines ? `${preview}…` : preview;
+  const previewLines = [...lines];
+  while (previewLines.length > 1 && isStandaloneReasoningHeading(previewLines[0] ?? "")) {
+    previewLines.shift();
+  }
+
+  const preview = previewLines.slice(0, maxLines).join(" ");
+  return previewLines.length > maxLines ? `${preview}…` : preview;
 }
 
 function normalizedReasoningText(text: string): string {

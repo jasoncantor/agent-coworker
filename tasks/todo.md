@@ -1852,3 +1852,20 @@
 - `~/.bun/bin/bun test --cwd apps/desktop test/store-feed-mapping.test.ts test/protocol-v2-events.test.ts` -> pass (`32 pass, 0 fail`)
 - `~/.bun/bin/bun run typecheck:desktop` -> pass
 - `~/.bun/bin/bun test --cwd apps/desktop` -> pass (`198 pass, 0 fail`)
+
+# Task: Hide standalone reasoning titles in collapsed Thinking card previews
+
+## Plan
+- [x] Inspect the collapsed Thinking-card preview path and confirm where the first reasoning heading is being surfaced.
+- [x] Change only the collapsed preview generation so standalone markdown headings are stripped, while the expanded reasoning content stays unchanged.
+- [x] Add chat-card regressions and rerun the relevant desktop verification commands.
+
+## Review
+- The heading text was coming from the grouped-card preview builder in `apps/desktop/src/ui/chat/activityGroups.ts`, not from the expanded reasoning row. The preview was just taking the first non-empty lines of the reasoning note, so a standalone markdown heading like `**Planning search strategy**` leaked into the in-chat card summary.
+- Updated `reasoningPreviewText(...)` in `apps/desktop/src/ui/chat/activityGroups.ts` to strip leading standalone markdown heading lines (`**...**`, `__...__`, or `# ...`) before building the collapsed preview. This only changes the collapsed summary text; the expanded reasoning content still renders the full original note with its heading intact.
+- Added regressions in `apps/desktop/test/chat-activity-groups.test.ts` and `apps/desktop/test/chat-activity-group-card.test.tsx` to pin the exact behavior you asked for: the collapsed card preview shows the body text (`I need to be careful...`) and not the heading, while the reasoning body itself remains untouched.
+
+### Verification
+- `~/.bun/bin/bun test --cwd apps/desktop test/chat-activity-groups.test.ts test/chat-activity-group-card.test.tsx` -> pass (`17 pass, 0 fail`)
+- `~/.bun/bin/bun run typecheck:desktop` -> pass
+- `~/.bun/bin/bun test --cwd apps/desktop` -> pass (`200 pass, 0 fail`)

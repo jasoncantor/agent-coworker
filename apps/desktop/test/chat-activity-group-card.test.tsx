@@ -129,6 +129,25 @@ describe("desktop activity group card", () => {
     expect(reasoningRow?.querySelector("[aria-controls]")).toBeNull();
   });
 
+  test("collapsed card preview hides the standalone reasoning title", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActivityGroupCard, {
+        items: [
+          {
+            id: "r1",
+            kind: "reasoning",
+            mode: "summary",
+            ts: "2024-01-01T00:00:02.000Z",
+            text: "**Planning search strategy**\n\nI need to be careful not to make assumptions.\nI should verify the current product details.",
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain("I need to be careful not to make assumptions.");
+    expect(html).not.toContain("Planning search strategy");
+  });
+
   test("auto-expands approval tools in trace mode", () => {
     const html = renderToStaticMarkup(
       createElement(ActivityGroupCard, {

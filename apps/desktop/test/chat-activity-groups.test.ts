@@ -49,6 +49,21 @@ describe("desktop chat activity groups", () => {
     expect(summary.statusLabel).toBe("Done");
   });
 
+  test("summary preview strips a standalone markdown reasoning heading", () => {
+    const summary = summarizeActivityGroup([
+      {
+        id: "r1",
+        kind: "reasoning",
+        mode: "summary",
+        ts: "2024-01-01T00:00:01.000Z",
+        text: "**Planning search strategy**\n\nI need to be careful not to make assumptions.\nI should verify the current product details.",
+      },
+    ]);
+
+    expect(summary.preview).toContain("I need to be careful not to make assumptions.");
+    expect(summary.preview).not.toContain("Planning search strategy");
+  });
+
   test("summary surfaces approval state ahead of completed tools", () => {
     const summary = summarizeActivityGroup([
       { id: "t1", kind: "tool", ts: "2024-01-01T00:00:02.000Z", name: "bash", state: "output-available", args: { cmd: "echo ok" } },
