@@ -121,6 +121,16 @@ export function dispatchClientMessage({
       return void session.restoreSessionBackup(message.checkpointId);
     case "session_backup_delete_checkpoint":
       return void session.deleteSessionCheckpoint(message.checkpointId);
+    case "workspace_backups_get":
+      return void session.listWorkspaceBackups();
+    case "workspace_backup_checkpoint":
+      return void session.createWorkspaceBackupCheckpoint(message.targetSessionId);
+    case "workspace_backup_restore":
+      return void session.restoreWorkspaceBackup(message.targetSessionId, message.checkpointId);
+    case "workspace_backup_delete_checkpoint":
+      return void session.deleteWorkspaceBackupCheckpoint(message.targetSessionId, message.checkpointId);
+    case "workspace_backup_delta_get":
+      return void session.getWorkspaceBackupDelta(message.targetSessionId, message.checkpointId);
     case "get_messages":
       return session.getMessages(message.offset, message.limit);
     case "set_session_title":

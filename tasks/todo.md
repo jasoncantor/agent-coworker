@@ -1,3 +1,83 @@
+# Task: Redesign workspace backup settings into a recovery console
+
+## Plan
+- [x] Inspect the live desktop state and the current Backup page hierarchy to confirm what made the screen unusable.
+- [x] Add an on-demand workspace backup delta path in the control-session protocol so the UI can inspect checkpoint changes without abusing per-session events.
+- [x] Rework the Backup settings page into a three-pane recovery layout with workspaces on the left, backup/session history in the middle, and checkpoint file deltas on the right.
+- [x] Keep expensive delta generation user-triggered, then rerun focused verification and record the outcome.
+
+## Review
+- The Backup page is now structured as a recovery console instead of a long stack of cards. `apps/desktop/src/ui/settings/pages/BackupPage.tsx` renders a left workspace rail, a middle backups-and-checkpoints lane, and a right delta inspector that previews added, modified, and deleted files for the selected checkpoint.
+- Added workspace-scoped delta plumbing through `src/server/workspaceBackups.ts`, `src/server/sessionBackup/delta.ts`, `src/server/protocol.ts`, and the control-session dispatcher so the desktop can request `workspace_backup_delta_get` and receive `workspace_backup_delta` previews for any backup entry in the selected workspace.
+- Kept the freeze fix intact and tightened performance further: the page still auto-refreshes its backup snapshot on open, but it no longer auto-computes the first checkpoint delta. Users now trigger the expensive compare work by selecting a checkpoint or using the right-pane `Inspect latest checkpoint` affordance.
+- Updated the desktop store/runtime/control-socket path to persist the selected workspace backup delta state and errors, and documented the new protocol contract in `docs/websocket-protocol.md` as version `7.9`.
+- Live inspection used a direct desktop screenshot of the open app because the already-running Electron session was not exposing CDP on `127.0.0.1:9222`; the screenshot confirmed the app shell state, while the redesigned Backup page itself was validated via focused desktop tests and typecheck.
+- Verification:
+  - `~/.bun/bin/bun test test/protocol.test.ts test/workspace-backups.test.ts apps/desktop/test/protocol-v2-events.test.ts apps/desktop/test/backup-page.test.ts test/docs.check.test.ts --bail` -> pass (`200 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+
+# Task: Fix desktop Backup settings page freeze on open
+
+## Plan
+- [x] Reproduce the Backup page open path and inspect its initial refresh/render dependencies.
+- [x] Stabilize the auto-refresh effect so opening the page triggers only the intended fetch work.
+- [x] Add regression coverage for the open-page refresh path and rerun focused desktop verification.
+
+## Review
+- Root cause: `apps/desktop/src/ui/settings/pages/BackupPage.tsx` created an inline `refreshBackups` wrapper each render and included it in the initial `useEffect` dependency list. The first refresh flipped backup loading state, which recreated the wrapper, retriggered the effect, and could loop hard enough to freeze the settings view.
+- Fixed the page by moving the initial refresh through a stable `useEffectEvent(...)`, so opening Backup now refreshes only when the selected workspace or control session changes.
+- Added a live React/JSDOM regression in `apps/desktop/test/backup-page.test.ts` that mounts the page against the real desktop store and proves the auto-refresh path fires once even after the fetch updates runtime state.
+- Verification:
+  - `~/.bun/bin/bun test apps/desktop/test/backup-page.test.ts apps/desktop/test/settings-nav.test.ts apps/desktop/test/protocol-v2-events.test.ts --bail` -> pass (`44 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+
+# Task: Implement workspace backup settings page
+
+## Plan
+- [x] Add server-side workspace backup listing/admin support and expose it through new WebSocket control messages/events.
+- [x] Thread the new backup data/actions through desktop store state, control-socket handling, and settings navigation.
+- [x] Build the new Backup settings page UI with refresh/checkpoint/restore/delete/reveal flows.
+- [x] Add focused protocol/server/desktop regression coverage and run the targeted verification suites.
+
+## Review
+- Added a workspace-scoped backup admin path in core/server via `src/server/workspaceBackups.ts`, backed by new control-session messages (`workspace_backups_get`, `workspace_backup_checkpoint`, `workspace_backup_restore`, `workspace_backup_delete_checkpoint`) and the new `workspace_backups` server event.
+- Extended `SessionBackupManager` so existing backup directories can be reopened, older metadata lazily backfills `originalFingerprint`, and workspace admin actions can operate on closed/orphaned backups without recreating snapshots.
+- Wired desktop backup state into `WorkspaceRuntime`, added backup store actions/control-socket hydration, registered a new `Backup` settings page, and built the user-facing UI for refresh, checkpoint, restore original, restore checkpoint, delete checkpoint, and reveal-folder flows.
+- Added focused verification across protocol/server/desktop coverage, including new `WorkspaceBackupService` unit tests, server WebSocket flow coverage, desktop control-socket/store tests, settings-nav coverage, and SSR markup checks for the new page.
+- Verification:
+  - `~/.bun/bin/bun test test/protocol.test.ts test/session-backup.test.ts test/workspace-backups.test.ts test/server.test.ts test/session.test.ts test/session.managers.test.ts --bail` -> pass (`439 pass, 0 fail`)
+  - `~/.bun/bin/bun test apps/desktop/test/protocol-v2-events.test.ts apps/desktop/test/backup-page.test.ts apps/desktop/test/settings-nav.test.ts --bail` -> pass (`43 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+
+# Task: Audit server-side WebSocket and harness surfacing gaps for desktop clients
+
+## Plan
+- [x] Inspect `src/server/protocol.ts`, `src/server/startServer.ts`, and `src/server/session/*` emitters that define the server-side WebSocket surface.
+- [x] Compare emitted events and harness/session state against `docs/websocket-protocol.md` and `docs/harness/*.md` to find desktop-relevant gaps or high-risk surfaces.
+- [x] Return a concise, file-backed audit summary and record the outcome below.
+
+## Review
+- `harness_context` is the only harness-specific WebSocket event in `src/server/protocol.ts`, but it is not part of the connect lifecycle. Runtime emits it only on explicit get/set even though the value is persisted into session snapshots and rehydrated on resume, which conflicts with `docs/harness/context.md` describing it as memory-only.
+- Harness docs describe runner lifecycle emissions (`harness.run.started/completed/failed`) and `run_meta.json` observability snapshots, but there is no matching WebSocket event in the server protocol. Desktop clients would need to infer harness progress from generic session events unless the protocol grows.
+- High-risk operational surfaces that desktop clients should surface if they exist include `observability_status`, `session_backup_state`, `session_usage` / `budget_warning` / `budget_exceeded`, and MCP diagnostics (`mcp_servers`, `mcp_server_validation`, `mcp_server_auth_*`), because those are the structured server-side signals for degraded harness health, backup state, budget stops, and MCP/auth failure details.
+
+# Task: Review harness websocket surfacing gaps in desktop UI
+
+## Plan
+- [x] Inspect the desktop-imported WebSocket protocol types and enumerate the server events available to the desktop client.
+- [x] Compare those events against `apps/desktop/src/**` store helpers, reducers, feed mapping, and rendered UI surfaces.
+- [x] Check desktop-focused tests for event coverage and record concise findings plus likely missing UI surfaces below.
+
+## Review
+- `observability_status` is part of the documented connection lifecycle and carries Langfuse health/config state, but the desktop thread reducer drops it immediately and the desktop runtime model has nowhere to store it. There is no visible observability surface in the current settings/developer UI.
+- `session_backup_state` is also part of the documented connection/runtime surface, but the desktop thread reducer ignores it completely. Checkpoint status, restore results, and backup failures therefore never reach the UI even though the server emits them after backup operations.
+- `harness_context` is the structured harness-intent payload, yet desktop neither requests it (`harness_context_get`) nor stores/renders it when received. The only existing live handler is an early return in the thread reducer, so the desktop cannot show run objective, acceptance criteria, constraints, or metadata.
+- Replay/transcript reconstruction in `apps/desktop/src/app/store.feedMapping.ts` falls back unknown protocol events into generic `[type]` system rows, so the little developer-mode visibility that exists for `observability_status`, `session_backup_state`, and `harness_context` is inconsistent between live sessions and transcript reloads.
+- There is no desktop test coverage for `observability_status`, `session_backup_state`, or `harness_context`, so this blind spot is currently unguarded.
+- Verification: `~/.bun/bin/bun test --cwd apps/desktop test/protocol-v2-events.test.ts test/thread-reconnect.test.ts test/store-feed-mapping.test.ts` -> pass (`42 pass, 0 fail`)
+- Verification:
+  - `~/.bun/bin/bun test --cwd apps/desktop test/protocol-v2-events.test.ts test/thread-reconnect.test.ts test/store-feed-mapping.test.ts test/providers-page.test.ts test/usage-page.test.ts` -> pass (`51 pass, 0 fail`)
+
 # Task: Fix desktop chat composer send/stop button styling and stop behavior
 
 ## Plan

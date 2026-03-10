@@ -241,6 +241,7 @@ const sessionOnlyTypes = [
   "harness_context_get",
   "session_backup_get",
   "session_backup_checkpoint",
+  "workspace_backups_get",
   "get_session_usage",
 ] as const;
 
@@ -466,6 +467,29 @@ const sessionBackupDeleteCheckpointSchema = schemaWithType("session_backup_delet
   checkpointId: requiredNonEmptyTrimmedString("session_backup_delete_checkpoint missing checkpointId"),
 });
 
+const workspaceBackupCheckpointSchema = schemaWithType("workspace_backup_checkpoint", {
+  sessionId: requiredSessionId("workspace_backup_checkpoint"),
+  targetSessionId: requiredNonEmptyTrimmedString("workspace_backup_checkpoint missing targetSessionId"),
+});
+
+const workspaceBackupRestoreSchema = schemaWithType("workspace_backup_restore", {
+  sessionId: requiredSessionId("workspace_backup_restore"),
+  targetSessionId: requiredNonEmptyTrimmedString("workspace_backup_restore missing targetSessionId"),
+  checkpointId: optionalNonEmptyTrimmedString("workspace_backup_restore invalid checkpointId"),
+});
+
+const workspaceBackupDeleteCheckpointSchema = schemaWithType("workspace_backup_delete_checkpoint", {
+  sessionId: requiredSessionId("workspace_backup_delete_checkpoint"),
+  targetSessionId: requiredNonEmptyTrimmedString("workspace_backup_delete_checkpoint missing targetSessionId"),
+  checkpointId: requiredNonEmptyTrimmedString("workspace_backup_delete_checkpoint missing checkpointId"),
+});
+
+const workspaceBackupDeltaGetSchema = schemaWithType("workspace_backup_delta_get", {
+  sessionId: requiredSessionId("workspace_backup_delta_get"),
+  targetSessionId: requiredNonEmptyTrimmedString("workspace_backup_delta_get missing targetSessionId"),
+  checkpointId: requiredNonEmptyTrimmedString("workspace_backup_delta_get missing checkpointId"),
+});
+
 const getMessagesSchema = schemaWithType("get_messages", {
   sessionId: requiredSessionId("get_messages"),
   offset: optionalNumberAtLeast("get_messages invalid offset", 0),
@@ -569,6 +593,10 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   harnessContextSetSchema,
   sessionBackupRestoreSchema,
   sessionBackupDeleteCheckpointSchema,
+  workspaceBackupCheckpointSchema,
+  workspaceBackupRestoreSchema,
+  workspaceBackupDeleteCheckpointSchema,
+  workspaceBackupDeltaGetSchema,
   getMessagesSchema,
   setSessionTitleSchema,
   deleteSessionSchema,

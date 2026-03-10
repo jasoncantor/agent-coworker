@@ -24,6 +24,7 @@ export type SessionBackupMetadata = {
   createdAt: string;
   state: "active" | "closed";
   closedAt?: string;
+  originalFingerprint?: string;
   originalSnapshot: SessionBackupMetadataSnapshot;
   checkpoints: SessionBackupMetadataCheckpoint[];
 };
@@ -54,6 +55,7 @@ const sessionBackupMetadataSchema = z
     createdAt: z.string().min(1),
     state: z.enum(["active", "closed"]),
     closedAt: z.string().optional(),
+    originalFingerprint: z.string().min(1).optional(),
     originalSnapshot: snapshotRefSchema,
     checkpoints: z.array(sessionBackupMetadataCheckpointSchema),
   })

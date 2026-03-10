@@ -82,6 +82,14 @@ export function defaultWorkspaceRuntime(): WorkspaceRuntime {
     skills: [],
     selectedSkillName: null,
     selectedSkillContent: null,
+    workspaceBackupsPath: null,
+    workspaceBackups: [],
+    workspaceBackupsLoading: false,
+    workspaceBackupsError: null,
+    workspaceBackupPendingActionKeys: {},
+    workspaceBackupDelta: null,
+    workspaceBackupDeltaLoading: false,
+    workspaceBackupDeltaError: null,
   };
 }
 

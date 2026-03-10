@@ -154,6 +154,11 @@ export class AgentSession {
     waitForSubagentImpl?: SessionDependencies["waitForSubagentImpl"];
     closeSubagentImpl?: SessionDependencies["closeSubagentImpl"];
     deleteSessionImpl?: SessionDependencies["deleteSessionImpl"];
+    listWorkspaceBackupsImpl?: SessionDependencies["listWorkspaceBackupsImpl"];
+    createWorkspaceBackupCheckpointImpl?: SessionDependencies["createWorkspaceBackupCheckpointImpl"];
+    restoreWorkspaceBackupImpl?: SessionDependencies["restoreWorkspaceBackupImpl"];
+    deleteWorkspaceBackupCheckpointImpl?: SessionDependencies["deleteWorkspaceBackupCheckpointImpl"];
+    getWorkspaceBackupDeltaImpl?: SessionDependencies["getWorkspaceBackupDeltaImpl"];
     hydratedState?: HydratedSessionState;
     skipInitialPersist?: boolean;
   }) {
@@ -226,6 +231,11 @@ export class AgentSession {
       waitForSubagentImpl: opts.waitForSubagentImpl,
       closeSubagentImpl: opts.closeSubagentImpl,
       deleteSessionImpl: opts.deleteSessionImpl,
+      listWorkspaceBackupsImpl: opts.listWorkspaceBackupsImpl,
+      createWorkspaceBackupCheckpointImpl: opts.createWorkspaceBackupCheckpointImpl,
+      restoreWorkspaceBackupImpl: opts.restoreWorkspaceBackupImpl,
+      deleteWorkspaceBackupCheckpointImpl: opts.deleteWorkspaceBackupCheckpointImpl,
+      getWorkspaceBackupDeltaImpl: opts.getWorkspaceBackupDeltaImpl,
     };
 
     if (hydrated?.harnessContext) {
@@ -392,6 +402,11 @@ export class AgentSession {
     waitForSubagentImpl?: SessionDependencies["waitForSubagentImpl"];
     closeSubagentImpl?: SessionDependencies["closeSubagentImpl"];
     deleteSessionImpl?: SessionDependencies["deleteSessionImpl"];
+    listWorkspaceBackupsImpl?: SessionDependencies["listWorkspaceBackupsImpl"];
+    createWorkspaceBackupCheckpointImpl?: SessionDependencies["createWorkspaceBackupCheckpointImpl"];
+    restoreWorkspaceBackupImpl?: SessionDependencies["restoreWorkspaceBackupImpl"];
+    deleteWorkspaceBackupCheckpointImpl?: SessionDependencies["deleteWorkspaceBackupCheckpointImpl"];
+    getWorkspaceBackupDeltaImpl?: SessionDependencies["getWorkspaceBackupDeltaImpl"];
   }): AgentSession {
     const { persisted } = opts;
     const config: AgentConfig = {
@@ -441,6 +456,11 @@ export class AgentSession {
       waitForSubagentImpl: opts.waitForSubagentImpl,
       closeSubagentImpl: opts.closeSubagentImpl,
       deleteSessionImpl: opts.deleteSessionImpl,
+      listWorkspaceBackupsImpl: opts.listWorkspaceBackupsImpl,
+      createWorkspaceBackupCheckpointImpl: opts.createWorkspaceBackupCheckpointImpl,
+      restoreWorkspaceBackupImpl: opts.restoreWorkspaceBackupImpl,
+      deleteWorkspaceBackupCheckpointImpl: opts.deleteWorkspaceBackupCheckpointImpl,
+      getWorkspaceBackupDeltaImpl: opts.getWorkspaceBackupDeltaImpl,
       hydratedState: {
         sessionId: persisted.sessionId,
         sessionInfo,
@@ -717,6 +737,31 @@ export class AgentSession {
     await this.adminManager.deleteSession(targetSessionId);
   }
 
+  async listWorkspaceBackups() {
+    await this.backupController.getSessionBackupState();
+    await this.adminManager.listWorkspaceBackups();
+  }
+
+  async createWorkspaceBackupCheckpoint(targetSessionId: string) {
+    await this.backupController.getSessionBackupState();
+    await this.adminManager.createWorkspaceBackupCheckpoint(targetSessionId);
+  }
+
+  async restoreWorkspaceBackup(targetSessionId: string, checkpointId?: string) {
+    await this.backupController.getSessionBackupState();
+    await this.adminManager.restoreWorkspaceBackup(targetSessionId, checkpointId);
+  }
+
+  async deleteWorkspaceBackupCheckpoint(targetSessionId: string, checkpointId: string) {
+    await this.backupController.getSessionBackupState();
+    await this.adminManager.deleteWorkspaceBackupCheckpoint(targetSessionId, checkpointId);
+  }
+
+  async getWorkspaceBackupDelta(targetSessionId: string, checkpointId: string) {
+    await this.backupController.getSessionBackupState();
+    await this.adminManager.getWorkspaceBackupDelta(targetSessionId, checkpointId);
+  }
+
   async setConfig(patch: SessionConfigPatch) {
     await this.metadataManager.setConfig(patch);
   }
@@ -739,6 +784,10 @@ export class AgentSession {
 
   async deleteSessionCheckpoint(checkpointId: string) {
     await this.backupController.deleteSessionCheckpoint(checkpointId);
+  }
+
+  async reloadSessionBackupStateFromDisk() {
+    await this.backupController.reloadSessionBackupStateFromDisk();
   }
 
   async sendUserMessage(text: string, clientMessageId?: string, displayText?: string) {

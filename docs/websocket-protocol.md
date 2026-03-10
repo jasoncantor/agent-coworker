@@ -6,7 +6,7 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
 
 - URL: `ws://127.0.0.1:{port}/ws`
 - Session resume: `?resumeSessionId=<sessionId>`
-- Current protocol version: `7.7`
+- Current protocol version: `7.9`
 
 ## Table of Contents
 
@@ -21,7 +21,7 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
 - [Shared Types](#shared-types)
   - [ProviderName](#providername) | [PublicConfig](#publicconfig) | [ProviderCatalogEntry](#providercatalogentry) | [ProviderAuthMethod](#providerauthmethod) | [ProviderAuthChallenge](#providerauthchallenge) | [ProviderStatus](#providerstatus)
   - [TodoItem](#todoitem) | [CommandInfo](#commandinfo) | [SkillEntry](#skillentry) | [HarnessContextPayload](#harnesscontextpayload)
-  - [SessionBackupPublicState](#sessionbackuppublicstate) | [ObservabilityHealth](#observabilityhealth)
+  - [SessionBackupPublicState](#sessionbackuppublicstate) | [WorkspaceBackupPublicEntry](#workspacebackuppublicentry) | [WorkspaceBackupDeltaPreview](#workspacebackupdeltapreview) | [WorkspaceBackupDeltaFile](#workspacebackupdeltafile) | [ObservabilityHealth](#observabilityhealth)
   - [ModelStreamPartType](#modelstreamparttype) | [ApprovalRiskCode](#approvalriskcode) | [ServerErrorCode](#servererrorcode) | [ServerErrorSource](#servererrorsource)
   - [SessionUsageSnapshot](#sessionusagesnapshot) | [BudgetStatus](#budgetstatus)
 - [Client -> Server Messages](#client---server-messages)
@@ -32,7 +32,7 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
   - Skills: [list_skills](#list_skills) | [read_skill](#read_skill) | [disable_skill](#disable_skill) | [enable_skill](#enable_skill) | [delete_skill](#delete_skill)
   - MCP: [set_enable_mcp](#set_enable_mcp) | [mcp_servers_get](#mcp_servers_get) | [mcp_server_upsert](#mcp_server_upsert) | [mcp_server_delete](#mcp_server_delete) | [mcp_server_validate](#mcp_server_validate) | [mcp_server_auth_authorize](#mcp_server_auth_authorize) | [mcp_server_auth_callback](#mcp_server_auth_callback) | [mcp_server_auth_set_api_key](#mcp_server_auth_set_api_key) | [mcp_servers_migrate_legacy](#mcp_servers_migrate_legacy)
   - Session Management: [session_close](#session_close) | [get_messages](#get_messages) | [set_session_title](#set_session_title) | [list_sessions](#list_sessions) | [delete_session](#delete_session) | [subagent_create](#subagent_create) | [subagent_sessions_get](#subagent_sessions_get) | [set_config](#set_config) | [upload_file](#upload_file) | [get_session_usage](#get_session_usage) | [set_session_usage_budget](#set_session_usage_budget)
-  - Backup: [session_backup_get](#session_backup_get) | [session_backup_checkpoint](#session_backup_checkpoint) | [session_backup_restore](#session_backup_restore) | [session_backup_delete_checkpoint](#session_backup_delete_checkpoint)
+  - Backup: [session_backup_get](#session_backup_get) | [session_backup_checkpoint](#session_backup_checkpoint) | [session_backup_restore](#session_backup_restore) | [session_backup_delete_checkpoint](#session_backup_delete_checkpoint) | [workspace_backups_get](#workspace_backups_get) | [workspace_backup_checkpoint](#workspace_backup_checkpoint) | [workspace_backup_restore](#workspace_backup_restore) | [workspace_backup_delete_checkpoint](#workspace_backup_delete_checkpoint) | [workspace_backup_delta_get](#workspace_backup_delta_get)
   - Harness: [harness_context_get](#harness_context_get) | [harness_context_set](#harness_context_set)
   - Keepalive: [ping](#ping)
 - [Server -> Client Events](#server---client-events)
@@ -43,11 +43,23 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
   - Tools & Skills: [tools](#tools) | [commands](#commands) | [skills_list](#skills_list) | [skill_content](#skill_content)
   - MCP: [mcp_servers](#mcp_servers) | [mcp_server_validation](#mcp_server_validation) | [mcp_server_auth_challenge](#mcp_server_auth_challenge) | [mcp_server_auth_result](#mcp_server_auth_result)
   - Session Data: [messages](#messages) | [sessions](#sessions) | [subagent_created](#subagent_created) | [subagent_sessions](#subagent_sessions) | [session_deleted](#session_deleted) | [file_uploaded](#file_uploaded) | [turn_usage](#turn_usage) | [session_usage](#session_usage) | [budget_warning](#budget_warning) | [budget_exceeded](#budget_exceeded)
-  - Backup & Observability: [session_backup_state](#session_backup_state) | [observability_status](#observability_status)
+  - Backup & Observability: [session_backup_state](#session_backup_state) | [workspace_backups](#workspace_backups) | [workspace_backup_delta](#workspace_backup_delta) | [observability_status](#observability_status)
   - Harness: [harness_context](#harness_context)
   - Error & Keepalive: [error](#error) | [pong](#pong)
 
 ## Protocol v7 Notes
+
+Changes in `7.9`:
+
+- New client message: `workspace_backup_delta_get`.
+- New server event: `workspace_backup_delta`.
+- Desktop/admin clients can now request on-demand changed-file previews for a selected backup checkpoint without replaying session-scoped backup events.
+
+Changes in `7.8`:
+
+- New client messages: `workspace_backups_get`, `workspace_backup_checkpoint`, `workspace_backup_restore`, `workspace_backup_delete_checkpoint`.
+- New server event: `workspace_backups`.
+- Desktop/admin clients can now inspect and manage all backups for the current workspace, including closed and orphaned sessions.
 
 Changes in `7.7`:
 
@@ -409,6 +421,91 @@ Returned in `server_hello` and `config_updated`:
 | `trigger` | `"auto" \| "manual"` | What triggered this checkpoint |
 | `changed` | `boolean` | Whether files changed since last checkpoint |
 | `patchBytes` | `number` | Size of the patch data |
+
+### WorkspaceBackupPublicEntry
+
+```json
+{
+  "targetSessionId": "abc-123",
+  "title": "Fix auth flow",
+  "provider": "openai",
+  "model": "gpt-5.2",
+  "lifecycle": "closed",
+  "status": "ready",
+  "workingDirectory": "/path/to/project",
+  "backupDirectory": "/path/to/backup",
+  "originalSnapshotKind": "directory",
+  "originalSnapshotBytes": 8192,
+  "checkpointBytesTotal": 4096,
+  "totalBytes": 12288,
+  "checkpoints": [],
+  "createdAt": "2026-02-19T18:00:00.000Z",
+  "updatedAt": "2026-02-19T18:10:00.000Z",
+  "closedAt": "2026-02-19T18:09:00.000Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `targetSessionId` | `string` | Session identifier that owns the backup directory |
+| `title` | `string \| null` | Session title when the session record still exists |
+| `provider` | `string \| null` | Session provider when known |
+| `model` | `string \| null` | Session model when known |
+| `lifecycle` | `"active" \| "closed" \| "deleted"` | Session lifecycle as seen by the admin/control layer |
+| `status` | `"initializing" \| "ready" \| "failed"` | Backup health status |
+| `workingDirectory` | `string` | Workspace path this backup belongs to |
+| `backupDirectory` | `string \| null` | Backup storage directory |
+| `originalSnapshotKind` | `"pending" \| "directory" \| "tar_gz"` | Original snapshot storage kind |
+| `originalSnapshotBytes` | `number \| null` | Bytes used by the original snapshot |
+| `checkpointBytesTotal` | `number \| null` | Bytes used by checkpoint snapshots (deduplicated by snapshot artifact) |
+| `totalBytes` | `number \| null` | Total bytes used by this backup directory |
+| `checkpoints` | `SessionBackupPublicCheckpoint[]` | Checkpoint list using the same shape as `SessionBackupPublicState` |
+| `createdAt` | `string` | ISO 8601 timestamp |
+| `updatedAt` | `string` | Latest relevant timestamp for sorting/display |
+| `closedAt` | `string?` | Present when the backup metadata was closed |
+| `failureReason` | `string?` | Present when `status` is `"failed"` |
+
+### WorkspaceBackupDeltaPreview
+
+```json
+{
+  "targetSessionId": "abc-123",
+  "checkpointId": "cp-0001",
+  "baselineLabel": "Original snapshot",
+  "currentLabel": "cp-0001",
+  "counts": {
+    "added": 2,
+    "modified": 4,
+    "deleted": 1
+  },
+  "files": [
+    {
+      "path": "src/server/protocol.ts",
+      "change": "modified",
+      "kind": "file"
+    }
+  ],
+  "truncated": false
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `targetSessionId` | `string` | Session identifier that owns the backup directory |
+| `checkpointId` | `string` | Selected checkpoint identifier |
+| `baselineLabel` | `string` | Human-readable baseline for the comparison (`Original snapshot` or the prior checkpoint ID) |
+| `currentLabel` | `string` | Human-readable label for the selected checkpoint |
+| `counts` | `{ added: number; modified: number; deleted: number }` | Aggregate file-change counts for the full delta |
+| `files` | `WorkspaceBackupDeltaFile[]` | Changed-file preview list |
+| `truncated` | `boolean` | Whether the file list was capped even though the counts reflect the full delta |
+
+### WorkspaceBackupDeltaFile
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `string` | Workspace-relative path for the changed entry |
+| `change` | `"added" \| "modified" \| "deleted"` | Change classification |
+| `kind` | `"file" \| "directory" \| "symlink"` | Filesystem entry kind |
 
 ### ObservabilityHealth
 
@@ -1296,6 +1393,103 @@ Delete a named checkpoint.
 
 **Response:** `session_backup_state` with `reason: "delete"`
 **Error:** `busy` if a turn is running. `validation_failed` if the checkpoint ID is unknown.
+
+---
+
+### workspace_backups_get
+
+Request the workspace-scoped backup snapshot for the control session's current `workingDirectory`.
+
+```json
+{ "type": "workspace_backups_get", "sessionId": "..." }
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `type` | `"workspace_backups_get"` | Yes |
+| `sessionId` | `string` | Yes |
+
+**Response:** `workspace_backups`
+
+---
+
+### workspace_backup_checkpoint
+
+Create a manual checkpoint for an existing workspace backup entry.
+
+```json
+{ "type": "workspace_backup_checkpoint", "sessionId": "...", "targetSessionId": "..." }
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `"workspace_backup_checkpoint"` | Yes | — |
+| `sessionId` | `string` | Yes | Control-session identifier |
+| `targetSessionId` | `string` | Yes | Session ID that owns the backup directory |
+
+**Response:** `workspace_backups`
+**Error:** `busy` when the target live session is running. `backup_error` if the backup is unavailable.
+
+---
+
+### workspace_backup_restore
+
+Restore the original snapshot or a named checkpoint for an existing workspace backup entry.
+
+```json
+{ "type": "workspace_backup_restore", "sessionId": "...", "targetSessionId": "...", "checkpointId": "cp-0001" }
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `"workspace_backup_restore"` | Yes | — |
+| `sessionId` | `string` | Yes | Control-session identifier |
+| `targetSessionId` | `string` | Yes | Session ID that owns the backup directory |
+| `checkpointId` | `string` | No | If omitted, restores the original snapshot |
+
+**Response:** `workspace_backups`
+**Behavior:** creates a fresh safety checkpoint before restoring.
+**Error:** `busy` when the target live session is running. `backup_error` if the backup is unavailable.
+
+---
+
+### workspace_backup_delete_checkpoint
+
+Delete a named checkpoint from an existing workspace backup entry.
+
+```json
+{ "type": "workspace_backup_delete_checkpoint", "sessionId": "...", "targetSessionId": "...", "checkpointId": "cp-0001" }
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `"workspace_backup_delete_checkpoint"` | Yes | — |
+| `sessionId` | `string` | Yes | Control-session identifier |
+| `targetSessionId` | `string` | Yes | Session ID that owns the backup directory |
+| `checkpointId` | `string` | Yes | Non-empty checkpoint identifier |
+
+**Response:** `workspace_backups`
+**Error:** `busy` when the target live session is running. `validation_failed` if the checkpoint ID is unknown.
+
+---
+
+### workspace_backup_delta_get
+
+Request an on-demand changed-file preview for a specific checkpoint in an existing workspace backup entry.
+
+```json
+{ "type": "workspace_backup_delta_get", "sessionId": "...", "targetSessionId": "...", "checkpointId": "cp-0001" }
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `"workspace_backup_delta_get"` | Yes | — |
+| `sessionId` | `string` | Yes | Control-session identifier |
+| `targetSessionId` | `string` | Yes | Session ID that owns the backup directory |
+| `checkpointId` | `string` | Yes | Checkpoint identifier to inspect |
+
+**Response:** `workspace_backup_delta`
+**Error:** `validation_failed` if the checkpoint ID is unknown. `backup_error` if the backup is unavailable.
 
 ---
 
@@ -2354,6 +2548,85 @@ Backup/checkpoint state. Sent in response to backup operations and after automat
 | `sessionId` | `string` | Session identifier |
 | `reason` | `"requested" \| "auto_checkpoint" \| "manual_checkpoint" \| "restore" \| "delete"` | What triggered this state emission |
 | `backup` | `SessionBackupPublicState` | Full backup state (see [SessionBackupPublicState](#sessionbackuppublicstate)) |
+
+---
+
+### workspace_backups
+
+Workspace-scoped backup snapshot for the control session's current `workingDirectory`.
+
+```json
+{
+  "type": "workspace_backups",
+  "sessionId": "...",
+  "workspacePath": "/path/to/project",
+  "backups": [
+    {
+      "targetSessionId": "abc-123",
+      "lifecycle": "deleted",
+      "status": "ready",
+      "workingDirectory": "/path/to/project",
+      "backupDirectory": "/path/to/backup",
+      "originalSnapshotKind": "directory",
+      "originalSnapshotBytes": 8192,
+      "checkpointBytesTotal": 4096,
+      "totalBytes": 12288,
+      "checkpoints": [],
+      "createdAt": "2026-02-19T18:00:00.000Z",
+      "updatedAt": "2026-02-19T18:10:00.000Z"
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"workspace_backups"` | — |
+| `sessionId` | `string` | Control-session identifier |
+| `workspacePath` | `string` | Workspace path this snapshot covers |
+| `backups` | `WorkspaceBackupPublicEntry[]` | One entry per backup directory for the workspace |
+
+---
+
+### workspace_backup_delta
+
+Changed-file preview for a specific workspace backup checkpoint.
+
+```json
+{
+  "type": "workspace_backup_delta",
+  "sessionId": "...",
+  "targetSessionId": "abc-123",
+  "checkpointId": "cp-0001",
+  "baselineLabel": "Original snapshot",
+  "currentLabel": "cp-0001",
+  "counts": {
+    "added": 2,
+    "modified": 4,
+    "deleted": 1
+  },
+  "files": [
+    {
+      "path": "src/server/protocol.ts",
+      "change": "modified",
+      "kind": "file"
+    }
+  ],
+  "truncated": false
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"workspace_backup_delta"` | — |
+| `sessionId` | `string` | Control-session identifier |
+| `targetSessionId` | `string` | Session identifier that owns the backup directory |
+| `checkpointId` | `string` | Selected checkpoint identifier |
+| `baselineLabel` | `string` | Comparison baseline label |
+| `currentLabel` | `string` | Selected checkpoint label |
+| `counts` | `{ added: number; modified: number; deleted: number }` | Aggregate file-change counts for the full delta |
+| `files` | `WorkspaceBackupDeltaFile[]` | Changed-file preview list |
+| `truncated` | `boolean` | Whether the preview file list was capped |
 
 ---
 

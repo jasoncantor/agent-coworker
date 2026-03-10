@@ -109,7 +109,7 @@ export type FeedItem =
 
 export type ViewId = "chat" | "skills" | "settings";
 
-export type SettingsPageId = "providers" | "usage" | "workspaces" | "mcp" | "updates" | "developer";
+export type SettingsPageId = "providers" | "usage" | "workspaces" | "backup" | "mcp" | "updates" | "developer";
 
 export type SessionConfigSubset = Extract<ServerEvent, { type: "session_config" }>["config"];
 export type MCPServersEvent = Extract<ServerEvent, { type: "mcp_servers" }>;
@@ -118,6 +118,9 @@ export type MCPServerAuthChallengeEvent = Extract<ServerEvent, { type: "mcp_serv
 export type MCPServerAuthResultEvent = Extract<ServerEvent, { type: "mcp_server_auth_result" }>;
 export type SessionUsageSnapshot = NonNullable<Extract<ServerEvent, { type: "session_usage" }>["usage"]>;
 export type TurnUsageSnapshot = Pick<Extract<ServerEvent, { type: "turn_usage" }>, "turnId" | "usage">;
+export type WorkspaceBackupsEvent = Extract<ServerEvent, { type: "workspace_backups" }>;
+export type WorkspaceBackupDeltaEvent = Extract<ServerEvent, { type: "workspace_backup_delta" }>;
+export type WorkspaceBackupEntry = WorkspaceBackupsEvent["backups"][number];
 
 export type WorkspaceRuntime = {
   serverUrl: string | null;
@@ -137,6 +140,14 @@ export type WorkspaceRuntime = {
   skills: SkillEntry[];
   selectedSkillName: string | null;
   selectedSkillContent: string | null;
+  workspaceBackupsPath: string | null;
+  workspaceBackups: WorkspaceBackupsEvent["backups"];
+  workspaceBackupsLoading: boolean;
+  workspaceBackupsError: string | null;
+  workspaceBackupPendingActionKeys: Record<string, true>;
+  workspaceBackupDelta: WorkspaceBackupDeltaEvent | null;
+  workspaceBackupDeltaLoading: boolean;
+  workspaceBackupDeltaError: string | null;
 };
 
 export type ThreadRuntime = {

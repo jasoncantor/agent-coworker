@@ -1279,6 +1279,103 @@ describe("safeParseClientMessage", () => {
       const err = expectErr(JSON.stringify({ type: "session_backup_delete_checkpoint", sessionId: "s1" }));
       expect(err).toContain("session_backup_delete_checkpoint missing checkpointId");
     });
+
+    test("workspace_backups_get parses", () => {
+      const msg = expectOk(JSON.stringify({ type: "workspace_backups_get", sessionId: "s1" }));
+      expect(msg.type).toBe("workspace_backups_get");
+      if (msg.type === "workspace_backups_get") {
+        expect(msg.sessionId).toBe("s1");
+      }
+    });
+
+    test("workspace_backup_checkpoint parses", () => {
+      const msg = expectOk(
+        JSON.stringify({ type: "workspace_backup_checkpoint", sessionId: "s1", targetSessionId: "target-1" }),
+      );
+      expect(msg.type).toBe("workspace_backup_checkpoint");
+      if (msg.type === "workspace_backup_checkpoint") {
+        expect(msg.sessionId).toBe("s1");
+        expect(msg.targetSessionId).toBe("target-1");
+      }
+    });
+
+    test("workspace_backup_restore parses original target (no checkpointId)", () => {
+      const msg = expectOk(
+        JSON.stringify({ type: "workspace_backup_restore", sessionId: "s1", targetSessionId: "target-1" }),
+      );
+      expect(msg.type).toBe("workspace_backup_restore");
+      if (msg.type === "workspace_backup_restore") {
+        expect(msg.targetSessionId).toBe("target-1");
+        expect(msg.checkpointId).toBeUndefined();
+      }
+    });
+
+    test("workspace_backup_restore parses checkpoint target", () => {
+      const msg = expectOk(
+        JSON.stringify({
+          type: "workspace_backup_restore",
+          sessionId: "s1",
+          targetSessionId: "target-1",
+          checkpointId: "cp-0001",
+        }),
+      );
+      expect(msg.type).toBe("workspace_backup_restore");
+      if (msg.type === "workspace_backup_restore") {
+        expect(msg.targetSessionId).toBe("target-1");
+        expect(msg.checkpointId).toBe("cp-0001");
+      }
+    });
+
+    test("workspace_backup_delete_checkpoint parses", () => {
+      const msg = expectOk(
+        JSON.stringify({
+          type: "workspace_backup_delete_checkpoint",
+          sessionId: "s1",
+          targetSessionId: "target-1",
+          checkpointId: "cp-0001",
+        }),
+      );
+      expect(msg.type).toBe("workspace_backup_delete_checkpoint");
+      if (msg.type === "workspace_backup_delete_checkpoint") {
+        expect(msg.targetSessionId).toBe("target-1");
+        expect(msg.checkpointId).toBe("cp-0001");
+      }
+    });
+
+    test("workspace_backup_delta_get parses", () => {
+      const msg = expectOk(
+        JSON.stringify({
+          type: "workspace_backup_delta_get",
+          sessionId: "s1",
+          targetSessionId: "target-1",
+          checkpointId: "cp-0001",
+        }),
+      );
+      expect(msg.type).toBe("workspace_backup_delta_get");
+      if (msg.type === "workspace_backup_delta_get") {
+        expect(msg.targetSessionId).toBe("target-1");
+        expect(msg.checkpointId).toBe("cp-0001");
+      }
+    });
+
+    test("workspace backup messages validate required targetSessionId/checkpointId fields", () => {
+      expect(expectErr(JSON.stringify({ type: "workspace_backup_checkpoint", sessionId: "s1" }))).toContain(
+        "workspace_backup_checkpoint missing targetSessionId",
+      );
+      expect(expectErr(JSON.stringify({ type: "workspace_backup_restore", sessionId: "s1" }))).toContain(
+        "workspace_backup_restore missing targetSessionId",
+      );
+      expect(expectErr(
+        JSON.stringify({
+          type: "workspace_backup_delete_checkpoint",
+          sessionId: "s1",
+          targetSessionId: "target-1",
+        }),
+      )).toContain("workspace_backup_delete_checkpoint missing checkpointId");
+      expect(expectErr(JSON.stringify({ type: "workspace_backup_delta_get", sessionId: "s1" }))).toContain(
+        "workspace_backup_delta_get missing targetSessionId",
+      );
+    });
   });
 
   describe("return shape", () => {

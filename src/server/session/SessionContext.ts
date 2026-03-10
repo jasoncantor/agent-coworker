@@ -17,7 +17,13 @@ import type {
   TodoItem,
 } from "../../types";
 import type { ServerEvent } from "../protocol";
-import type { SessionBackupHandle, SessionBackupInitOptions, SessionBackupPublicState } from "../sessionBackup";
+import type {
+  SessionBackupHandle,
+  SessionBackupInitOptions,
+  SessionBackupPublicState,
+  WorkspaceBackupDeltaPreview,
+  WorkspaceBackupPublicEntry,
+} from "../sessionBackup";
 import type { SessionDb, SessionPersistenceStatus } from "../sessionDb";
 import type { generateSessionTitle, SessionTitleSource } from "../sessionTitleService";
 import type { writePersistedSessionSnapshot } from "../sessionStore";
@@ -119,6 +125,33 @@ export type SessionDependencies = {
     requesterSessionId: string;
     targetSessionId: string;
   }) => Promise<void>;
+  listWorkspaceBackupsImpl?: (opts: {
+    requesterSessionId: string;
+    workingDirectory: string;
+  }) => Promise<WorkspaceBackupPublicEntry[]>;
+  createWorkspaceBackupCheckpointImpl?: (opts: {
+    requesterSessionId: string;
+    workingDirectory: string;
+    targetSessionId: string;
+  }) => Promise<WorkspaceBackupPublicEntry[]>;
+  restoreWorkspaceBackupImpl?: (opts: {
+    requesterSessionId: string;
+    workingDirectory: string;
+    targetSessionId: string;
+    checkpointId?: string;
+  }) => Promise<WorkspaceBackupPublicEntry[]>;
+  deleteWorkspaceBackupCheckpointImpl?: (opts: {
+    requesterSessionId: string;
+    workingDirectory: string;
+    targetSessionId: string;
+    checkpointId: string;
+  }) => Promise<WorkspaceBackupPublicEntry[]>;
+  getWorkspaceBackupDeltaImpl?: (opts: {
+    requesterSessionId: string;
+    workingDirectory: string;
+    targetSessionId: string;
+    checkpointId: string;
+  }) => Promise<WorkspaceBackupDeltaPreview>;
 };
 
 export type SessionContext = {

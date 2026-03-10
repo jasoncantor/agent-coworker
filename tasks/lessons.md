@@ -60,3 +60,8 @@
 - When restoring hover to a parent workspace row, keep nested controls like chevrons visually transparent so the parent hover reads as one highlight instead of two stacked pills.
 - For collapsible workspace rows, keep only one leading symbol visible at a time; use the folder icon as the resting state and swap it to the chevron in the same slot on hover/focus rather than showing both.
 - In composer UIs with a shared submit/stop button, never feed the stop state from the send-button disabled logic; an active run must keep its cancel control clickable even when the textarea is disabled or empty.
+- When a desktop audit turns into implementation work, separate developer-facing protocol/doc surfaces from true end-user controls before building; only ship the user-facing slice the user actually asked for.
+- For desktop settings pages that auto-fetch on open, do not put an inline store-action wrapper in the `useEffect` dependency list; the fetch state update will recreate the callback, retrigger the effect, and lock up the page.
+- For desktop recovery/admin screens, inspect the live layout before locking the hierarchy, and keep heavyweight diff or filesystem-compare work user-triggered instead of auto-running on page open.
+- For desktop settings pages, do not introduce a second card/window shell inside the main settings canvas; keep the page as one continuous surface under the section header, then use spacing and dividers for structure.
+- For desktop settings pages that act like tools or browsers, do not keep the default centered `max-w-*` content column; let them fill the available canvas and only constrain width when the page is primarily reading text/forms.

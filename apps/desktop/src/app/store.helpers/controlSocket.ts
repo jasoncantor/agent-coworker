@@ -237,6 +237,38 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
           return;
         }
 
+        if (evt.type === "workspace_backups") {
+          set((s) => ({
+            workspaceRuntimeById: {
+              ...s.workspaceRuntimeById,
+              [workspaceId]: {
+                ...s.workspaceRuntimeById[workspaceId],
+                workspaceBackupsPath: evt.workspacePath,
+                workspaceBackups: evt.backups,
+                workspaceBackupsLoading: false,
+                workspaceBackupsError: null,
+                workspaceBackupPendingActionKeys: {},
+              },
+            },
+          }));
+          return;
+        }
+
+        if (evt.type === "workspace_backup_delta") {
+          set((s) => ({
+            workspaceRuntimeById: {
+              ...s.workspaceRuntimeById,
+              [workspaceId]: {
+                ...s.workspaceRuntimeById[workspaceId],
+                workspaceBackupDelta: evt,
+                workspaceBackupDeltaLoading: false,
+                workspaceBackupDeltaError: null,
+              },
+            },
+          }));
+          return;
+        }
+
         if (evt.type === "provider_status") {
           const byName: Partial<Record<ProviderName, ProviderStatus>> = {};
           for (const p of evt.providers) byName[p.provider] = p;
@@ -323,16 +355,42 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
         }
 
         if (evt.type === "error") {
-          set((s) => ({
-            notifications: deps.pushNotification(s.notifications, {
-              id: deps.makeId(),
-              ts: deps.nowIso(),
-              kind: "error",
-              title: "Control session error",
-              detail: `${evt.source}/${evt.code}: ${evt.message}`,
-            }),
-            providerStatusRefreshing: false,
-          }));
+          set((s) => {
+            const workspaceRuntime = s.workspaceRuntimeById[workspaceId];
+            const hasPendingBackupState =
+              workspaceRuntime.workspaceBackupsLoading
+              || Object.keys(workspaceRuntime.workspaceBackupPendingActionKeys).length > 0;
+            const hasPendingBackupDelta = workspaceRuntime.workspaceBackupDeltaLoading;
+            return {
+              notifications: deps.pushNotification(s.notifications, {
+                id: deps.makeId(),
+                ts: deps.nowIso(),
+                kind: "error",
+                title: "Control session error",
+                detail: `${evt.source}/${evt.code}: ${evt.message}`,
+              }),
+              providerStatusRefreshing: false,
+              workspaceRuntimeById: {
+                ...s.workspaceRuntimeById,
+                [workspaceId]: hasPendingBackupState
+                  ? {
+                      ...workspaceRuntime,
+                      workspaceBackupsLoading: false,
+                      workspaceBackupsError: evt.message,
+                      workspaceBackupPendingActionKeys: {},
+                      workspaceBackupDeltaLoading: hasPendingBackupDelta ? false : workspaceRuntime.workspaceBackupDeltaLoading,
+                      workspaceBackupDeltaError: hasPendingBackupDelta ? evt.message : workspaceRuntime.workspaceBackupDeltaError,
+                    }
+                  : hasPendingBackupDelta
+                    ? {
+                        ...workspaceRuntime,
+                        workspaceBackupDeltaLoading: false,
+                        workspaceBackupDeltaError: evt.message,
+                      }
+                    : workspaceRuntime,
+              },
+            };
+          });
           return;
         }
 

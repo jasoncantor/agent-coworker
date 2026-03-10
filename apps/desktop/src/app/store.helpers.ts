@@ -221,6 +221,12 @@ export type AppStoreState = {
   callbackWorkspaceMcpServerAuth: (workspaceId: string, name: string, code?: string) => Promise<void>;
   setWorkspaceMcpServerApiKey: (workspaceId: string, name: string, apiKey: string) => Promise<void>;
   migrateWorkspaceMcpLegacy: (workspaceId: string, scope: "workspace" | "user") => Promise<void>;
+  requestWorkspaceBackups: (workspaceId: string) => Promise<void>;
+  requestWorkspaceBackupDelta: (workspaceId: string, targetSessionId: string, checkpointId: string) => Promise<void>;
+  createWorkspaceBackupCheckpoint: (workspaceId: string, targetSessionId: string) => Promise<void>;
+  restoreWorkspaceBackupOriginal: (workspaceId: string, targetSessionId: string) => Promise<void>;
+  restoreWorkspaceBackupCheckpoint: (workspaceId: string, targetSessionId: string, checkpointId: string) => Promise<void>;
+  deleteWorkspaceBackupCheckpoint: (workspaceId: string, targetSessionId: string, checkpointId: string) => Promise<void>;
 
   connectProvider: (provider: ProviderName, apiKey?: string) => Promise<void>;
   setProviderApiKey: (provider: ProviderName, methodId: string, apiKey: string) => Promise<void>;

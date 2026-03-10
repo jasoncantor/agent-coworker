@@ -213,6 +213,113 @@ describe("desktop protocol v2 mapping", () => {
     expect(notification?.title).toBe("MCP auth failed: grep");
   });
 
+  test("workspace_backups event hydrates the workspace runtime slice", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+
+    controlSocket.emit({
+      type: "workspace_backups",
+      sessionId: "control-session",
+      workspacePath: "/tmp/workspace",
+      backups: [
+        {
+          targetSessionId: "thread-session",
+          title: "Deleted session",
+          provider: "openai",
+          model: "gpt-5.2",
+          lifecycle: "deleted",
+          status: "ready",
+          workingDirectory: "/tmp/workspace",
+          backupDirectory: "/tmp/home/.cowork/session-backups/thread-session",
+          originalSnapshotKind: "directory",
+          originalSnapshotBytes: 4096,
+          checkpointBytesTotal: 2048,
+          totalBytes: 6144,
+          checkpoints: [
+            {
+              id: "cp-0001",
+              index: 1,
+              createdAt: "2026-03-10T00:01:00.000Z",
+              trigger: "manual",
+              changed: true,
+              patchBytes: 2048,
+            },
+          ],
+          createdAt: "2026-03-10T00:00:00.000Z",
+          updatedAt: "2026-03-10T00:02:00.000Z",
+        },
+      ],
+    });
+
+    const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
+    expect(runtime?.workspaceBackupsPath).toBe("/tmp/workspace");
+    expect(runtime?.workspaceBackups).toHaveLength(1);
+    expect(runtime?.workspaceBackups[0]?.targetSessionId).toBe("thread-session");
+    expect(runtime?.workspaceBackups[0]?.checkpoints[0]?.id).toBe("cp-0001");
+  });
+
+  test("workspace_backup_delta event hydrates the workspace delta slice", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+
+    controlSocket.emit({
+      type: "workspace_backup_delta",
+      sessionId: "control-session",
+      targetSessionId: "thread-session",
+      checkpointId: "cp-0001",
+      baselineLabel: "Original snapshot",
+      currentLabel: "cp-0001",
+      counts: {
+        added: 1,
+        modified: 1,
+        deleted: 0,
+      },
+      files: [
+        { path: "src/new.ts", change: "added", kind: "file" },
+        { path: "README.md", change: "modified", kind: "file" },
+      ],
+      truncated: false,
+    });
+
+    const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
+    expect(runtime?.workspaceBackupDelta?.checkpointId).toBe("cp-0001");
+    expect(runtime?.workspaceBackupDelta?.counts.modified).toBe(1);
+    expect(runtime?.workspaceBackupDelta?.files[0]?.path).toBe("src/new.ts");
+  });
+
+  test("workspace backup actions send control-session messages", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+    controlSocket.sent = [];
+
+    await useAppStore.getState().requestWorkspaceBackups(workspaceId);
+    await useAppStore.getState().requestWorkspaceBackupDelta(workspaceId, "thread-session", "cp-0001");
+    await useAppStore.getState().createWorkspaceBackupCheckpoint(workspaceId, "thread-session");
+    await useAppStore.getState().restoreWorkspaceBackupOriginal(workspaceId, "thread-session");
+    await useAppStore.getState().restoreWorkspaceBackupCheckpoint(workspaceId, "thread-session", "cp-0001");
+    await useAppStore.getState().deleteWorkspaceBackupCheckpoint(workspaceId, "thread-session", "cp-0001");
+
+    const sentTypes = controlSocket.sent.map((msg) => msg?.type).filter(Boolean);
+    expect(sentTypes).toContain("workspace_backups_get");
+    expect(sentTypes).toContain("workspace_backup_delta_get");
+    expect(sentTypes).toContain("workspace_backup_checkpoint");
+    expect(sentTypes).toContain("workspace_backup_restore");
+    expect(sentTypes).toContain("workspace_backup_delete_checkpoint");
+
+    const checkpointRestore = controlSocket.sent.find(
+      (msg) => msg?.type === "workspace_backup_restore" && msg?.checkpointId === "cp-0001",
+    );
+    expect(checkpointRestore?.targetSessionId).toBe("thread-session");
+
+    const checkpointDelta = controlSocket.sent.find(
+      (msg) => msg?.type === "workspace_backup_delta_get" && msg?.checkpointId === "cp-0001",
+    );
+    expect(checkpointDelta?.targetSessionId).toBe("thread-session");
+  });
+
   test("connectProvider sends provider_auth_set_api_key for keyed providers", async () => {
     await useAppStore.getState().newThread({ workspaceId });
     const controlSocket = socketByClient("desktop-control");

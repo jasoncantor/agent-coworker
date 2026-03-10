@@ -142,6 +142,7 @@ function makeSessionBackupFactory() {
         checkpoints.splice(idx, 1);
         return true;
       },
+      reloadFromDisk: async () => getState(),
       close: async () => {},
     };
   });
@@ -2041,6 +2042,7 @@ describe("AgentSession", () => {
           restoreOriginal: async () => {},
           restoreCheckpoint: async (_checkpointId: string) => {},
           deleteCheckpoint: async (_checkpointId: string) => false,
+          reloadFromDisk: async () => state(),
           close: async () => {},
         };
       });

@@ -146,6 +146,14 @@ export class SessionBackupController {
     }
   }
 
+  async reloadSessionBackupStateFromDisk() {
+    await this.runInBackupQueue(async () => {
+      await this.ensureSessionBackupInitialized();
+      if (!this.context.state.sessionBackup) return;
+      this.context.state.sessionBackupState = await this.context.state.sessionBackup.reloadFromDisk();
+    });
+  }
+
   private emitSessionBackupState(reason: "requested" | "auto_checkpoint" | "manual_checkpoint" | "restore" | "delete") {
     this.context.emit({
       type: "session_backup_state",
