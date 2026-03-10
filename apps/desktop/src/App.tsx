@@ -26,7 +26,7 @@ const LeftSidebarPane = memo(function LeftSidebarPane({ collapsed }: { collapsed
 
   return (
     <div
-      className="app-left-sidebar-pane relative shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] bg-sidebar/85 backdrop-blur-xl border-r border-border/80"
+      className="app-left-sidebar-pane relative shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] border-r border-border/70 bg-[color-mix(in_srgb,var(--sidebar-bg)_92%,white_8%)] backdrop-blur-lg"
       style={{ width: collapsed ? 0 : sidebarWidth, borderRightWidth: collapsed ? 0 : 1 }}
     >
       <div className="absolute top-0 bottom-0 right-0 flex" style={{ width: sidebarWidth }}>

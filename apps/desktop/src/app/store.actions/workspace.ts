@@ -48,8 +48,9 @@ import {
   truncateTitle,
 } from "../store.helpers";
 import type { ThreadRecord, WorkspaceRecord } from "../types";
+import { reorderSidebarItemsById } from "../../ui/sidebarHelpers";
 
-export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "addWorkspace" | "removeWorkspace" | "selectWorkspace" | "restartWorkspaceServer"> {
+export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "addWorkspace" | "removeWorkspace" | "selectWorkspace" | "reorderWorkspaces" | "restartWorkspaceServer"> {
   const closeControlSession = (workspaceId: string) => {
     sendControl(get, workspaceId, (sessionId) => ({ type: "session_close", sessionId }));
   };
@@ -171,6 +172,21 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
   
       await ensureServerRunning(get, set, workspaceId);
       ensureControlSocket(get, set, workspaceId);
+    },
+
+    reorderWorkspaces: async (sourceWorkspaceId: string, targetWorkspaceId: string) => {
+      const nextWorkspaces = reorderSidebarItemsById(
+        get().workspaces,
+        sourceWorkspaceId,
+        targetWorkspaceId,
+      );
+
+      if (nextWorkspaces === get().workspaces) {
+        return;
+      }
+
+      set({ workspaces: nextWorkspaces });
+      await persistNow(get);
     },
   
 

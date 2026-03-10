@@ -102,10 +102,6 @@ For headless/cloud testing, prefer `bun run serve` and interact via WebSocket (s
 
 `bun run desktop:dev` (from repo root) launches the Electron desktop app. It first builds sidecar resources (`build:desktop-resources`), then runs `electron-vite dev`. The app starts its own server process per workspace. D-Bus and GPU errors in logs are cosmetic on headless Linux and do not affect functionality. To test the desktop app visually, use the `computerUse` subagent.
 
-### AI Provider Keys
-
-The agent needs at least one provider API key to actually run AI turns (e.g. `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`). The server starts and the test suite runs without any keys — keys are only needed for live AI interactions.
-
 ## Workflow Orchestration
 
 ### 1. Plan Node Default

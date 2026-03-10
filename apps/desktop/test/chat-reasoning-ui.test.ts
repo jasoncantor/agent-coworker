@@ -8,6 +8,7 @@ import {
   filterFeedForDeveloperMode,
   formatSessionBudgetLine,
   formatSessionUsageHeadline,
+  getComposerSubmitState,
   reasoningLabelForMode,
   reasoningPreviewText,
   sessionUsageTone,
@@ -193,6 +194,32 @@ describe("desktop reasoning UI helpers", () => {
       sessionId: "session-1",
       threadStatus: "active",
     })).toBe(true);
+  });
+
+  test("keeps the stop action enabled while a run is active", () => {
+    expect(getComposerSubmitState({
+      busy: true,
+      hasPromptModal: false,
+      composerText: "",
+      sessionId: "session-1",
+      threadStatus: "active",
+    })).toEqual({ status: "streaming", disabled: false });
+
+    expect(getComposerSubmitState({
+      busy: true,
+      hasPromptModal: false,
+      composerText: "",
+      sessionId: null,
+      threadStatus: "active",
+    })).toEqual({ status: "streaming", disabled: true });
+
+    expect(getComposerSubmitState({
+      busy: false,
+      hasPromptModal: false,
+      composerText: "",
+      sessionId: "session-1",
+      threadStatus: "active",
+    })).toEqual({ status: "ready", disabled: true });
   });
 
   test("renders usage stats as a title hover/focus reveal instead of an always-on header row", () => {

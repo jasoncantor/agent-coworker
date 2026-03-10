@@ -173,6 +173,7 @@ export type AppStoreState = {
   addWorkspace: () => Promise<void>;
   removeWorkspace: (workspaceId: string) => Promise<void>;
   selectWorkspace: (workspaceId: string) => Promise<void>;
+  reorderWorkspaces: (sourceWorkspaceId: string, targetWorkspaceId: string) => Promise<void>;
 
   newThread: (opts?: { workspaceId?: string; titleHint?: string; firstMessage?: string }) => Promise<void>;
   removeThread: (threadId: string) => Promise<void>;

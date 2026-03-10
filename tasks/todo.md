@@ -1,3 +1,39 @@
+# Task: Fix desktop chat composer send/stop button styling and stop behavior
+
+## Plan
+- [x] Inspect the desktop composer button component and current stop/send wiring.
+- [x] Patch the button states so send and stop have the right styling and the stop action remains clickable while a run is active.
+- [x] Add focused verification for the submit/stop behavior and rerun desktop typecheck.
+
+## Review
+- `apps/desktop/src/components/ai-elements/prompt-input.tsx` now gives the composer actions distinct, explicit treatments: the send control is a filled primary circular button with an arrow-up glyph, while the stop control is a filled destructive circular button with a square glyph. Both keep the flatter sidebar-era styling with no heavy shadows.
+- `apps/desktop/src/ui/ChatView.tsx` now derives composer submit state through `getComposerSubmitState(...)` so send and stop no longer share the same disabled logic. When a run is active, the control switches to `streaming` mode and stays enabled as long as there is an active session/thread to cancel; idle send remains disabled only for empty input or prompt-modal lockout.
+- Added a focused regression in `apps/desktop/test/chat-reasoning-ui.test.ts` to prove the stop action stays enabled during an active run and still disables correctly for missing session state or empty idle sends.
+- Verification:
+  - `~/.bun/bin/bun test --cwd apps/desktop test/chat-reasoning-ui.test.ts` -> pass (`11 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+
+# Task: Redesign the desktop left sidebar to be sleeker and show only recent threads
+
+## Plan
+- [x] Refactor the left sidebar layout to feel tighter and closer to the provided reference while preserving current desktop behavior.
+- [x] Limit visible thread rows to the 10 most recent entries per expanded workspace and add a lightweight overflow affordance.
+- [x] Run targeted verification and inspect the updated sidebar in the live desktop app.
+
+## Review
+- Reworked `apps/desktop/src/ui/Sidebar.tsx` into a denser, quieter workspace-first layout with smaller nav rows, a slimmer default sidebar width, and less path-heavy chrome.
+- Restored the section label to `Workspaces`, kept workspace display order stable instead of re-sorting by recency, and added drag-and-drop workspace reordering backed by a new persisted `reorderWorkspaces(...)` store action.
+- Split workspace selection from expansion: each workspace now has an explicit chevron next to the folder icon that toggles its thread list, while clicking the workspace row simply selects it.
+- Limited visible thread rows to the 10 most recent items per expanded workspace and added a lightweight `Show N more` overflow affordance; helper coverage for thread capping and workspace reordering lives in `apps/desktop/src/ui/sidebarHelpers.ts` and `apps/desktop/test/sidebar.test.ts`.
+- Added a motion layer in `apps/desktop/src/styles.css` and `apps/desktop/src/ui/Sidebar.tsx`: the rail softly slides in, chevrons rotate, workspace sections animate open/closed with staggered thread reveals, and nav/workspace/thread rows now have subtle lift/press feedback plus animated drag targets.
+- Reduced shadow use across the sidebar so active states read flatter: active nav/thread rows now lean on restrained background changes instead of inset highlights, and drag feedback uses a soft accent tint/border pulse instead of box-shadow rings.
+- Workspace emphasis now defers to thread emphasis: when a thread inside the selected workspace is active, only that thread row stays highlighted, and the chevron control no longer paints its own nested hover capsule inside the workspace row.
+- Consolidated the workspace leading icon into a single slot: closed/open folder is the resting state, and hovering/focusing the expand control swaps that same slot to the chevron instead of rendering a second symbol beside it.
+- Verification:
+  - `~/.bun/bin/bun test --cwd apps/desktop test/sidebar.test.ts` -> pass (`3 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - Live desktop verification was attempted with Electron remote debugging plus the desktop browser wrapper, but local CDP attachment was blocked by renderer-port conflicts and the dev Electron process exiting before the client could attach.
+
 # Task: Merge PR #30 into main and ship the next release
 
 ## Plan

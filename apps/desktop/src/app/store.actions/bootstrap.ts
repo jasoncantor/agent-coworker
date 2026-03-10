@@ -270,7 +270,7 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
     toggleContextSidebar: () => set((s) => ({ contextSidebarCollapsed: !s.contextSidebarCollapsed })),
   
 
-    setSidebarWidth: (width: number) => set({ sidebarWidth: Math.max(180, Math.min(600, width)) }),
+    setSidebarWidth: (width: number) => set({ sidebarWidth: Math.max(160, Math.min(440, width)) }),
 
     setContextSidebarWidth: (width: number) => set({ contextSidebarWidth: Math.max(200, Math.min(600, width)) }),
 

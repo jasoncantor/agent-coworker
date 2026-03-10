@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 
 import { forwardRef } from "react";
-import { CornerDownLeftIcon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, SquareIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
@@ -87,9 +87,12 @@ export function PromptInputSubmit({ className, disabled, onStop, status, ...prop
     return (
       <Button
         type="button"
-        size="icon-sm"
+        size="icon"
         variant="destructive"
-        className={cn("rounded-full", className)}
+        className={cn(
+          "rounded-full border border-destructive/15 bg-destructive text-destructive-foreground shadow-none hover:brightness-105 disabled:border-border/50 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100",
+          className,
+        )}
         disabled={disabled || !onStop}
         onClick={onStop}
         aria-label="Stop generating response"
@@ -103,13 +106,16 @@ export function PromptInputSubmit({ className, disabled, onStop, status, ...prop
   return (
     <Button
       type="submit"
-      size="icon-sm"
-      className={cn("rounded-full", className)}
+      size="icon"
+      className={cn(
+        "rounded-full border border-primary/15 bg-primary text-primary-foreground shadow-none hover:brightness-105 disabled:border-border/50 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100",
+        className,
+      )}
       disabled={disabled}
       aria-label="Send message"
       {...props}
     >
-      <CornerDownLeftIcon data-icon="send" />
+      <ArrowUpIcon data-icon="send" />
     </Button>
   );
 }

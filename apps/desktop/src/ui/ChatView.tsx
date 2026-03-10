@@ -148,6 +148,26 @@ export function canClearSessionHardCap(opts: {
     && opts.threadStatus === "active";
 }
 
+export function getComposerSubmitState(opts: {
+  busy: boolean;
+  hasPromptModal: boolean;
+  composerText: string;
+  sessionId: string | null;
+  threadStatus: ThreadStatus;
+}): { status: "ready" | "streaming"; disabled: boolean } {
+  if (opts.busy) {
+    return {
+      status: "streaming",
+      disabled: opts.hasPromptModal || !opts.sessionId || opts.threadStatus !== "active",
+    };
+  }
+
+  return {
+    status: "ready",
+    disabled: opts.hasPromptModal || !opts.composerText.trim(),
+  };
+}
+
 export function ChatThreadHeader(props: {
   title: string;
   sessionUsage: SessionUsageSnapshot | null;
@@ -474,6 +494,13 @@ export function ChatView() {
     sessionId: rt?.sessionId ?? null,
     threadStatus: thread.status,
   });
+  const composerSubmitState = getComposerSubmitState({
+    busy,
+    hasPromptModal,
+    composerText,
+    sessionId: rt?.sessionId ?? null,
+    threadStatus: thread.status,
+  });
 
   const placeholder = transcriptOnly
     ? "Continue in a new thread..."
@@ -578,9 +605,9 @@ export function ChatView() {
                     {busy ? "Agent is working..." : "Press Enter to send, Shift+Enter for newline."}
                   </span>
                   <PromptInputSubmit
-                    status={busy ? "streaming" : "ready"}
-                    disabled={disabled || !composerText.trim()}
-                    onStop={() => cancelThread(selectedThreadId)}
+                    status={composerSubmitState.status}
+                    disabled={composerSubmitState.disabled}
+                    onStop={selectedThreadId ? () => cancelThread(selectedThreadId) : undefined}
                   />
                 </div>
               </PromptInputFooter>

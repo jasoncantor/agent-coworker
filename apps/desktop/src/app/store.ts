@@ -46,7 +46,7 @@ const initialState: AppStoreDataState = {
   contextSidebarCollapsed: false,
   contextSidebarWidth: 300,
   messageBarHeight: 120,
-  sidebarWidth: 280,
+  sidebarWidth: 248,
 };
 
 export const useAppStore = create<AppStoreState>((set, get) => ({

@@ -33,10 +33,10 @@ export function SidebarResizer() {
         setSidebarWidth(sidebarWidth + step);
       } else if (event.key === "Home") {
         event.preventDefault();
-        setSidebarWidth(180);
+        setSidebarWidth(160);
       } else if (event.key === "End") {
         event.preventDefault();
-        setSidebarWidth(500);
+        setSidebarWidth(440);
       }
     },
     [setSidebarWidth, sidebarWidth],
@@ -99,8 +99,8 @@ export function SidebarResizer() {
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize sidebar"
-      aria-valuemin={180}
-      aria-valuemax={500}
+      aria-valuemin={160}
+      aria-valuemax={440}
       aria-valuenow={sidebarWidth}
       tabIndex={0}
       onMouseDown={handleMouseDown}
