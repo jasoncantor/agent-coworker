@@ -193,6 +193,15 @@ function codexAuthDirPath(paths: Pick<CodexAuthPaths, "authDir">): string {
   return path.dirname(codexAuthFilePath(paths));
 }
 
+function codexLegacyAuthFilePath(paths: Pick<CodexAuthPaths, "authDir">): string {
+  const homeDir = path.dirname(path.dirname(paths.authDir));
+  return path.join(homeDir, ".codex", "auth.json");
+}
+
+function codexLegacyImportBlockFilePath(paths: Pick<CodexAuthPaths, "authDir">): string {
+  return path.join(codexAuthDirPath(paths), ".legacy-import-disabled");
+}
+
 function wrapCodexAuthWriteError(dirPath: string, error: unknown): Error {
   const parsedCode = errorWithCodeSchema.safeParse(error);
   const codeRaw = parsedCode.success ? parsedCode.data.code : undefined;
@@ -288,6 +297,88 @@ async function readJsonFile(filePath: string): Promise<unknown | null> {
 
 function isInvalidCodexAuthJsonError(error: unknown): boolean {
   return error instanceof Error && error.message.startsWith("Invalid JSON in Codex auth file ");
+}
+
+function parseAnyCodexAuthJson(file: string, json: unknown): CodexAuthMaterial | null {
+  try {
+    return parseCodexAuthJson(file, json);
+  } catch {
+    return parseLegacyCodexAuthJson(file, json);
+  }
+}
+
+async function isLegacyImportBlocked(paths: Pick<CodexAuthPaths, "authDir">): Promise<boolean> {
+  try {
+    await fs.access(codexLegacyImportBlockFilePath(paths), fsConstants.F_OK);
+    return true;
+  } catch (error) {
+    const parsedCode = errorWithCodeSchema.safeParse(error);
+    const code = parsedCode.success ? parsedCode.data.code : undefined;
+    if (code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function setLegacyImportBlocked(
+  paths: Pick<CodexAuthPaths, "authDir">,
+): Promise<void> {
+  const dir = codexAuthDirPath(paths);
+  const blockFile = codexLegacyImportBlockFilePath(paths);
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+  try {
+    await fs.chmod(dir, 0o700);
+  } catch {
+    // best effort only
+  }
+  await fs.writeFile(blockFile, new Date().toISOString(), { encoding: "utf-8", mode: 0o600 });
+  try {
+    await fs.chmod(blockFile, 0o600);
+  } catch {
+    // best effort only
+  }
+}
+
+async function clearLegacyImportBlocked(
+  paths: Pick<CodexAuthPaths, "authDir">,
+): Promise<void> {
+  try {
+    await fs.rm(codexLegacyImportBlockFilePath(paths), { force: true });
+  } catch (error) {
+    const parsedCode = errorWithCodeSchema.safeParse(error);
+    const code = parsedCode.success ? parsedCode.data.code : undefined;
+    if (code !== "ENOENT") {
+      throw error;
+    }
+  }
+}
+
+async function importLegacyCodexAuthMaterial(
+  paths: Pick<CodexAuthPaths, "authDir">,
+): Promise<CodexAuthMaterial | null> {
+  if (await isLegacyImportBlocked(paths)) {
+    return null;
+  }
+
+  const legacyFile = codexLegacyAuthFilePath(paths);
+  let legacyJson: unknown | null = null;
+  try {
+    legacyJson = await readJsonFile(legacyFile);
+  } catch (error) {
+    if (!isInvalidCodexAuthJsonError(error)) throw error;
+  }
+  if (!legacyJson) {
+    return null;
+  }
+
+  const parsedLegacy = parseAnyCodexAuthJson(legacyFile, legacyJson);
+  if (!parsedLegacy?.accessToken) {
+    return null;
+  }
+
+  return await writeCodexAuthMaterial(paths, {
+    ...parsedLegacy,
+    file: codexAuthFilePath(paths),
+  });
 }
 
 function parseCodexAuthJson(file: string, json: unknown): CodexAuthMaterial {
@@ -446,6 +537,11 @@ export async function writeCodexAuthMaterial(
     } catch {
       // best effort only
     }
+    try {
+      await clearLegacyImportBlocked(paths);
+    } catch {
+      // best effort only
+    }
   } catch (error) {
     throw wrapCodexAuthWriteError(dir, error);
   }
@@ -458,11 +554,22 @@ export async function clearCodexAuthMaterial(
   const file = codexAuthFilePath(paths);
   try {
     await fs.rm(file, { force: true });
+    try {
+      await setLegacyImportBlocked(paths);
+    } catch {
+      // best effort only; logout should still clear Cowork auth even if the
+      // suppression marker could not be written.
+    }
     return { file, removed: true };
   } catch (error) {
     const parsedCode = errorWithCodeSchema.safeParse(error);
     const code = parsedCode.success ? parsedCode.data.code : undefined;
     if (code === "ENOENT") {
+      try {
+        await setLegacyImportBlocked(paths);
+      } catch {
+        // best effort only
+      }
       return { file, removed: false };
     }
     throw error;
@@ -480,14 +587,13 @@ export async function readCodexAuthMaterial(
     if (!isInvalidCodexAuthJsonError(error)) throw error;
   }
   if (coworkJson) {
-    try {
-      return parseCodexAuthJson(coworkFile, coworkJson);
-    } catch {
-      const legacyCowork = parseLegacyCodexAuthJson(coworkFile, coworkJson);
-      if (legacyCowork) return legacyCowork;
+    const parsedCowork = parseAnyCodexAuthJson(coworkFile, coworkJson);
+    if (parsedCowork) {
+      return parsedCowork;
     }
   }
-  return null;
+
+  return await importLegacyCodexAuthMaterial(paths);
 }
 
 function expiresInMsFromResponse(payload: CodexOAuthTokenResponse): number | undefined {
@@ -593,6 +699,21 @@ export async function refreshCodexAuthMaterial(opts: {
     issuer: opts.material.issuer,
     clientId: opts.material.clientId,
   });
+
+  // Guard against concurrent refresh across processes: re-read the auth file
+  // and check if another process already wrote a fresh token while we were
+  // waiting for the token endpoint. If so, use theirs instead of overwriting.
+  const currentOnDisk = await readCodexAuthMaterial(opts.paths);
+  if (
+    currentOnDisk?.accessToken &&
+    currentOnDisk.updatedAt &&
+    opts.material.updatedAt &&
+    currentOnDisk.updatedAt > opts.material.updatedAt &&
+    !isTokenExpiring(currentOnDisk, 0)
+  ) {
+    return currentOnDisk;
+  }
+
   return await writeCodexAuthMaterial(opts.paths, {
     ...refreshed,
     refreshToken: refreshed.refreshToken ?? opts.material.refreshToken,

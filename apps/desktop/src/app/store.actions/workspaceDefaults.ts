@@ -51,32 +51,56 @@ import type { ThreadRecord, WorkspaceRecord } from "../types";
 
 export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "applyWorkspaceDefaultsToThread" | "updateWorkspaceDefaults"> {
   return {
-    applyWorkspaceDefaultsToThread: async (threadId: string) => {
+    applyWorkspaceDefaultsToThread: async (threadId: string, mode: "auto" | "explicit" = "explicit") => {
       const thread = get().threads.find((t) => t.id === threadId);
       if (!thread) return;
       const ws = get().workspaces.find((w) => w.id === thread.workspaceId);
       if (!ws) return;
       const rt = get().threadRuntimeById[threadId];
       if (!rt?.sessionId) return;
+      const workspaceRuntime = get().workspaceRuntimeById[thread.workspaceId];
+      const harnessBackupsDefault = workspaceRuntime?.controlSessionConfig?.defaultBackupsEnabled;
+      const backupsEnabled = mode === "explicit" ? ws.defaultBackupsEnabled : harnessBackupsDefault;
+
+      // Explicit user-driven default changes should still hit live sessions
+      // immediately. Automatic connect-time sync only trusts the harness-
+      // sourced default once the control session has provided it.
+      if (typeof backupsEnabled === "boolean") {
+        const okBackups = sendThread(get, threadId, (sessionId) => ({
+          type: "set_config",
+          sessionId,
+          config: { backupsEnabled },
+        }));
+        if (okBackups) {
+          appendThreadTranscript(threadId, "client", {
+            type: "set_config",
+            sessionId: rt.sessionId,
+            config: { backupsEnabled },
+          });
+        }
+      }
+
+      // Defer model / provider / other config changes when the session is
+      // busy — changing the model mid-turn is not safe.
       if (rt.busy) {
         RUNTIME.pendingWorkspaceDefaultApplyThreadIds.add(threadId);
         return;
       }
       RUNTIME.pendingWorkspaceDefaultApplyThreadIds.delete(threadId);
-  
+
       const inferredProvider =
         ws.defaultProvider && isProviderName(ws.defaultProvider)
           ? ws.defaultProvider
           : isProviderName((rt.config as any)?.provider)
             ? ((rt.config as any).provider as ProviderName)
             : "google";
-  
+
       const provider = normalizeProviderChoice(inferredProvider);
       const model = (ws.defaultModel?.trim() || rt.config?.model?.trim() || "") || undefined;
       const subAgentModel =
         (ws.defaultSubAgentModel?.trim() || ws.defaultModel?.trim() || rt.sessionConfig?.subAgentModel?.trim() || "") || undefined;
       const providerOptions = ws.providerOptions;
-  
+
       if (provider && model) {
         const ok = sendThread(get, threadId, (sessionId) => ({
           type: "set_model",
@@ -107,7 +131,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
           });
         }
       }
-  
+
       const okMcp = sendThread(get, threadId, (sessionId) => ({
         type: "set_enable_mcp",
         sessionId,
@@ -141,6 +165,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         patch.defaultModel !== undefined ||
         patch.defaultSubAgentModel !== undefined ||
         patch.defaultEnableMcp !== undefined ||
+        patch.defaultBackupsEnabled !== undefined ||
         patch.providerOptions !== undefined;
       if (!shouldSyncCoreSettings) {
         return;
@@ -171,6 +196,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         type: "set_config",
         sessionId,
         config: {
+          backupsEnabled: workspace.defaultBackupsEnabled,
           subAgentModel,
           ...(providerOptions ? { providerOptions: providerOptions as OpenAiCompatibleProviderOptionsByProvider } : {}),
         },
@@ -197,7 +223,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         .threads.filter((thread) => thread.workspaceId === workspaceId)
         .map((thread) => thread.id);
       for (const threadId of threadIds) {
-        void get().applyWorkspaceDefaultsToThread(threadId);
+        void get().applyWorkspaceDefaultsToThread(threadId, "explicit");
       }
     },
   

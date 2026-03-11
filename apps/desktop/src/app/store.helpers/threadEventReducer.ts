@@ -241,7 +241,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
       });
       deps.persist(get);
 
-      void get().applyWorkspaceDefaultsToThread(threadId);
+      void get().applyWorkspaceDefaultsToThread(threadId, "auto");
       RUNTIME.threadSockets.get(threadId)?.send({
         type: "get_session_usage",
         sessionId: evt.sessionId,
@@ -295,7 +295,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
         };
       });
       if (!evt.busy && RUNTIME.pendingWorkspaceDefaultApplyThreadIds.has(threadId)) {
-        void get().applyWorkspaceDefaultsToThread(threadId);
+        void get().applyWorkspaceDefaultsToThread(threadId, "auto");
       }
       return;
     }

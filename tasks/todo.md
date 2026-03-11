@@ -14,6 +14,136 @@
   - `~/.bun/bin/bun run typecheck` -> pass
   - `git diff --check` -> pass
 
+# Task: Investigate Codex auth disappearing after app restart
+
+## Plan
+- [x] Trace Codex auth read/write paths and confirm whether restart issues come from storage-path drift or from startup status/refresh behavior.
+- [x] Add regression coverage for recoverable expired Codex auth states and refresh races so restart handling stays correct.
+- [x] Run focused verification and record the confirmed root cause plus remaining risk below.
+
+## Review
+- Root cause is not a workspace-vs-global auth path mismatch. Codex auth is consistently read and written under `~/.cowork/auth/codex-cli/auth.json`, and the desktop server boot path keeps using the same home-derived Cowork root across launches.
+- The restart failure mode is an expired access token that still has a refresh token, combined with a transient refresh failure during startup. Before the recent fix, startup could treat that state as effectively disconnected and the desktop persistence layer could then cache the stale "not connected" snapshot, making the token look gone after closing and reopening the app even though the auth file was still present.
+- A second contributing risk is concurrent refresh across processes. The current auth refresh path now re-reads the on-disk auth file before writing so a stale process does not overwrite a newer token that another process already persisted.
+- Added focused regression coverage in `test/providerStatus.test.ts`, `test/providers/codex-auth.test.ts`, and `apps/desktop/test/persistence-state-sanitization.test.ts` for recoverable expired-token startup status, cross-process refresh races, and desktop persistence sanitization.
+- Verification:
+  - `~/.bun/bin/bun test test/providerStatus.test.ts test/providers/codex-auth.test.ts apps/desktop/test/persistence-state-sanitization.test.ts` -> pass (`28 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+
+# Task: Recover Codex auth into Cowork-owned storage
+
+## Plan
+- [x] Confirm the current Codex auth ownership gap and record the concrete legacy-vs-Cowork path mismatch.
+- [x] Update the Codex auth layer so Cowork canonicalizes legacy `~/.codex/auth.json` material into `~/.cowork/auth/codex-cli/auth.json` when our file is missing or unreadable.
+- [x] Add focused regression coverage for legacy import and Cowork-path persistence, then run the relevant Bun tests.
+- [x] Record the verified outcome below.
+
+## Review
+- The live machine state confirmed the ownership gap directly: `~/.cowork/auth/codex-cli/auth.json` was missing while `~/.codex/auth.json` still contained a valid access token plus refresh token. That meant Cowork looked logged out even though usable Codex auth still existed on disk.
+- `src/providers/codex-auth.ts` now treats Cowork auth as the canonical location but will import valid legacy `~/.codex/auth.json` material into `~/.cowork/auth/codex-cli/auth.json` whenever the Cowork file is missing or unreadable. Reads, provider status refresh, runtime auth, and reconnect flows now self-heal back into the Cowork-owned path.
+- Explicit Cowork logout now writes a local suppression marker so the next startup does not immediately re-import the legacy `.codex` token and undo the logout. Any fresh Cowork sign-in clears that marker when it writes the canonical auth file again.
+- Updated focused regressions in `test/connect.test.ts`, `test/providerStatus.test.ts`, `test/runtime.pi-runtime.test.ts`, and `test/providers/codex-auth.test.ts` to prove legacy Codex auth is rewritten into the Cowork path and then used from there.
+- Verification:
+  - `~/.bun/bin/bun test test/providers/codex-auth.test.ts test/connect.test.ts test/providerStatus.test.ts test/runtime.pi-runtime.test.ts` -> pass (`45 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `git diff --check` -> pass
+
+# Task: Implement backup opt-out, whole-entry delete, and initial checkpoint seeding
+
+## Plan
+- [x] Extend core config/protocol/types for `backupsEnabled`, `workspace_backup_delete_entry`, `initial` checkpoint triggers, and disabled backup state.
+- [x] Implement server/session/workspace-backup behavior for workspace defaults, session overrides, seeded `cp-0001`, whole-entry delete, and re-enable flows.
+- [x] Wire desktop persistence/store/settings/backup UI to the new backup toggle and delete-entry actions.
+- [x] Update focused tests/docs, run the required verification suites, and record the outcome below.
+
+## Review
+- Added `backupsEnabled` as a first-class session/workspace config across `src/types.ts`, `src/config.ts`, `src/server/protocol*.ts`, session persistence, and desktop workspace state. Live `session_config` snapshots now report the effective backup toggle, and the protocol added `workspace_backup_delete_entry` as version `7.10`.
+- Session backups now seed an initial `cp-0001` from the session-start snapshot, surface `trigger: "initial"`, and expose `status: "disabled"` when backups are turned off. Live delete-entry operations disable the target session override before removing its backup folder; re-enabling recreates a fresh seeded backup from current workspace state.
+- Desktop and TUI backup controls now expose the live-session backup toggle, the desktop backup page can delete an entire backup entry, and workspace settings persist `defaultBackupsEnabled` for future sessions.
+- Verification:
+  - `bun test test/session-backup.test.ts test/workspace-backups.test.ts test/protocol.test.ts test/server.test.ts test/session.test.ts test/agentSocket.parse.test.ts apps/desktop/test/backup-page.test.ts apps/desktop/test/protocol-v2-events.test.ts apps/desktop/test/workspace-settings-sync.test.ts apps/desktop/test/desktop-schemas.test.ts apps/desktop/test/persistence-state-sanitization.test.ts` -> pass (`504 pass, 0 fail`)
+  - `bun run typecheck` -> pass
+
+# Task: Redesign workspace backup settings into a recovery console
+
+## Plan
+- [x] Inspect the live desktop state and the current Backup page hierarchy to confirm what made the screen unusable.
+- [x] Add an on-demand workspace backup delta path in the control-session protocol so the UI can inspect checkpoint changes without abusing per-session events.
+- [x] Rework the Backup settings page into a three-pane recovery layout with workspaces on the left, backup/session history in the middle, and checkpoint file deltas on the right.
+- [x] Keep expensive delta generation user-triggered, then rerun focused verification and record the outcome.
+
+## Review
+- The Backup page is now structured as a recovery console instead of a long stack of cards. `apps/desktop/src/ui/settings/pages/BackupPage.tsx` renders a left workspace rail, a middle backups-and-checkpoints lane, and a right delta inspector that previews added, modified, and deleted files for the selected checkpoint.
+- Added workspace-scoped delta plumbing through `src/server/workspaceBackups.ts`, `src/server/sessionBackup/delta.ts`, `src/server/protocol.ts`, and the control-session dispatcher so the desktop can request `workspace_backup_delta_get` and receive `workspace_backup_delta` previews for any backup entry in the selected workspace.
+- Kept the freeze fix intact and tightened performance further: the page still auto-refreshes its backup snapshot on open, but it no longer auto-computes the first checkpoint delta. Users now trigger the expensive compare work by selecting a checkpoint or using the right-pane `Inspect latest checkpoint` affordance.
+- Updated the desktop store/runtime/control-socket path to persist the selected workspace backup delta state and errors, and documented the new protocol contract in `docs/websocket-protocol.md` as version `7.9`.
+- Live inspection used a direct desktop screenshot of the open app because the already-running Electron session was not exposing CDP on `127.0.0.1:9222`; the screenshot confirmed the app shell state, while the redesigned Backup page itself was validated via focused desktop tests and typecheck.
+- Verification:
+  - `~/.bun/bin/bun test test/protocol.test.ts test/workspace-backups.test.ts apps/desktop/test/protocol-v2-events.test.ts apps/desktop/test/backup-page.test.ts test/docs.check.test.ts --bail` -> pass (`200 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+
+# Task: Fix desktop Backup settings page freeze on open
+
+## Plan
+- [x] Reproduce the Backup page open path and inspect its initial refresh/render dependencies.
+- [x] Stabilize the auto-refresh effect so opening the page triggers only the intended fetch work.
+- [x] Add regression coverage for the open-page refresh path and rerun focused desktop verification.
+
+## Review
+- Root cause: `apps/desktop/src/ui/settings/pages/BackupPage.tsx` created an inline `refreshBackups` wrapper each render and included it in the initial `useEffect` dependency list. The first refresh flipped backup loading state, which recreated the wrapper, retriggered the effect, and could loop hard enough to freeze the settings view.
+- Fixed the page by moving the initial refresh through a stable `useEffectEvent(...)`, so opening Backup now refreshes only when the selected workspace or control session changes.
+- Added a live React/JSDOM regression in `apps/desktop/test/backup-page.test.ts` that mounts the page against the real desktop store and proves the auto-refresh path fires once even after the fetch updates runtime state.
+- Verification:
+  - `~/.bun/bin/bun test apps/desktop/test/backup-page.test.ts apps/desktop/test/settings-nav.test.ts apps/desktop/test/protocol-v2-events.test.ts --bail` -> pass (`44 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+
+# Task: Implement workspace backup settings page
+
+## Plan
+- [x] Add server-side workspace backup listing/admin support and expose it through new WebSocket control messages/events.
+- [x] Thread the new backup data/actions through desktop store state, control-socket handling, and settings navigation.
+- [x] Build the new Backup settings page UI with refresh/checkpoint/restore/delete/reveal flows.
+- [x] Add focused protocol/server/desktop regression coverage and run the targeted verification suites.
+
+## Review
+- Added a workspace-scoped backup admin path in core/server via `src/server/workspaceBackups.ts`, backed by new control-session messages (`workspace_backups_get`, `workspace_backup_checkpoint`, `workspace_backup_restore`, `workspace_backup_delete_checkpoint`) and the new `workspace_backups` server event.
+- Extended `SessionBackupManager` so existing backup directories can be reopened, older metadata lazily backfills `originalFingerprint`, and workspace admin actions can operate on closed/orphaned backups without recreating snapshots.
+- Wired desktop backup state into `WorkspaceRuntime`, added backup store actions/control-socket hydration, registered a new `Backup` settings page, and built the user-facing UI for refresh, checkpoint, restore original, restore checkpoint, delete checkpoint, and reveal-folder flows.
+- Added focused verification across protocol/server/desktop coverage, including new `WorkspaceBackupService` unit tests, server WebSocket flow coverage, desktop control-socket/store tests, settings-nav coverage, and SSR markup checks for the new page.
+- Verification:
+  - `~/.bun/bin/bun test test/protocol.test.ts test/session-backup.test.ts test/workspace-backups.test.ts test/server.test.ts test/session.test.ts test/session.managers.test.ts --bail` -> pass (`439 pass, 0 fail`)
+  - `~/.bun/bin/bun test apps/desktop/test/protocol-v2-events.test.ts apps/desktop/test/backup-page.test.ts apps/desktop/test/settings-nav.test.ts --bail` -> pass (`43 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+
+# Task: Audit server-side WebSocket and harness surfacing gaps for desktop clients
+
+## Plan
+- [x] Inspect `src/server/protocol.ts`, `src/server/startServer.ts`, and `src/server/session/*` emitters that define the server-side WebSocket surface.
+- [x] Compare emitted events and harness/session state against `docs/websocket-protocol.md` and `docs/harness/*.md` to find desktop-relevant gaps or high-risk surfaces.
+- [x] Return a concise, file-backed audit summary and record the outcome below.
+
+## Review
+- `harness_context` is the only harness-specific WebSocket event in `src/server/protocol.ts`, but it is not part of the connect lifecycle. Runtime emits it only on explicit get/set even though the value is persisted into session snapshots and rehydrated on resume, which conflicts with `docs/harness/context.md` describing it as memory-only.
+- Harness docs describe runner lifecycle emissions (`harness.run.started/completed/failed`) and `run_meta.json` observability snapshots, but there is no matching WebSocket event in the server protocol. Desktop clients would need to infer harness progress from generic session events unless the protocol grows.
+- High-risk operational surfaces that desktop clients should surface if they exist include `observability_status`, `session_backup_state`, `session_usage` / `budget_warning` / `budget_exceeded`, and MCP diagnostics (`mcp_servers`, `mcp_server_validation`, `mcp_server_auth_*`), because those are the structured server-side signals for degraded harness health, backup state, budget stops, and MCP/auth failure details.
+
+# Task: Review harness websocket surfacing gaps in desktop UI
+
+## Plan
+- [x] Inspect the desktop-imported WebSocket protocol types and enumerate the server events available to the desktop client.
+- [x] Compare those events against `apps/desktop/src/**` store helpers, reducers, feed mapping, and rendered UI surfaces.
+- [x] Check desktop-focused tests for event coverage and record concise findings plus likely missing UI surfaces below.
+
+## Review
+- `observability_status` is part of the documented connection lifecycle and carries Langfuse health/config state, but the desktop thread reducer drops it immediately and the desktop runtime model has nowhere to store it. There is no visible observability surface in the current settings/developer UI.
+- `session_backup_state` is also part of the documented connection/runtime surface, but the desktop thread reducer ignores it completely. Checkpoint status, restore results, and backup failures therefore never reach the UI even though the server emits them after backup operations.
+- `harness_context` is the structured harness-intent payload, yet desktop neither requests it (`harness_context_get`) nor stores/renders it when received. The only existing live handler is an early return in the thread reducer, so the desktop cannot show run objective, acceptance criteria, constraints, or metadata.
+- Replay/transcript reconstruction in `apps/desktop/src/app/store.feedMapping.ts` falls back unknown protocol events into generic `[type]` system rows, so the little developer-mode visibility that exists for `observability_status`, `session_backup_state`, and `harness_context` is inconsistent between live sessions and transcript reloads.
+- There is no desktop test coverage for `observability_status`, `session_backup_state`, or `harness_context`, so this blind spot is currently unguarded.
+- Verification: `~/.bun/bin/bun test --cwd apps/desktop test/protocol-v2-events.test.ts test/thread-reconnect.test.ts test/store-feed-mapping.test.ts` -> pass (`42 pass, 0 fail`)
+- Verification:
+  - `~/.bun/bin/bun test --cwd apps/desktop test/protocol-v2-events.test.ts test/thread-reconnect.test.ts test/store-feed-mapping.test.ts test/providers-page.test.ts test/usage-page.test.ts` -> pass (`51 pass, 0 fail`)
+
 # Task: Fix desktop chat composer send/stop button styling and stop behavior
 
 ## Plan
@@ -150,6 +280,45 @@
   - `~/.bun/bin/bun run typecheck` -> pass
   - `~/.bun/bin/bun test` -> pass (`1937 pass, 0 fail, 2 skip`)
   - `git diff --check` -> pass
+
+# Task: Refine desktop Backup settings page boundaries
+
+## Plan
+- [x] Inspect the backup settings shell spacing and backup-detail panel boundaries to pinpoint where the surfaces visually blend together.
+- [x] Tighten the Backup page layout so the rail/detail split reads as separate sections and the main backup surface reaches the settings window edges cleanly.
+- [x] Add or adjust focused desktop coverage for the updated Backup page structure, then rerun the required checks.
+
+## Review
+- `apps/desktop/src/ui/settings/SettingsShell.tsx` now lets the Backup page own its own spacing by removing the extra shell padding for that page, so the backup console can reach the settings window edges instead of sitting inside a second inset frame.
+- `apps/desktop/src/ui/settings/pages/BackupPage.tsx` now uses a flush split surface with a stronger left rail tier, a clearer detail-pane background, and more obvious header/stat/action separation inside the selected backup view. The detail header also gets a small eyebrow label so the selected backup block reads as its own section instead of blending into the stats row below it.
+- Added stable structural hooks (`data-backup-split`, `data-backup-rail`, `data-backup-detail`) and extended `apps/desktop/test/backup-page.test.ts` to assert that the split layout remains present without pinning brittle utility class strings.
+- Verification:
+  - `~/.bun/bin/bun test apps/desktop/test/backup-page.test.ts apps/desktop/test/settings-nav.test.ts --bail` -> pass (`17 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `git diff --check` -> pass
+
+# Task: Soften desktop Backup settings page color intensity
+
+## Plan
+- [x] Recheck which Backup page accents are visually competing with the content after the layout cleanup.
+- [x] Tone down the local status, icon, and destructive-action colors so the page keeps hierarchy without loud badges/buttons.
+- [x] Run focused desktop verification and record the result below.
+
+## Review
+- `apps/desktop/src/ui/settings/pages/BackupPage.tsx` now uses quieter local lifecycle pills instead of the default saturated primary badge, so repeated `Active` labels no longer dominate the list and header.
+- The selected backup and checkpoint icon chips were moved from primary-tinted fills to muted neutral surfaces, and the checkpoint id accent was softened to standard foreground text so the detail header stops pulling focus away from the content.
+- The restore-original action keeps its destructive semantics but now uses a light destructive outline treatment instead of a solid red block; delta counters and file-change pills were also toned down to softer, lower-saturation status colors.
+- Verification:
+  - `~/.bun/bin/bun test apps/desktop/test/backup-page.test.ts apps/desktop/test/settings-nav.test.ts --bail` -> pass (`17 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `git diff --check` -> pass
+
+# Task: Rebalance desktop Backup settings page neutral palette
+
+## Plan
+- [ ] Remove the leftover warm/pink local accents that still read as off-tone against the settings shell.
+- [ ] Push the Backup page toward cleaner neutral layering so emphasis comes from borders and contrast, not tinted fills.
+- [ ] Re-run focused desktop verification and record the outcome below.
 
 # Task: Fix PR #30 review findings
 
@@ -2588,4 +2757,96 @@
 ### Verification
 - `~/.bun/bin/bun test --cwd apps/desktop test/store-feed-mapping.test.ts test/thread-reconnect.test.ts test/usage-page.test.ts` -> pass (`19 pass, 0 fail`)
 - `~/.bun/bin/bun run typecheck` -> pass
+- `git diff --check` -> pass
+
+# Task: Triage PR #32 review comments for remaining work
+
+## Plan
+- [x] Verify `gh` auth, locate the open PR for the current branch, and fetch the current review comments/threads.
+- [x] Use subagents to inspect each comment against the current `HEAD` state and classify it as still relevant, already addressed, or not actionable.
+- [x] Record the triage result here with any still-needed fixes, without changing unrelated in-flight work.
+
+## Review
+- `gh auth status` is healthy, the current branch `codex/inspect-harness-websocket-ui-gaps` maps to PR `#32` (`Update websocket protocol docs and sync workspace backup helpers`), and the fetched review payload contains 5 inline threads, 3 of them unresolved. There are no separate top-level conversation comments to handle.
+- Already fixed: thread 1 on `src/server/session/SessionBackupController.ts` no longer needs work. Disabling backups now routes through `clearSessionBackupState(...)`, which closes the existing manager before clearing the in-memory handles (`src/server/session/SessionBackupController.ts:213-223`), and the disabled path calls that helper when a live backup exists (`src/server/session/SessionBackupController.ts:262-267`).
+- Already fixed: thread 2 on `src/server/workspaceBackups.ts` no longer needs work. `restoreBackup(...)` now validates `checkpointId` before creating the safety checkpoint (`src/server/workspaceBackups.ts:189-198`), so an invalid restore target does not leave behind a bogus checkpoint.
+- Still relevant: thread 3 on `apps/desktop/src/app/store.helpers/controlSocket.ts` should be fixed. The desktop control-session handler still copies `evt.config.backupsEnabled` into `workspace.defaultBackupsEnabled` (`apps/desktop/src/app/store.helpers/controlSocket.ts:103-123`), but the server still emits that field as the effective session value `backupsEnabledOverride ?? config.backupsEnabled ?? true` (`src/server/session/SessionMetadataManager.ts:31-40`, `src/server/session/SessionMetadataManager.ts:218-223`). That can leak a session override back into workspace defaults, and those defaults are reapplied to threads later (`apps/desktop/src/app/store.helpers/threadEventReducer.ts:242-246`, `apps/desktop/src/app/store.actions/workspaceDefaults.ts:91-98`). The current desktop test locks in the buggy behavior instead of guarding against it (`apps/desktop/test/workspace-settings-sync.test.ts:368-390`).
+- Still relevant: thread 4 on `src/server/sessionBackup.ts` should be fixed. Reusing an existing backup still returns `openExisting()` immediately (`src/server/sessionBackup.ts:271-280`), but `openExisting()` does not flip persisted metadata back to active (`src/server/sessionBackup.ts:313-320`) while `close()` still writes `state: "closed"` and `closedAt` (`src/server/sessionBackup.ts:460-468`). A direct local repro at `HEAD` showed `SessionBackupManager.create(...)->close()->create(...)` leaves `metadata.json` at `state: "closed"` even though the reopened manager reports `status: "ready"`. Coverage does not currently assert a reopen transition.
+- Still relevant: thread 5 on `apps/desktop/src/ui/settings/pages/BackupPage.tsx` should be fixed. The selected delta is still matched only by `checkpointId` (`apps/desktop/src/ui/settings/pages/BackupPage.tsx:596-599`) even though the payload already includes `targetSessionId` (`src/server/sessionBackup.ts:72-82`). Because the store keeps a single workspace-level delta (`apps/desktop/src/app/store.helpers/controlSocket.ts:258-269`) and a new request only sets loading/error without clearing the old delta (`apps/desktop/src/app/store.actions/backup.ts:116-145`), switching between two sessions that both have `cp-0001` can still show the wrong diff or hide the new loading/error state.
+
+### Verification
+- `python3 /Users/mweinbach/.codex/skills/gh-address-comments/scripts/fetch_comments.py > /tmp/pr32_comments.json` -> fetched PR `#32` review threads for the current branch
+- `~/.bun/bin/bun test apps/desktop/test/workspace-settings-sync.test.ts apps/desktop/test/backup-page.test.ts test/workspace-backups.test.ts test/session-backup.test.ts --bail` -> pass (`28 pass, 0 fail`)
+- `~/.bun/bin/bun -e 'import { SessionBackupManager } from "./src/server/sessionBackup"; ...'` -> reproduced the reopen bug (`metadataState: "closed"` after reopening an existing backup)
+
+# Task: Fix and resolve remaining PR #32 review comments
+
+## Plan
+- [x] Stop copying control-session backup overrides back into workspace defaults, and update desktop coverage to preserve workspace defaults when a single session toggles backups.
+- [x] Reopen persisted session-backup metadata when reusing an existing backup directory, and add regression coverage for the closed-to-active transition.
+- [x] Match backup delta state by target session as well as checkpoint id in the desktop backup page, and add coverage for duplicate checkpoint ids across sessions.
+- [x] Run focused tests, resolve the fixed review threads on GitHub, and record the result below.
+
+## Review
+- `apps/desktop/src/app/store.helpers/controlSocket.ts` no longer copies `session_config.backupsEnabled` into `workspace.defaultBackupsEnabled`; the desktop still records the control session's live config in runtime, but workspace defaults stay independent of per-session overrides. `apps/desktop/test/workspace-settings-sync.test.ts` now asserts that a control-session `backupsEnabled: false` snapshot updates `controlSessionConfig` while leaving the persisted workspace default unchanged.
+- `src/server/sessionBackup.ts` now reopens reused backup directories explicitly. `SessionBackupManager.create(...)` passes `reopen: true` when metadata already exists, and `openExisting(...)` rewrites persisted metadata back to `state: "active"` while clearing stale `closedAt` markers only for that reopen path. `test/session-backup.test.ts` now proves `create() -> close() -> create()` persists the transition from closed back to active.
+- `apps/desktop/src/ui/settings/pages/BackupPage.tsx` now treats a delta preview as active only when both `targetSessionId` and `checkpointId` match the current selection. That prevents a stale delta from one session from leaking into another session that reuses the same checkpoint id. `apps/desktop/test/backup-page.test.ts` now covers the duplicate-`cp-0001` case and asserts the page shows the loading state instead of the stale diff.
+- GitHub review threads `PRRT_kwDORLLhvs5zeq1x`, `PRRT_kwDORLLhvs5ze74T`, and `PRRT_kwDORLLhvs5ze74Z` were resolved after the fixes landed. A follow-up GraphQL fetch confirmed all five PR `#32` review threads are now resolved.
+
+### Verification
+- `~/.bun/bin/bun test apps/desktop/test/workspace-settings-sync.test.ts apps/desktop/test/backup-page.test.ts test/session-backup.test.ts test/workspace-backups.test.ts --bail` -> pass (`30 pass, 0 fail`)
+- `~/.bun/bin/bun run typecheck` -> pass
+- `gh api graphql ... resolveReviewThread(...)` for thread ids `PRRT_kwDORLLhvs5zeq1x`, `PRRT_kwDORLLhvs5ze74T`, and `PRRT_kwDORLLhvs5ze74Z` -> success (`isResolved: true`)
+- `gh api graphql ... reviewThreads(first: 100)` for PR `#32` -> all 5 threads resolved
+
+# Task: Commit remaining backup follow-up changes
+
+## Plan
+- [x] Verify the remaining unstaged backup/page/server/test changes form a coherent slice and identify the minimal validation set.
+- [x] Run the focused backup/desktop tests plus typecheck for this remaining diff and record the outcome.
+- [x] Stage only the remaining backup follow-up files and commit them without altering unrelated history.
+
+## Review
+- Extracted the repeated backup-action key builder into `apps/desktop/src/app/store.helpers/backupActionKey.ts`, and updated both `apps/desktop/src/app/store.actions/backup.ts` and `apps/desktop/src/ui/settings/pages/BackupPage.tsx` to use the shared helper instead of duplicating the string format in two places.
+- Kept the existing Backup page behavior while polishing the local visual treatment for lifecycle badges in `apps/desktop/src/ui/settings/pages/BackupPage.tsx`, so active/deleted rows read more distinctly without changing the page structure.
+- `src/server/workspaceBackups.ts` now derives lifecycle strictly from live/session persistence state, not from backup metadata, and guards `findWorkspaceBackup(...)` with an `isPathWithin(...)` check before reading a target session directory under each configured backup root.
+- `test/session-backup-delta.test.ts` and `test/workspace-backups.test.ts` now track their temp roots and clean them up in `afterAll(...)`, so repeated runs do not leak scratch directories into the OS temp area.
+
+### Verification
+- `~/.bun/bin/bun test test/session-backup-delta.test.ts test/workspace-backups.test.ts apps/desktop/test/backup-page.test.ts --bail` -> pass (`18 pass, 0 fail`)
+- `~/.bun/bin/bun run typecheck` -> pass
+
+# Task: Make disabled backups stay fully disabled across desktop and core sessions
+
+## Plan
+- [x] Trace the backup-default contract between core `session_config`, desktop workspace state, and live thread/session overrides.
+- [x] Patch the protocol/core/Desktop sync so the persisted workspace backup default is communicated explicitly and stale desktop state cannot re-enable backups on connect.
+- [x] Add regression coverage for control-session hydration and reconnect behavior, run the required tests/typecheck, and record the verified outcome below.
+
+## Review
+- `src/server/protocol.ts`, `src/server/session/SessionMetadataManager.ts`, and `src/server/protocolEventParser.ts` now expose `session_config.config.defaultBackupsEnabled` as a first-class harness/core field. `backupsEnabled` still reports the live effective session state, but clients now also receive the persisted workspace default instead of having to guess from a possibly overridden session snapshot.
+- `apps/desktop/src/app/store.helpers/controlSocket.ts` now hydrates `workspace.defaultBackupsEnabled` from the harness-provided `defaultBackupsEnabled`, so desktop persistence follows the real workspace config instead of stale local state. `apps/desktop/src/app/store.actions/workspaceDefaults.ts` and `apps/desktop/src/app/store.helpers/threadEventReducer.ts` now distinguish explicit user-driven backup updates from automatic connect-time sync: automatic thread connects only apply a backup toggle once the control session has provided the harness default, which stops reconnects/new threads from force-enabling backups from old desktop state.
+- Added regression coverage in `apps/desktop/test/workspace-settings-sync.test.ts` for both critical paths: the control session now hydrates the workspace backup default from the harness, and a new thread connect no longer replays a stale local `defaultBackupsEnabled` before that harness sync arrives. Core tests in `test/session.test.ts`, `test/server.test.ts`, and `test/agentSocket.parse.test.ts` now cover the expanded `session_config` contract.
+
+### Verification
+- `~/.bun/bin/bun test test/session.test.ts test/server.test.ts test/agentSocket.parse.test.ts apps/desktop/test/workspace-settings-sync.test.ts test/docs.check.test.ts --bail` -> pass (`294 pass, 0 fail`)
+- `~/.bun/bin/bun run typecheck` -> pass
+- `~/.bun/bin/bun test` -> pass (`1990 pass, 2 skip, 0 fail`)
+- `git diff --check` -> pass
+
+# Task: Merge codex/inspect-harness-websocket-ui-gaps into main
+
+## Plan
+- [x] Inspect divergence from `main` and identify merge-conflict hotspots before merging.
+- [x] Checkout `main`, merge `codex/inspect-harness-websocket-ui-gaps`, and resolve any conflicts without disturbing unrelated history.
+- [x] Run required verification on the merged result and record the outcome below.
+
+## Review
+- Merged `codex/inspect-harness-websocket-ui-gaps` into `main` with a single content conflict in `tasks/todo.md`. The resolution keeps both sides' task history instead of dropping the newer `main` diagnostics entry or the branch’s stacked backup/auth task log.
+- The merged code exposed one stale regression expectation in `test/providers/saved-keys.test.ts`: `main` still expected Codex model headers to ignore legacy `~/.codex/auth.json` material, but the merged branch intentionally canonicalizes that legacy auth into `~/.cowork/auth/codex-cli/auth.json` when Cowork auth is missing. The test now asserts the merged contract and verifies the Cowork auth file is written.
+
+### Verification
+- `~/.bun/bin/bun test test/providers/saved-keys.test.ts` -> pass (`6 pass, 0 fail`)
+- `~/.bun/bin/bun run typecheck` -> pass
+- `~/.bun/bin/bun test` -> pass (`1998 pass, 2 skip, 0 fail`)
 - `git diff --check` -> pass

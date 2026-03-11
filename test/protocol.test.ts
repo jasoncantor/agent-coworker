@@ -1013,6 +1013,7 @@ describe("safeParseClientMessage", () => {
           config: {
             yolo: true,
             observabilityEnabled: false,
+            backupsEnabled: true,
             subAgentModel: "gpt-5.4",
             maxSteps: 25,
             providerOptions: {
@@ -1029,6 +1030,7 @@ describe("safeParseClientMessage", () => {
       if (msg.type === "set_config") {
         expect(msg.config.yolo).toBe(true);
         expect(msg.config.observabilityEnabled).toBe(false);
+        expect(msg.config.backupsEnabled).toBe(true);
         expect(msg.config.subAgentModel).toBe("gpt-5.4");
         expect(msg.config.maxSteps).toBe(25);
         expect(msg.config.providerOptions?.openai?.reasoningEffort).toBe("xhigh");
@@ -1052,6 +1054,9 @@ describe("safeParseClientMessage", () => {
           JSON.stringify({ type: "set_config", sessionId: "s1", config: { observabilityEnabled: "no" } }),
         ),
       ).toBe("set_config config.observabilityEnabled must be boolean");
+      expect(
+        expectErr(JSON.stringify({ type: "set_config", sessionId: "s1", config: { backupsEnabled: "no" } })),
+      ).toBe("set_config config.backupsEnabled must be boolean");
       expect(
         expectErr(JSON.stringify({ type: "set_config", sessionId: "s1", config: { subAgentModel: "" } })),
       ).toBe("set_config config.subAgentModel must be non-empty string");
@@ -1278,6 +1283,120 @@ describe("safeParseClientMessage", () => {
     test("session_backup_delete_checkpoint missing checkpointId fails", () => {
       const err = expectErr(JSON.stringify({ type: "session_backup_delete_checkpoint", sessionId: "s1" }));
       expect(err).toContain("session_backup_delete_checkpoint missing checkpointId");
+    });
+
+    test("workspace_backups_get parses", () => {
+      const msg = expectOk(JSON.stringify({ type: "workspace_backups_get", sessionId: "s1" }));
+      expect(msg.type).toBe("workspace_backups_get");
+      if (msg.type === "workspace_backups_get") {
+        expect(msg.sessionId).toBe("s1");
+      }
+    });
+
+    test("workspace_backup_checkpoint parses", () => {
+      const msg = expectOk(
+        JSON.stringify({ type: "workspace_backup_checkpoint", sessionId: "s1", targetSessionId: "target-1" }),
+      );
+      expect(msg.type).toBe("workspace_backup_checkpoint");
+      if (msg.type === "workspace_backup_checkpoint") {
+        expect(msg.sessionId).toBe("s1");
+        expect(msg.targetSessionId).toBe("target-1");
+      }
+    });
+
+    test("workspace_backup_restore parses original target (no checkpointId)", () => {
+      const msg = expectOk(
+        JSON.stringify({ type: "workspace_backup_restore", sessionId: "s1", targetSessionId: "target-1" }),
+      );
+      expect(msg.type).toBe("workspace_backup_restore");
+      if (msg.type === "workspace_backup_restore") {
+        expect(msg.targetSessionId).toBe("target-1");
+        expect(msg.checkpointId).toBeUndefined();
+      }
+    });
+
+    test("workspace_backup_restore parses checkpoint target", () => {
+      const msg = expectOk(
+        JSON.stringify({
+          type: "workspace_backup_restore",
+          sessionId: "s1",
+          targetSessionId: "target-1",
+          checkpointId: "cp-0001",
+        }),
+      );
+      expect(msg.type).toBe("workspace_backup_restore");
+      if (msg.type === "workspace_backup_restore") {
+        expect(msg.targetSessionId).toBe("target-1");
+        expect(msg.checkpointId).toBe("cp-0001");
+      }
+    });
+
+    test("workspace_backup_delete_checkpoint parses", () => {
+      const msg = expectOk(
+        JSON.stringify({
+          type: "workspace_backup_delete_checkpoint",
+          sessionId: "s1",
+          targetSessionId: "target-1",
+          checkpointId: "cp-0001",
+        }),
+      );
+      expect(msg.type).toBe("workspace_backup_delete_checkpoint");
+      if (msg.type === "workspace_backup_delete_checkpoint") {
+        expect(msg.targetSessionId).toBe("target-1");
+        expect(msg.checkpointId).toBe("cp-0001");
+      }
+    });
+
+    test("workspace_backup_delete_entry parses", () => {
+      const msg = expectOk(
+        JSON.stringify({
+          type: "workspace_backup_delete_entry",
+          sessionId: "s1",
+          targetSessionId: "target-1",
+        }),
+      );
+      expect(msg.type).toBe("workspace_backup_delete_entry");
+      if (msg.type === "workspace_backup_delete_entry") {
+        expect(msg.targetSessionId).toBe("target-1");
+      }
+    });
+
+    test("workspace_backup_delta_get parses", () => {
+      const msg = expectOk(
+        JSON.stringify({
+          type: "workspace_backup_delta_get",
+          sessionId: "s1",
+          targetSessionId: "target-1",
+          checkpointId: "cp-0001",
+        }),
+      );
+      expect(msg.type).toBe("workspace_backup_delta_get");
+      if (msg.type === "workspace_backup_delta_get") {
+        expect(msg.targetSessionId).toBe("target-1");
+        expect(msg.checkpointId).toBe("cp-0001");
+      }
+    });
+
+    test("workspace backup messages validate required targetSessionId/checkpointId fields", () => {
+      expect(expectErr(JSON.stringify({ type: "workspace_backup_checkpoint", sessionId: "s1" }))).toContain(
+        "workspace_backup_checkpoint missing targetSessionId",
+      );
+      expect(expectErr(JSON.stringify({ type: "workspace_backup_restore", sessionId: "s1" }))).toContain(
+        "workspace_backup_restore missing targetSessionId",
+      );
+      expect(expectErr(JSON.stringify({ type: "workspace_backup_delete_entry", sessionId: "s1" }))).toContain(
+        "workspace_backup_delete_entry missing targetSessionId",
+      );
+      expect(expectErr(
+        JSON.stringify({
+          type: "workspace_backup_delete_checkpoint",
+          sessionId: "s1",
+          targetSessionId: "target-1",
+        }),
+      )).toContain("workspace_backup_delete_checkpoint missing checkpointId");
+      expect(expectErr(JSON.stringify({ type: "workspace_backup_delta_get", sessionId: "s1" }))).toContain(
+        "workspace_backup_delta_get missing targetSessionId",
+      );
     });
   });
 

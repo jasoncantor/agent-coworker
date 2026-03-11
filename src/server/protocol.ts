@@ -17,7 +17,11 @@ import { type ProviderAuthMethod, type ProviderAuthChallenge } from "../provider
 import type { ProviderCatalogEntry } from "../providers/connectionCatalog";
 import type { ModelStreamPartType, ModelStreamRawFormat } from "./modelStream";
 import type { PersistedSessionSummary } from "./sessionStore";
-import type { SessionBackupPublicState } from "./sessionBackup";
+import type {
+  SessionBackupPublicState,
+  WorkspaceBackupDeltaPreview,
+  WorkspaceBackupPublicEntry,
+} from "./sessionBackup";
 import type { PersistentSubagentSummary, SessionKind, SubagentAgentType } from "../shared/persistentSubagents";
 export { ASK_SKIP_TOKEN } from "../shared/ask";
 
@@ -27,6 +31,7 @@ export type MCPServerAuthMode = "none" | "missing" | "api_key" | "oauth" | "oaut
 export type SessionConfigPatch = {
   yolo?: boolean;
   observabilityEnabled?: boolean;
+  backupsEnabled?: boolean;
   subAgentModel?: string;
   maxSteps?: number;
   providerOptions?: OpenAiCompatibleProviderOptionsByProvider;
@@ -35,6 +40,8 @@ export type SessionConfigPatch = {
 export type SessionConfigState = {
   yolo: boolean;
   observabilityEnabled: boolean;
+  backupsEnabled: boolean;
+  defaultBackupsEnabled: boolean;
   subAgentModel: string;
   maxSteps: number;
   providerOptions?: OpenAiCompatibleProviderOptionsByProvider;
@@ -95,6 +102,12 @@ export type ClientMessage =
   | { type: "session_backup_checkpoint"; sessionId: string }
   | { type: "session_backup_restore"; sessionId: string; checkpointId?: string }
   | { type: "session_backup_delete_checkpoint"; sessionId: string; checkpointId: string }
+  | { type: "workspace_backups_get"; sessionId: string }
+  | { type: "workspace_backup_checkpoint"; sessionId: string; targetSessionId: string }
+  | { type: "workspace_backup_restore"; sessionId: string; targetSessionId: string; checkpointId?: string }
+  | { type: "workspace_backup_delete_checkpoint"; sessionId: string; targetSessionId: string; checkpointId: string }
+  | { type: "workspace_backup_delete_entry"; sessionId: string; targetSessionId: string }
+  | { type: "workspace_backup_delta_get"; sessionId: string; targetSessionId: string; checkpointId: string }
   | { type: "harness_context_get"; sessionId: string }
   | { type: "harness_context_set"; sessionId: string; context: HarnessContextPayload }
   | { type: "reset"; sessionId: string }
@@ -289,6 +302,16 @@ export type ServerEvent =
     backup: SessionBackupPublicState;
   }
   | {
+    type: "workspace_backups";
+    sessionId: string;
+    workspacePath: string;
+    backups: WorkspaceBackupPublicEntry[];
+  }
+  | ({
+    type: "workspace_backup_delta";
+    sessionId: string;
+  } & WorkspaceBackupDeltaPreview)
+  | {
     type: "observability_status";
     sessionId: string;
     enabled: boolean;
@@ -353,7 +376,7 @@ export type ServerEvent =
   | { type: "error"; sessionId: string; message: string; code: ServerErrorCode; source: ServerErrorSource }
   | { type: "pong"; sessionId: string };
 
-export const WEBSOCKET_PROTOCOL_VERSION = "7.7";
+export const WEBSOCKET_PROTOCOL_VERSION = "7.11";
 
 export const CLIENT_MESSAGE_TYPES = [
   "client_hello",
@@ -392,6 +415,12 @@ export const CLIENT_MESSAGE_TYPES = [
   "session_backup_checkpoint",
   "session_backup_restore",
   "session_backup_delete_checkpoint",
+  "workspace_backups_get",
+  "workspace_backup_checkpoint",
+  "workspace_backup_restore",
+  "workspace_backup_delete_checkpoint",
+  "workspace_backup_delete_entry",
+  "workspace_backup_delta_get",
   "harness_context_get",
   "harness_context_set",
   "reset",
@@ -437,6 +466,8 @@ export const SERVER_EVENT_TYPES = [
   "skills_list",
   "skill_content",
   "session_backup_state",
+  "workspace_backups",
+  "workspace_backup_delta",
   "observability_status",
   "harness_context",
   "turn_usage",

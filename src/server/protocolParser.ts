@@ -25,6 +25,7 @@ const harnessContextRootErrorMessages: Record<string, string> = {
 const setConfigFieldErrorMessages: Record<string, string> = {
   yolo: "set_config config.yolo must be boolean",
   observabilityEnabled: "set_config config.observabilityEnabled must be boolean",
+  backupsEnabled: "set_config config.backupsEnabled must be boolean",
   subAgentModel: "set_config config.subAgentModel must be non-empty string",
   maxSteps: "set_config config.maxSteps must be number 1-1000",
   providerOptions: "set_config config.providerOptions must be an object",
@@ -85,6 +86,7 @@ const editableOpenAiProviderOptionsByProviderSchema = z.object({
 const setConfigPayloadSchema = z.object({
   yolo: z.boolean().optional(),
   observabilityEnabled: z.boolean().optional(),
+  backupsEnabled: z.boolean().optional(),
   subAgentModel: z.string().trim().min(1).optional(),
   maxSteps: z.number().min(1).max(1000).optional(),
   providerOptions: editableOpenAiProviderOptionsByProviderSchema.optional(),
@@ -241,6 +243,7 @@ const sessionOnlyTypes = [
   "harness_context_get",
   "session_backup_get",
   "session_backup_checkpoint",
+  "workspace_backups_get",
   "get_session_usage",
 ] as const;
 
@@ -466,6 +469,34 @@ const sessionBackupDeleteCheckpointSchema = schemaWithType("session_backup_delet
   checkpointId: requiredNonEmptyTrimmedString("session_backup_delete_checkpoint missing checkpointId"),
 });
 
+const workspaceBackupCheckpointSchema = schemaWithType("workspace_backup_checkpoint", {
+  sessionId: requiredSessionId("workspace_backup_checkpoint"),
+  targetSessionId: requiredNonEmptyTrimmedString("workspace_backup_checkpoint missing targetSessionId"),
+});
+
+const workspaceBackupRestoreSchema = schemaWithType("workspace_backup_restore", {
+  sessionId: requiredSessionId("workspace_backup_restore"),
+  targetSessionId: requiredNonEmptyTrimmedString("workspace_backup_restore missing targetSessionId"),
+  checkpointId: optionalNonEmptyTrimmedString("workspace_backup_restore invalid checkpointId"),
+});
+
+const workspaceBackupDeleteCheckpointSchema = schemaWithType("workspace_backup_delete_checkpoint", {
+  sessionId: requiredSessionId("workspace_backup_delete_checkpoint"),
+  targetSessionId: requiredNonEmptyTrimmedString("workspace_backup_delete_checkpoint missing targetSessionId"),
+  checkpointId: requiredNonEmptyTrimmedString("workspace_backup_delete_checkpoint missing checkpointId"),
+});
+
+const workspaceBackupDeleteEntrySchema = schemaWithType("workspace_backup_delete_entry", {
+  sessionId: requiredSessionId("workspace_backup_delete_entry"),
+  targetSessionId: requiredNonEmptyTrimmedString("workspace_backup_delete_entry missing targetSessionId"),
+});
+
+const workspaceBackupDeltaGetSchema = schemaWithType("workspace_backup_delta_get", {
+  sessionId: requiredSessionId("workspace_backup_delta_get"),
+  targetSessionId: requiredNonEmptyTrimmedString("workspace_backup_delta_get missing targetSessionId"),
+  checkpointId: requiredNonEmptyTrimmedString("workspace_backup_delta_get missing checkpointId"),
+});
+
 const getMessagesSchema = schemaWithType("get_messages", {
   sessionId: requiredSessionId("get_messages"),
   offset: optionalNumberAtLeast("get_messages invalid offset", 0),
@@ -569,6 +600,11 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   harnessContextSetSchema,
   sessionBackupRestoreSchema,
   sessionBackupDeleteCheckpointSchema,
+  workspaceBackupCheckpointSchema,
+  workspaceBackupRestoreSchema,
+  workspaceBackupDeleteCheckpointSchema,
+  workspaceBackupDeleteEntrySchema,
+  workspaceBackupDeltaGetSchema,
   getMessagesSchema,
   setSessionTitleSchema,
   deleteSessionSchema,

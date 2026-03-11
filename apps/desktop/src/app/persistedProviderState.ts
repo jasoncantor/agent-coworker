@@ -50,6 +50,14 @@ export function normalizePersistedProviderStatus(
 
   const authorized = typeof value.authorized === "boolean" ? value.authorized : false;
   const verified = typeof value.verified === "boolean" ? value.verified : false;
+
+  // Don't persist "not connected" when the token is merely expired but has a
+  // refresh token (i.e. recovery is still possible). Persisting this stale
+  // status causes the desktop to show "not connected" on every restart even
+  // when a fresh refresh could succeed.
+  const tokenRecoverable = typeof value.tokenRecoverable === "boolean" ? value.tokenRecoverable : false;
+  if (!authorized && tokenRecoverable) return null;
+
   const account = normalizeAccount(value.account);
   const message =
     asNonEmptyString(value.message) ??

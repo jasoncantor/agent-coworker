@@ -1,5 +1,6 @@
 import type { AppStoreActions, StoreGet, StoreSet } from "./store.helpers";
 
+import { createWorkspaceBackupActions } from "./store.actions/backup";
 import { createBootstrapActions } from "./store.actions/bootstrap";
 import { createExplorerActions } from "./store.actions/explorer";
 import { createWorkspaceMcpActions } from "./store.actions/mcp";
@@ -13,6 +14,7 @@ export function createAppActions(set: StoreSet, get: StoreGet): AppStoreActions 
   return {
     ...createBootstrapActions(set, get),
     ...createWorkspaceActions(set, get),
+    ...createWorkspaceBackupActions(set, get),
     ...createThreadActions(set, get),
     ...createSkillActions(set, get),
     ...createWorkspaceDefaultsActions(set, get),

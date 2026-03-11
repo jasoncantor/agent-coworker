@@ -19,7 +19,7 @@ import {
 } from "./sessionBackup/metadata";
 import { createSnapshotWithTarFallback, restoreSnapshot, snapshotByteSize } from "./sessionBackup/snapshot";
 
-export type SessionBackupCheckpointTrigger = "auto" | "manual";
+export type SessionBackupCheckpointTrigger = "initial" | "auto" | "manual";
 
 export type SessionBackupPublicCheckpoint = {
   id: string;
@@ -31,7 +31,7 @@ export type SessionBackupPublicCheckpoint = {
 };
 
 export type SessionBackupPublicState = {
-  status: "initializing" | "ready" | "failed";
+  status: "initializing" | "ready" | "disabled" | "failed";
   sessionId: string;
   workingDirectory: string;
   backupDirectory: string | null;
@@ -39,6 +39,48 @@ export type SessionBackupPublicState = {
   originalSnapshot: { kind: "pending" | "directory" | "tar_gz" };
   checkpoints: SessionBackupPublicCheckpoint[];
   failureReason?: string;
+};
+
+export type WorkspaceBackupLifecycle = "active" | "closed" | "deleted";
+
+export type WorkspaceBackupPublicEntry = {
+  targetSessionId: string;
+  title?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  lifecycle: WorkspaceBackupLifecycle;
+  status: SessionBackupPublicState["status"];
+  workingDirectory: string;
+  backupDirectory: string | null;
+  originalSnapshotKind: SessionBackupPublicState["originalSnapshot"]["kind"];
+  originalSnapshotBytes: number | null;
+  checkpointBytesTotal: number | null;
+  totalBytes: number | null;
+  checkpoints: SessionBackupPublicCheckpoint[];
+  createdAt: string;
+  updatedAt: string;
+  closedAt?: string;
+  failureReason?: string;
+};
+
+export type WorkspaceBackupDeltaFile = {
+  path: string;
+  change: "added" | "modified" | "deleted";
+  kind: "file" | "directory" | "symlink";
+};
+
+export type WorkspaceBackupDeltaPreview = {
+  targetSessionId: string;
+  checkpointId: string;
+  baselineLabel: string;
+  currentLabel: string;
+  counts: {
+    added: number;
+    modified: number;
+    deleted: number;
+  };
+  files: WorkspaceBackupDeltaFile[];
+  truncated: boolean;
 };
 
 export type SessionBackupInitOptions = {
@@ -53,6 +95,7 @@ export interface SessionBackupHandle {
   restoreOriginal(): Promise<void>;
   restoreCheckpoint(checkpointId: string): Promise<void>;
   deleteCheckpoint(checkpointId: string): Promise<boolean>;
+  reloadFromDisk(): Promise<SessionBackupPublicState>;
   close(): Promise<void>;
 }
 
@@ -67,12 +110,102 @@ const CHECKPOINTS_DIR = "checkpoints";
 const DEFAULT_MAX_CLOSED_SESSIONS = 20;
 const DEFAULT_MAX_CLOSED_AGE_DAYS = 7;
 
+export function getSessionBackupsRootDirs(opts: { homedir?: string } = {}): string[] {
+  const paths = getAiCoworkerPaths({ homedir: opts.homedir });
+  return [
+    path.join(paths.rootDir, "session-backups"),
+    path.join(os.tmpdir(), "cowork-session-backups"),
+  ];
+}
+
+function resolveSessionBackupsRootDir(workingDirectory: string, opts: { homedir?: string } = {}): string {
+  const [defaultBackupsRootDir, fallbackBackupsRootDir] = getSessionBackupsRootDirs(opts);
+  return isPathWithin(workingDirectory, defaultBackupsRootDir) ? fallbackBackupsRootDir : defaultBackupsRootDir;
+}
+
 // ---------------------------------------------------------------------------
 // Utility functions
 // ---------------------------------------------------------------------------
 
 function makeCheckpointId(index: number): string {
   return `cp-${String(index).padStart(4, "0")}`;
+}
+
+function buildInitialCheckpoint(opts: {
+  createdAt: string;
+  fingerprint: string;
+  snapshot: SessionBackupMetadata["originalSnapshot"];
+}): SessionBackupMetadataCheckpoint {
+  return {
+    id: makeCheckpointId(1),
+    index: 1,
+    createdAt: opts.createdAt,
+    trigger: "initial",
+    changed: false,
+    patchBytes: 0,
+    fingerprint: opts.fingerprint,
+    snapshot: {
+      kind: opts.snapshot.kind,
+      path: opts.snapshot.path,
+    },
+  };
+}
+
+function withInitialCheckpoint(
+  metadata: SessionBackupMetadata,
+  originalFingerprint: string,
+): { metadata: SessionBackupMetadata; changed: boolean } {
+  if (metadata.checkpoints.length > 0) {
+    return { metadata, changed: false };
+  }
+
+  return {
+    metadata: {
+      ...metadata,
+      checkpoints: [
+        buildInitialCheckpoint({
+          createdAt: metadata.createdAt,
+          fingerprint: originalFingerprint,
+          snapshot: metadata.originalSnapshot,
+        }),
+      ],
+    },
+    changed: true,
+  };
+}
+
+async function fingerprintSnapshot(sessionDir: string, snapshot: { kind: "directory" | "tar_gz"; path: string }): Promise<string> {
+  const fingerprintStageDir = await fs.mkdtemp(path.join(sessionDir, ".fingerprint-stage-"));
+  try {
+    await restoreSnapshot({
+      sessionDir,
+      targetDir: fingerprintStageDir,
+      snapshot,
+    });
+    return await workspaceFingerprint(fingerprintStageDir);
+  } finally {
+    await fs.rm(fingerprintStageDir, { recursive: true, force: true });
+  }
+}
+
+async function normalizeMetadataOnLoad(
+  metadata: SessionBackupMetadata,
+  sessionDir: string,
+  metadataPath: string,
+): Promise<{ metadata: SessionBackupMetadata; originalFingerprint: string }> {
+  const originalFingerprint = metadata.originalFingerprint
+    ?? await fingerprintSnapshot(sessionDir, metadata.originalSnapshot);
+  const fingerprintNormalizedMetadata = metadata.originalFingerprint
+    ? metadata
+    : { ...metadata, originalFingerprint };
+  const { metadata: normalizedMetadata, changed: addedInitialCheckpoint } = withInitialCheckpoint(
+    fingerprintNormalizedMetadata,
+    originalFingerprint,
+  );
+  if (!metadata.originalFingerprint || addedInitialCheckpoint) {
+    await writeJson(metadataPath, normalizedMetadata);
+  }
+  return { metadata: normalizedMetadata, originalFingerprint };
 }
 
 // ---------------------------------------------------------------------------
@@ -121,14 +254,12 @@ export class SessionBackupManager implements SessionBackupHandle {
   static async create(opts: SessionBackupInitOptions): Promise<SessionBackupManager> {
     const workingDirectory = path.resolve(opts.workingDirectory);
     const paths = getAiCoworkerPaths({ homedir: opts.homedir });
-    const defaultBackupsRootDir = path.join(paths.rootDir, "session-backups");
 
     await ensureAiCoworkerHome(paths);
 
-    const backupsRootDir = isPathWithin(workingDirectory, defaultBackupsRootDir)
-      ? path.join(os.tmpdir(), "cowork-session-backups")
-      : defaultBackupsRootDir;
+    const backupsRootDir = resolveSessionBackupsRootDir(workingDirectory, { homedir: opts.homedir });
     const sessionDir = path.join(backupsRootDir, opts.sessionId);
+    const metadataPath = path.join(sessionDir, METADATA_FILE);
 
     if (isPathWithin(workingDirectory, sessionDir)) {
       throw new Error(`Refusing to create session backup inside working directory: ${workingDirectory}`);
@@ -137,6 +268,16 @@ export class SessionBackupManager implements SessionBackupHandle {
     await ensureSecureDirectory(backupsRootDir);
     await ensureSecureDirectory(sessionDir);
     await ensureSecureDirectory(path.join(sessionDir, CHECKPOINTS_DIR));
+    const existing = await readMetadata(metadataPath);
+    if (existing) {
+      if (existing.sessionId !== opts.sessionId) {
+        throw new Error(`Refusing to reuse backup with mismatched session id at ${metadataPath}`);
+      }
+      if (path.resolve(existing.workingDirectory) !== workingDirectory) {
+        throw new Error(`Refusing to reuse backup with mismatched working directory at ${metadataPath}`);
+      }
+      return await SessionBackupManager.openExisting({ sessionDir, reopen: true });
+    }
     await ensureWorkingDirectory(workingDirectory);
     const originalFingerprint = await workspaceFingerprint(workingDirectory);
 
@@ -147,23 +288,55 @@ export class SessionBackupManager implements SessionBackupHandle {
       directoryPath: ORIGINAL_DIR,
     });
 
+    const createdAt = new Date().toISOString();
     const metadata: SessionBackupMetadata = {
       version: 1,
       sessionId: opts.sessionId,
       workingDirectory,
-      createdAt: new Date().toISOString(),
+      createdAt,
       state: "active",
+      originalFingerprint,
       originalSnapshot,
-      checkpoints: [],
+      checkpoints: [
+        buildInitialCheckpoint({
+          createdAt,
+          fingerprint: originalFingerprint,
+          snapshot: originalSnapshot,
+        }),
+      ],
     };
-    const metadataPath = path.join(sessionDir, METADATA_FILE);
     await writeJson(metadataPath, metadata);
 
     return new SessionBackupManager({ metadata, originalFingerprint, sessionDir, metadataPath });
   }
 
+  static async openExisting(opts: { sessionDir: string; reopen?: boolean }): Promise<SessionBackupManager> {
+    const sessionDir = path.resolve(opts.sessionDir);
+    const metadataPath = path.join(sessionDir, METADATA_FILE);
+    const metadata = await readMetadata(metadataPath);
+    if (!metadata) {
+      throw new Error(`Missing backup metadata at ${metadataPath}`);
+    }
+    const normalized = await normalizeMetadataOnLoad(metadata, sessionDir, metadataPath);
+    let resolvedMetadata = normalized.metadata;
+    if (opts.reopen && (resolvedMetadata.state !== "active" || resolvedMetadata.closedAt !== undefined)) {
+      const { closedAt: _closedAt, ...activeMetadata } = resolvedMetadata;
+      resolvedMetadata = {
+        ...activeMetadata,
+        state: "active",
+      };
+      await writeJson(metadataPath, resolvedMetadata);
+    }
+    return new SessionBackupManager({
+      metadata: resolvedMetadata,
+      originalFingerprint: normalized.originalFingerprint,
+      sessionDir,
+      metadataPath,
+    });
+  }
+
   private metadata: SessionBackupMetadata;
-  private readonly originalFingerprint: string;
+  private originalFingerprint: string;
   private readonly sessionDir: string;
   private readonly metadataPath: string;
 
@@ -264,6 +437,10 @@ export class SessionBackupManager implements SessionBackupHandle {
     if (idx < 0) return false;
 
     const checkpoint = this.metadata.checkpoints[idx];
+    if (checkpoint.trigger === "initial") {
+      throw new Error("Cannot delete the initial checkpoint");
+    }
+
     this.metadata.checkpoints.splice(idx, 1);
     const snapshotStillReferenced =
       this.metadata.checkpoints.some(
@@ -276,6 +453,17 @@ export class SessionBackupManager implements SessionBackupHandle {
     }
     await this.persistMetadata();
     return true;
+  }
+
+  async reloadFromDisk(): Promise<SessionBackupPublicState> {
+    const metadata = await readMetadata(this.metadataPath);
+    if (!metadata) {
+      throw new Error(`Missing backup metadata at ${this.metadataPath}`);
+    }
+    const normalized = await normalizeMetadataOnLoad(metadata, this.sessionDir, this.metadataPath);
+    this.metadata = normalized.metadata;
+    this.originalFingerprint = normalized.originalFingerprint;
+    return this.getPublicState();
   }
 
   async close(): Promise<void> {

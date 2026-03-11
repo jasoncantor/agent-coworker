@@ -11,6 +11,16 @@ import { getAiCoworkerPaths } from "../src/connect";
 import { CODEX_BACKEND_BASE_URL, writeCodexAuthMaterial } from "../src/providers/codex-auth";
 import { __internal as piRuntimeInternal, createPiRuntime } from "../src/runtime/piRuntime";
 
+function b64url(input: string): string {
+  return Buffer.from(input, "utf8").toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function makeJwt(payload: Record<string, unknown>): string {
+  const header = b64url(JSON.stringify({ alg: "none", typ: "JWT" }));
+  const body = b64url(JSON.stringify(payload));
+  return `${header}.${body}.`;
+}
+
 function makeConfig(homeDir: string, overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
     provider: "openai",
@@ -95,7 +105,7 @@ describe("pi runtime regressions", () => {
     expect(resolved.model.headers).toMatchObject({ "ChatGPT-Account-ID": "acct_123" });
   });
 
-  test("codex runtime model resolution does not fall back to legacy ~/.codex auth", async () => {
+  test("codex runtime model resolution imports legacy ~/.codex auth into Cowork auth", async () => {
     const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-codex-legacy-"));
     const legacyPath = path.join(homeDir, ".codex", "auth.json");
     await fs.mkdir(path.dirname(legacyPath), { recursive: true });
@@ -106,6 +116,9 @@ describe("pi runtime regressions", () => {
         tokens: {
           access_token: "legacy-access-token",
           refresh_token: "legacy-refresh-token",
+          id_token: makeJwt({
+            "https://api.openai.com/auth": { chatgpt_account_id: "acct_legacy" },
+          }),
         },
       }),
       "utf-8",
@@ -117,9 +130,18 @@ describe("pi runtime regressions", () => {
       subAgentModel: pickCodexModelId(),
     });
 
-    await expect(piRuntimeInternal.resolvePiModel(makeParams(config))).rejects.toThrow(
-      "Codex auth is missing. Run /connect codex-cli to authenticate.",
+    const resolved = await piRuntimeInternal.resolvePiModel(makeParams(config));
+
+    expect(resolved.apiKey).toBe("legacy-access-token");
+    expect(resolved.accountId).toBe("acct_legacy");
+
+    const importedRaw = await fs.readFile(
+      path.join(homeDir, ".cowork", "auth", "codex-cli", "auth.json"),
+      "utf-8",
     );
+    const imported = JSON.parse(importedRaw) as Record<string, any>;
+    expect(imported.tokens?.access_token).toBe("legacy-access-token");
+    expect(imported.tokens?.refresh_token).toBe("legacy-refresh-token");
   });
 
   test("telemetry parsing keeps supported metadata and drops invalid values", () => {

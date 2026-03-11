@@ -503,6 +503,7 @@ describe("WebSocket Lifecycle", () => {
       expect(configEvt.config).toBeDefined();
       expect(typeof configEvt.config.yolo).toBe("boolean");
       expect(typeof configEvt.config.observabilityEnabled).toBe("boolean");
+      expect(typeof configEvt.config.defaultBackupsEnabled).toBe("boolean");
       expect(typeof configEvt.config.subAgentModel).toBe("string");
       expect(typeof configEvt.config.maxSteps).toBe("number");
     } finally {
@@ -1190,6 +1191,187 @@ describe("WebSocket Lifecycle", () => {
       server.stop();
     }
   });
+
+  test("workspace backup control messages emit refreshed workspace_backups snapshots", async () => {
+    const tmpDir = await makeTmpProject();
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-server-home-"));
+    await fs.writeFile(path.join(tmpDir, "backup.txt"), "one\n", "utf-8");
+
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, { homedir: homeDir }));
+    try {
+      const result = await new Promise<{ snapshots: any[]; checkpointId: string }>((resolve, reject) => {
+        const seen: any[] = [];
+        const ws = new WebSocket(url);
+        let sessionId = "";
+        let stage: "load" | "checkpoint" | "restore" | "delete" = "load";
+        let checkpointId = "";
+        const timer = setTimeout(() => {
+          ws.close();
+          reject(new Error("Timed out waiting for workspace backup flow"));
+        }, 8000);
+
+        ws.onmessage = async (e) => {
+          const msg = JSON.parse(typeof e.data === "string" ? e.data : "");
+          if (!sessionId && msg.type === "server_hello") {
+            sessionId = msg.sessionId;
+            ws.send(JSON.stringify({ type: "workspace_backups_get", sessionId }));
+            return;
+          }
+          if (msg.type !== "workspace_backups" || msg.sessionId !== sessionId) return;
+
+          seen.push(msg);
+          const entry = msg.backups.find((item: any) => item.targetSessionId === sessionId);
+          if (!entry) return;
+
+          if (stage === "load") {
+            stage = "checkpoint";
+            ws.send(JSON.stringify({ type: "workspace_backup_checkpoint", sessionId, targetSessionId: sessionId }));
+            return;
+          }
+
+          if (stage === "checkpoint") {
+            checkpointId = entry.checkpoints.at(-1)?.id ?? "";
+            if (!checkpointId) return;
+            stage = "restore";
+            ws.send(JSON.stringify({
+              type: "workspace_backup_restore",
+              sessionId,
+              targetSessionId: sessionId,
+              checkpointId,
+            }));
+            return;
+          }
+
+          if (stage === "restore") {
+            if (!entry.checkpoints.some((checkpoint: any) => checkpoint.id === checkpointId)) return;
+            expect(entry.checkpoints.length).toBeGreaterThanOrEqual(2);
+            stage = "delete";
+            ws.send(JSON.stringify({
+              type: "workspace_backup_delete_checkpoint",
+              sessionId,
+              targetSessionId: sessionId,
+              checkpointId,
+            }));
+            return;
+          }
+
+          clearTimeout(timer);
+          ws.close();
+          resolve({ snapshots: seen, checkpointId });
+        };
+
+        ws.onerror = (e) => {
+          clearTimeout(timer);
+          ws.close();
+          reject(new Error(`WebSocket error: ${e}`));
+        };
+      });
+
+      expect(result.snapshots).toHaveLength(4);
+      expect(result.snapshots.every((snapshot) => snapshot.type === "workspace_backups")).toBe(true);
+      const finalSnapshot = result.snapshots.at(-1);
+      const finalEntry = finalSnapshot?.backups.find((item: any) => item.targetSessionId === finalSnapshot?.sessionId);
+      expect(finalEntry?.checkpoints.some((checkpoint: any) => checkpoint.id === result.checkpointId)).toBe(false);
+    } finally {
+      server.stop();
+    }
+  }, 15000);
+
+  test("workspace_backup_delete_entry disables a live backup until re-enabled", async () => {
+    const tmpDir = await makeTmpProject();
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-server-home-"));
+    await fs.writeFile(path.join(tmpDir, "backup.txt"), "one\n", "utf-8");
+
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, { homedir: homeDir }));
+    try {
+      const result = await new Promise<{
+        sawDisabledConfig: boolean;
+        sawReenabledConfig: boolean;
+        checkpoints: any[];
+      }>((resolve, reject) => {
+        const ws = new WebSocket(url);
+        let sessionId = "";
+        let stage: "load" | "delete" | "wait_reenable" | "reload" = "load";
+        let sawDisabledConfig = false;
+        let sawReenabledConfig = false;
+        const timer = setTimeout(() => {
+          ws.close();
+          reject(new Error("Timed out waiting for delete/re-enable backup flow"));
+        }, 8000);
+
+        ws.onmessage = (e) => {
+          const msg = JSON.parse(typeof e.data === "string" ? e.data : "");
+          if (!sessionId && msg.type === "server_hello") {
+            sessionId = msg.sessionId;
+            ws.send(JSON.stringify({ type: "workspace_backups_get", sessionId }));
+            return;
+          }
+
+          if (msg.sessionId !== sessionId) return;
+
+          if (msg.type === "session_config") {
+            if (stage === "delete" && msg.config?.backupsEnabled === false) {
+              sawDisabledConfig = true;
+              return;
+            }
+            if (stage === "wait_reenable" && msg.config?.backupsEnabled === true) {
+              sawReenabledConfig = true;
+              stage = "reload";
+              ws.send(JSON.stringify({ type: "workspace_backups_get", sessionId }));
+              return;
+            }
+          }
+
+          if (msg.type !== "workspace_backups") return;
+
+          if (stage === "load") {
+            const entry = msg.backups.find((item: any) => item.targetSessionId === sessionId);
+            if (!entry) return;
+            expect(entry.checkpoints).toHaveLength(1);
+            expect(entry.checkpoints[0]?.id).toBe("cp-0001");
+            expect(entry.checkpoints[0]?.trigger).toBe("initial");
+            stage = "delete";
+            ws.send(JSON.stringify({ type: "workspace_backup_delete_entry", sessionId, targetSessionId: sessionId }));
+            return;
+          }
+
+          if (stage === "delete") {
+            const entry = msg.backups.find((item: any) => item.targetSessionId === sessionId);
+            if (entry) return;
+            stage = "wait_reenable";
+            ws.send(JSON.stringify({ type: "set_config", sessionId, config: { backupsEnabled: true } }));
+            return;
+          }
+
+          if (stage === "reload") {
+            const entry = msg.backups.find((item: any) => item.targetSessionId === sessionId);
+            if (!entry) return;
+            clearTimeout(timer);
+            ws.close();
+            resolve({
+              sawDisabledConfig,
+              sawReenabledConfig,
+              checkpoints: entry.checkpoints,
+            });
+          }
+        };
+
+        ws.onerror = (e) => {
+          clearTimeout(timer);
+          ws.close();
+          reject(new Error(`WebSocket error: ${e}`));
+        };
+      });
+
+      expect(result.sawDisabledConfig).toBe(true);
+      expect(result.sawReenabledConfig).toBe(true);
+      expect(result.checkpoints).toHaveLength(1);
+      expect(result.checkpoints[0]?.id).toBe("cp-0001");
+      expect(result.checkpoints[0]?.trigger).toBe("initial");
+    } finally {
+      server.stop();
+    }
+  }, 15000);
 
   test("set_enable_mcp updates session_settings deterministically", async () => {
     const tmpDir = await makeTmpProject();

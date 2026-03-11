@@ -200,7 +200,7 @@ export type AppStoreState = {
   enableSkill: (skillName: string) => Promise<void>;
   deleteSkill: (skillName: string) => Promise<void>;
 
-  applyWorkspaceDefaultsToThread: (threadId: string) => Promise<void>;
+  applyWorkspaceDefaultsToThread: (threadId: string, mode?: "auto" | "explicit") => Promise<void>;
   updateWorkspaceDefaults: (workspaceId: string, patch: Partial<WorkspaceRecord>) => Promise<void>;
   restartWorkspaceServer: (workspaceId: string) => Promise<void>;
   requestWorkspaceMcpServers: (workspaceId: string) => Promise<void>;
@@ -221,6 +221,14 @@ export type AppStoreState = {
   callbackWorkspaceMcpServerAuth: (workspaceId: string, name: string, code?: string) => Promise<void>;
   setWorkspaceMcpServerApiKey: (workspaceId: string, name: string, apiKey: string) => Promise<void>;
   migrateWorkspaceMcpLegacy: (workspaceId: string, scope: "workspace" | "user") => Promise<void>;
+  requestWorkspaceBackups: (workspaceId: string) => Promise<void>;
+  requestWorkspaceBackupDelta: (workspaceId: string, targetSessionId: string, checkpointId: string) => Promise<void>;
+  createWorkspaceBackupCheckpoint: (workspaceId: string, targetSessionId: string) => Promise<void>;
+  restoreWorkspaceBackupOriginal: (workspaceId: string, targetSessionId: string) => Promise<void>;
+  restoreWorkspaceBackupCheckpoint: (workspaceId: string, targetSessionId: string, checkpointId: string) => Promise<void>;
+  deleteWorkspaceBackupCheckpoint: (workspaceId: string, targetSessionId: string, checkpointId: string) => Promise<void>;
+  deleteWorkspaceBackupEntry: (workspaceId: string, targetSessionId: string) => Promise<void>;
+  setWorkspaceBackupSessionEnabled: (workspaceId: string, targetSessionId: string, enabled: boolean) => Promise<void>;
 
   connectProvider: (provider: ProviderName, apiKey?: string) => Promise<void>;
   setProviderApiKey: (provider: ProviderName, methodId: string, apiKey: string) => Promise<void>;

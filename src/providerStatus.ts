@@ -51,6 +51,8 @@ export type ProviderStatus = {
   checkedAt: string;
   savedApiKeyMasks?: Partial<Record<string, string>>;
   usage?: ProviderUsageStatus;
+  /** True when the token is expired but a refresh token exists (i.e. recovery is possible). */
+  tokenRecoverable?: boolean;
 };
 
 const nonEmptyTrimmedStringSchema = z.string().trim().min(1);
@@ -357,19 +359,41 @@ async function getCodexCliStatus(opts: {
 
   let refreshMessage = "";
   if (isTokenExpiring(material)) {
-    try {
-      material = await refreshCodexAuthMaterial({
-        paths: opts.paths,
-        material,
-        fetchImpl: opts.fetchImpl,
-      });
-      refreshMessage = " Token refreshed.";
-    } catch (err) {
-      refreshMessage = ` Token refresh failed: ${String(err)}`;
+    const maxAttempts = 3;
+    const delays = [500, 1000, 2000];
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.warn(`[codex-auth] Token expiring, refresh attempt ${attempt}/${maxAttempts}...`);
+        material = await refreshCodexAuthMaterial({
+          paths: opts.paths,
+          material,
+          fetchImpl: opts.fetchImpl,
+        });
+        refreshMessage = " Token refreshed.";
+        console.warn("[codex-auth] Token refresh succeeded.");
+        break;
+      } catch (err) {
+        const errMsg = String(err);
+        console.warn(`[codex-auth] Token refresh attempt ${attempt} failed: ${errMsg}`);
+        refreshMessage = ` Token refresh failed: ${errMsg}`;
+        // Don't retry on permanent errors
+        if (
+          errMsg.includes("missing refresh token") ||
+          errMsg.includes("(400)") ||
+          errMsg.includes("(401)")
+        ) {
+          break;
+        }
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, delays[attempt - 1]));
+        }
+      }
     }
   }
 
   if (isTokenExpiring(material, 0)) {
+    const recoverable = Boolean(material.refreshToken);
+    console.warn(`[codex-auth] Token still expired after refresh attempts. recoverable=${recoverable}`);
     return {
       provider: "codex-cli",
       authorized: false,
@@ -378,6 +402,7 @@ async function getCodexCliStatus(opts: {
       account: material.email ? { email: material.email } : null,
       message: `Codex token expired.${refreshMessage || " Reconnect codex-cli."}`.trim(),
       checkedAt: opts.checkedAt,
+      tokenRecoverable: recoverable,
     };
   }
 

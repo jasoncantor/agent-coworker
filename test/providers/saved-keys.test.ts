@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import fs from "node:fs/promises";
 import path from "node:path";
 
 import { getModel } from "../../src/config";
@@ -130,7 +131,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
     expect(model.provider).toBe("codex-cli.responses");
   });
 
-  test("codex-cli model headers do not reuse legacy ~/.codex auth when Cowork auth is missing", async () => {
+  test("codex-cli model headers import legacy ~/.codex auth into Cowork auth when Cowork auth is missing", async () => {
     const { home } = await makeTmpDirs();
 
     await writeJson(path.join(home, ".codex", "auth.json"), {
@@ -149,9 +150,14 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
 
     const model = getModel(cfg) as any;
     const headers = await model.config.headers();
-    expect(headers.authorization).toBeUndefined();
-  });
+    expect(headers.authorization).toBe("Bearer legacy-access-token");
 
+    const persisted = JSON.parse(
+      await fs.readFile(path.join(home, ".cowork", "auth", "codex-cli", "auth.json"), "utf-8")
+    ) as any;
+    expect(persisted?.tokens?.access_token).toBe("legacy-access-token");
+    expect(persisted?.tokens?.refresh_token).toBe("legacy-refresh-token");
+  });
 
   test("falls back to env key when saved entry has no api key", async () => {
     const { home } = await makeTmpDirs();

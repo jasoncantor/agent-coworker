@@ -4,6 +4,8 @@ agent-coworker is a terminal-first coworker agent built on Bun + TypeScript (ESM
 
 When you have access to subagents or agent teams, feel free to use them. Subagents are good for delegating tasks for searching and performing specific actions. Be specific with your delegation, and feel free to use them liberally.  
 
+All logic for the application should be done in the harness itself, consider the desktop app and TUI just UI layers. The only things that should be specific to those are things that are relavent, like UI layout or platform-specific behavior. All logic on how the agent works on the users system, saves files, etc should be done in the harness THEN exposed and connected to the UI layers via the websocket. 
+
 ## Project Structure & Module Organization
 
 - `src/`: application code

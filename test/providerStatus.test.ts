@@ -247,12 +247,16 @@ describe("getProviderStatuses", () => {
     });
   });
 
-  test("codex-cli: ignores legacy .codex auth path when cowork auth is missing", async () => {
+  test("codex-cli: imports legacy .codex auth path into Cowork auth when cowork auth is missing", async () => {
     const home = await makeTmpHome();
     const paths = getAiCoworkerPaths({ homedir: home });
 
     const iss = "https://auth.example.com";
-    const idToken = makeJwt({ iss, email: "legacy@example.com" });
+    const idToken = makeJwt({
+      iss,
+      email: "legacy@example.com",
+      "https://api.openai.com/auth": { chatgpt_account_id: "acct-legacy" },
+    });
     const accessToken = "legacy-access-token";
     const legacyPath = path.join(home, ".codex", "auth.json");
     await fs.mkdir(path.dirname(legacyPath), { recursive: true });
@@ -265,10 +269,17 @@ describe("getProviderStatuses", () => {
     const statuses = await getProviderStatuses({ paths, fetchImpl: async () => new Response("not found", { status: 404 }) });
     const codex = statuses.find((s) => s.provider === "codex-cli");
     expect(codex).toBeDefined();
-    expect(codex?.authorized).toBe(false);
+    expect(codex?.authorized).toBe(true);
     expect(codex?.verified).toBe(false);
-    expect(codex?.mode).toBe("missing");
-    await expect(fs.readFile(path.join(home, ".cowork", "auth", "codex-cli", "auth.json"), "utf-8")).rejects.toThrow();
+    expect(codex?.mode).toBe("oauth");
+    expect(codex?.account?.email).toBe("legacy@example.com");
+    expect(codex?.message).toContain("verification failed");
+
+    const imported = JSON.parse(
+      await fs.readFile(path.join(home, ".cowork", "auth", "codex-cli", "auth.json"), "utf-8"),
+    ) as any;
+    expect(imported?.tokens?.access_token).toBe(accessToken);
+    expect(imported?.tokens?.id_token).toBe(idToken);
   });
 
   test("codex-cli: usage verification failure keeps credentials authorized but unverified", async () => {
@@ -327,6 +338,51 @@ describe("getProviderStatuses", () => {
     expect(codex?.account?.email).toBe("jwt@example.com");
     expect(codex?.message).toContain("Codex usage endpoint returned an invalid payload.");
     expect(codex?.usage).toBeUndefined();
+  });
+
+  test("codex-cli: expired token with refresh token stays recoverable when refresh fails during startup", async () => {
+    const home = await makeTmpHome();
+    const paths = getAiCoworkerPaths({ homedir: home });
+
+    const expiredAccessToken = makeJwt({
+      exp: Math.floor(Date.now() / 1000) - 3600,
+      email: "jwt@example.com",
+      chatgpt_account_id: "acct-recoverable",
+    });
+    const codexAuthPath = path.join(home, ".cowork", "auth", "codex-cli", "auth.json");
+    await fs.mkdir(path.dirname(codexAuthPath), { recursive: true });
+    await fs.writeFile(
+      codexAuthPath,
+      JSON.stringify({
+        version: 1,
+        auth_mode: "chatgpt",
+        tokens: {
+          access_token: expiredAccessToken,
+          refresh_token: "refresh-token",
+        },
+      }),
+      "utf-8"
+    );
+
+    let refreshCalls = 0;
+    const fetchImpl = async (url: any) => {
+      if (String(url) === "https://auth.openai.com/oauth/token") {
+        refreshCalls += 1;
+        return new Response("temporary outage", { status: 503 });
+      }
+      throw new Error(`Unexpected fetch during recoverable-refresh test: ${String(url)}`);
+    };
+
+    const statuses = await getProviderStatuses({ paths, fetchImpl: fetchImpl as any });
+    const codex = statuses.find((s) => s.provider === "codex-cli");
+
+    expect(refreshCalls).toBe(3);
+    expect(codex).toBeDefined();
+    expect(codex?.authorized).toBe(false);
+    expect(codex?.verified).toBe(false);
+    expect(codex?.mode).toBe("oauth");
+    expect(codex?.tokenRecoverable).toBe(true);
+    expect(codex?.message).toContain("Codex token expired.");
   });
 
 });

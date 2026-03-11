@@ -152,6 +152,7 @@ describe("workspace settings sync", () => {
           defaultModel: "gpt-5.2",
           defaultSubAgentModel: "gpt-5.2",
           defaultEnableMcp: true,
+          defaultBackupsEnabled: true,
           yolo: false,
         },
       ],
@@ -198,6 +199,7 @@ describe("workspace settings sync", () => {
           defaultProvider: "openai",
           defaultModel: "gpt-5.2",
           defaultEnableMcp: true,
+          defaultBackupsEnabled: true,
           yolo: false,
         },
       ],
@@ -363,7 +365,7 @@ describe("workspace settings sync", () => {
     expect(threadSocket.opts.resumeSessionId).toBe("thread-session-new");
   });
 
-  test("control session_config syncs workspace default subagent model", async () => {
+  test("control session_config hydrates the workspace backup default from the harness", async () => {
     await useAppStore.getState().newThread({ workspaceId });
     const controlSocket = socketByClient("desktop-control");
     emitServerHello(controlSocket, "control-session");
@@ -374,6 +376,8 @@ describe("workspace settings sync", () => {
       config: {
         yolo: false,
         observabilityEnabled: true,
+        backupsEnabled: false,
+        defaultBackupsEnabled: false,
         subAgentModel: "gpt-5-mini",
         maxSteps: 75,
       },
@@ -382,7 +386,35 @@ describe("workspace settings sync", () => {
     const workspace = useAppStore.getState().workspaces.find((entry) => entry.id === workspaceId);
     const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
     expect(workspace?.defaultSubAgentModel).toBe("gpt-5-mini");
+    expect(workspace?.defaultBackupsEnabled).toBe(false);
     expect(runtime?.controlSessionConfig?.subAgentModel).toBe("gpt-5-mini");
+    expect(runtime?.controlSessionConfig?.backupsEnabled).toBe(false);
+    expect(runtime?.controlSessionConfig?.defaultBackupsEnabled).toBe(false);
+  });
+
+  test("control session_config keeps session backup overrides separate from the workspace default", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+
+    controlSocket.emit({
+      type: "session_config",
+      sessionId: "control-session",
+      config: {
+        yolo: false,
+        observabilityEnabled: true,
+        backupsEnabled: false,
+        defaultBackupsEnabled: true,
+        subAgentModel: "gpt-5-mini",
+        maxSteps: 75,
+      },
+    });
+
+    const workspace = useAppStore.getState().workspaces.find((entry) => entry.id === workspaceId);
+    const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
+    expect(workspace?.defaultBackupsEnabled).toBe(true);
+    expect(runtime?.controlSessionConfig?.backupsEnabled).toBe(false);
+    expect(runtime?.controlSessionConfig?.defaultBackupsEnabled).toBe(true);
   });
 
   test("control session_config replaces editable providerOptions in workspace defaults", async () => {
@@ -417,6 +449,8 @@ describe("workspace settings sync", () => {
       config: {
         yolo: false,
         observabilityEnabled: true,
+        backupsEnabled: true,
+        defaultBackupsEnabled: true,
         subAgentModel: "gpt-5.4-mini",
         providerOptions: {
           openai: {
@@ -484,6 +518,8 @@ describe("workspace settings sync", () => {
       config: {
         yolo: false,
         observabilityEnabled: true,
+        backupsEnabled: true,
+        defaultBackupsEnabled: true,
         subAgentModel: "gpt-5.4-mini",
         maxSteps: 75,
       },
@@ -530,8 +566,14 @@ describe("workspace settings sync", () => {
     await useAppStore.getState().applyWorkspaceDefaultsToThread(threadId);
 
     const sentTypes = threadSocket.sent.map((message) => message?.type);
-    expect(sentTypes).toEqual(["set_model", "set_config", "set_enable_mcp"]);
-    expect(threadSocket.sent[1]).toMatchObject({
+    expect(sentTypes).toEqual(["set_config", "set_model", "set_config", "set_enable_mcp"]);
+    // First set_config is the immediate backupsEnabled-only message
+    expect(threadSocket.sent[0]).toMatchObject({
+      type: "set_config",
+      config: { backupsEnabled: true },
+    });
+    // Second set_config carries the rest of the config patch
+    expect(threadSocket.sent[2]).toMatchObject({
       type: "set_config",
       config: {
         subAgentModel: "gpt-5.2",
@@ -547,6 +589,47 @@ describe("workspace settings sync", () => {
           },
         },
       },
+    });
+  });
+
+  test("thread connect does not replay a stale local backup default before the harness sync arrives", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+    const threadSocket = socketByClient("desktop");
+
+    threadSocket.sent = [];
+    emitServerHello(threadSocket, "thread-session");
+
+    expect(
+      threadSocket.sent.some((message) => message?.type === "set_config" && "backupsEnabled" in (message?.config ?? {})),
+    ).toBe(false);
+  });
+
+  test("thread connect uses the harness backup default once the control session is hydrated", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+    controlSocket.emit({
+      type: "session_config",
+      sessionId: "control-session",
+      config: {
+        yolo: false,
+        observabilityEnabled: true,
+        backupsEnabled: false,
+        defaultBackupsEnabled: false,
+        subAgentModel: "gpt-5.2",
+        maxSteps: 75,
+      },
+    });
+
+    const threadSocket = socketByClient("desktop");
+    threadSocket.sent = [];
+    emitServerHello(threadSocket, "thread-session");
+
+    expect(threadSocket.sent[0]).toMatchObject({
+      type: "set_config",
+      config: { backupsEnabled: false },
     });
   });
 
@@ -592,6 +675,7 @@ describe("workspace settings sync", () => {
       defaultModel: "gpt-5.2",
       defaultSubAgentModel: "gpt-5.2-mini",
       defaultEnableMcp: false,
+      defaultBackupsEnabled: false,
       providerOptions: {
         openai: {
           reasoningSummary: "concise",
@@ -611,6 +695,7 @@ describe("workspace settings sync", () => {
     expect(controlSocket.sent.find((message) => message?.type === "set_config")).toMatchObject({
       type: "set_config",
       config: {
+        backupsEnabled: false,
         subAgentModel: "gpt-5.2-mini",
         providerOptions: {
           openai: {
@@ -627,11 +712,18 @@ describe("workspace settings sync", () => {
     });
 
     expect(idleThreadSocket.sent.map((message) => message?.type)).toEqual([
+      "set_config",
       "set_model",
       "set_config",
       "set_enable_mcp",
     ]);
-    expect(idleThreadSocket.sent.find((message) => message?.type === "set_config")).toMatchObject({
+    // First set_config is the immediate backupsEnabled-only message
+    expect(idleThreadSocket.sent[0]).toMatchObject({
+      type: "set_config",
+      config: { backupsEnabled: false },
+    });
+    // Second set_config carries the rest of the config patch
+    expect(idleThreadSocket.sent[2]).toMatchObject({
       type: "set_config",
       config: {
         subAgentModel: "gpt-5.2-mini",
@@ -648,20 +740,29 @@ describe("workspace settings sync", () => {
         },
       },
     });
-    expect(busyThreadSocket.sent).toHaveLength(0);
+    // Busy thread still gets the immediate backupsEnabled config
+    expect(busyThreadSocket.sent.map((message) => message?.type)).toEqual([
+      "set_config",
+    ]);
+    expect(busyThreadSocket.sent[0]).toMatchObject({
+      type: "set_config",
+      config: { backupsEnabled: false },
+    });
 
+    busyThreadSocket.sent = [];
     busyThreadSocket.emit({
       type: "session_busy",
       sessionId: "thread-busy",
       busy: false,
     });
 
+    // After becoming idle, the deferred model/config/mcp messages are sent
     expect(busyThreadSocket.sent.map((message) => message?.type)).toEqual([
       "set_model",
       "set_config",
       "set_enable_mcp",
     ]);
-    expect(busyThreadSocket.sent.find((message) => message?.type === "set_config")).toMatchObject({
+    expect(busyThreadSocket.sent[1]).toMatchObject({
       type: "set_config",
       config: {
         subAgentModel: "gpt-5.2-mini",

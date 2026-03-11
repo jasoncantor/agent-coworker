@@ -119,6 +119,83 @@ export class SessionAdminManager {
     }
   }
 
+  async listWorkspaceBackups() {
+    await this.runWorkspaceBackupOp(
+      "listWorkspaceBackupsImpl",
+      "list workspace backups",
+      (impl) => impl({ requesterSessionId: this.context.id, workingDirectory: this.context.state.config.workingDirectory }),
+      (backups) => ({ type: "workspace_backups" as const, sessionId: this.context.id, workspacePath: this.context.state.config.workingDirectory, backups }),
+    );
+  }
+
+  async createWorkspaceBackupCheckpoint(targetSessionId: string) {
+    await this.runWorkspaceBackupOp(
+      "createWorkspaceBackupCheckpointImpl",
+      "create workspace checkpoint",
+      (impl) => impl({ requesterSessionId: this.context.id, workingDirectory: this.context.state.config.workingDirectory, targetSessionId }),
+      (backups) => ({ type: "workspace_backups" as const, sessionId: this.context.id, workspacePath: this.context.state.config.workingDirectory, backups }),
+    );
+  }
+
+  async restoreWorkspaceBackup(targetSessionId: string, checkpointId?: string) {
+    await this.runWorkspaceBackupOp(
+      "restoreWorkspaceBackupImpl",
+      "restore workspace backup",
+      (impl) => impl({ requesterSessionId: this.context.id, workingDirectory: this.context.state.config.workingDirectory, targetSessionId, checkpointId }),
+      (backups) => ({ type: "workspace_backups" as const, sessionId: this.context.id, workspacePath: this.context.state.config.workingDirectory, backups }),
+    );
+  }
+
+  async deleteWorkspaceBackupCheckpoint(targetSessionId: string, checkpointId: string) {
+    await this.runWorkspaceBackupOp(
+      "deleteWorkspaceBackupCheckpointImpl",
+      "delete workspace checkpoint",
+      (impl) => impl({ requesterSessionId: this.context.id, workingDirectory: this.context.state.config.workingDirectory, targetSessionId, checkpointId }),
+      (backups) => ({ type: "workspace_backups" as const, sessionId: this.context.id, workspacePath: this.context.state.config.workingDirectory, backups }),
+    );
+  }
+
+  async deleteWorkspaceBackupEntry(targetSessionId: string) {
+    await this.runWorkspaceBackupOp(
+      "deleteWorkspaceBackupEntryImpl",
+      "delete workspace backup",
+      (impl) => impl({ requesterSessionId: this.context.id, workingDirectory: this.context.state.config.workingDirectory, targetSessionId }),
+      (backups) => ({ type: "workspace_backups" as const, sessionId: this.context.id, workspacePath: this.context.state.config.workingDirectory, backups }),
+    );
+  }
+
+  async getWorkspaceBackupDelta(targetSessionId: string, checkpointId: string) {
+    await this.runWorkspaceBackupOp(
+      "getWorkspaceBackupDeltaImpl",
+      "inspect workspace backup delta",
+      (impl) => impl({ requesterSessionId: this.context.id, workingDirectory: this.context.state.config.workingDirectory, targetSessionId, checkpointId }),
+      (delta) => ({ type: "workspace_backup_delta" as const, sessionId: this.context.id, ...delta }),
+    );
+  }
+
+  private async runWorkspaceBackupOp<K extends keyof import("./SessionContext").SessionDependencies, T>(
+    implKey: K,
+    label: string,
+    execute: (impl: NonNullable<import("./SessionContext").SessionDependencies[K]>) => Promise<T>,
+    buildEvent: (result: T) => import("../protocol").ServerEvent,
+  ): Promise<void> {
+    if ((this.context.state.sessionInfo.sessionKind ?? "root") !== "root") {
+      this.context.emitError("validation_failed", "backup", `Only root sessions can ${label}`);
+      return;
+    }
+    const impl = this.context.deps[implKey];
+    if (!impl) {
+      this.context.emitError("internal_error", "backup", `Workspace backup operation is unavailable: ${label}`);
+      return;
+    }
+    try {
+      const result = await execute(impl);
+      this.context.emit(buildEvent(result));
+    } catch (err) {
+      this.context.emitError("backup_error", "backup", `Failed to ${label}: ${String(err)}`);
+    }
+  }
+
   async uploadFile(filename: string, contentBase64: string) {
     if (this.context.state.running) {
       this.context.emitError("busy", "session", "Agent is busy");

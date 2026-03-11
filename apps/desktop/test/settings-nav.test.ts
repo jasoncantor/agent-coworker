@@ -109,10 +109,21 @@ describe("settings nav (store)", () => {
     expect(useAppStore.getState().settingsPage).toBe("mcp");
   });
 
+  test("setSettingsPage accepts backup page", () => {
+    useAppStore.getState().setSettingsPage("backup");
+    expect(useAppStore.getState().settingsPage).toBe("backup");
+  });
+
   test("openSettings accepts usage page", () => {
     useAppStore.getState().openSettings("usage");
     expect(useAppStore.getState().view).toBe("settings");
     expect(useAppStore.getState().settingsPage).toBe("usage");
+  });
+
+  test("openSettings accepts backup page", () => {
+    useAppStore.getState().openSettings("backup");
+    expect(useAppStore.getState().view).toBe("settings");
+    expect(useAppStore.getState().settingsPage).toBe("backup");
   });
 
   test("openSettings accepts updates page", () => {

@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   CODEX_OAUTH_CLIENT_ID,
   CODEX_OAUTH_ISSUER,
+  clearCodexAuthMaterial,
   codexMaterialFromTokenResponse,
   decodeJwtPayload,
   ensureCodexAuthDirWritable,
@@ -192,6 +193,70 @@ describe("codex auth token response parsing", () => {
     expect(persisted.account.email).toBe("existing@example.com");
     expect(persisted.account.plan_type).toBe("enterprise");
   });
+
+  test("refreshCodexAuthMaterial keeps a newer on-disk token written by another process", async () => {
+    const authDir = await makeTmpAuthDir();
+    const authFile = path.join(authDir, "codex-cli", "auth.json");
+    const newerAccessToken = makeJwt({ exp: 1_860_000_000, email: "newer@example.com" });
+    await fs.mkdir(path.dirname(authFile), { recursive: true });
+    await fs.writeFile(
+      authFile,
+      JSON.stringify(
+        {
+          version: 1,
+          auth_mode: "chatgpt",
+          issuer: CODEX_OAUTH_ISSUER,
+          client_id: CODEX_OAUTH_CLIENT_ID,
+          tokens: {
+            access_token: newerAccessToken,
+            refresh_token: "refresh-token-newer",
+          },
+          account: {
+            email: "newer@example.com",
+          },
+          updated_at: "2026-03-11T18:00:01.000Z",
+          last_refresh: "2026-03-11T18:00:01.000Z",
+        },
+        null,
+        2
+      ),
+      "utf-8"
+    );
+
+    const staleMaterial = {
+      file: authFile,
+      issuer: CODEX_OAUTH_ISSUER,
+      clientId: CODEX_OAUTH_CLIENT_ID,
+      accessToken: makeJwt({ exp: 1_750_000_000, email: "stale@example.com" }),
+      refreshToken: "refresh-token-stale",
+      updatedAt: "2026-03-11T18:00:00.000Z",
+    };
+
+    const refreshed = await refreshCodexAuthMaterial({
+      paths: { authDir },
+      material: staleMaterial,
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            access_token: makeJwt({ exp: 1_760_000_000, email: "refreshed@example.com" }),
+            refresh_token: "refresh-token-refreshed",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        ),
+    });
+
+    expect(refreshed.accessToken).toBe(newerAccessToken);
+    expect(refreshed.refreshToken).toBe("refresh-token-newer");
+    expect(refreshed.email).toBe("newer@example.com");
+
+    const persisted = await readCodexAuthMaterial({ authDir });
+    expect(persisted?.accessToken).toBe(newerAccessToken);
+    expect(persisted?.refreshToken).toBe("refresh-token-newer");
+    expect(persisted?.email).toBe("newer@example.com");
+  });
 });
 
 describe("codex auth directory writability", () => {
@@ -297,5 +362,67 @@ describe("readCodexAuthMaterial fallback behavior", () => {
     expect(material?.file).toBe(coworkPath);
     expect(material?.accessToken).toBeTruthy();
     expect(material?.refreshToken).toBe("legacy-refresh-token");
+  });
+
+  test("imports legacy ~/.codex auth into Cowork auth.json when Cowork auth is missing", async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "codex-auth-import-legacy-"));
+    const paths = makePaths(home);
+    const accessToken = makeJwt({ exp: Math.floor(Date.now() / 1000) + 3600, email: "legacy@example.com" });
+    const idToken = makeJwt({
+      iss: CODEX_OAUTH_ISSUER,
+      email: "legacy@example.com",
+      "https://api.openai.com/auth": { chatgpt_account_id: "acct_legacy" },
+    });
+    const legacyPath = path.join(home, ".codex", "auth.json");
+    await fs.mkdir(path.dirname(legacyPath), { recursive: true });
+    await fs.writeFile(
+      legacyPath,
+      JSON.stringify({
+        auth_mode: "chatgpt",
+        tokens: {
+          access_token: accessToken,
+          refresh_token: "legacy-refresh-token",
+          id_token: idToken,
+        },
+      }),
+      "utf-8",
+    );
+
+    const material = await readCodexAuthMaterial(paths);
+    const coworkPath = path.join(paths.authDir, "codex-cli", "auth.json");
+
+    expect(material).toBeTruthy();
+    expect(material?.file).toBe(coworkPath);
+    expect(material?.accessToken).toBe(accessToken);
+    expect(material?.refreshToken).toBe("legacy-refresh-token");
+    expect(material?.accountId).toBe("acct_legacy");
+
+    const persisted = JSON.parse(await fs.readFile(coworkPath, "utf-8")) as any;
+    expect(persisted?.tokens?.access_token).toBe(accessToken);
+    expect(persisted?.tokens?.refresh_token).toBe("legacy-refresh-token");
+    expect(persisted?.tokens?.id_token).toBe(idToken);
+  });
+
+  test("clearCodexAuthMaterial blocks legacy re-import until Cowork signs in again", async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "codex-auth-block-legacy-"));
+    const paths = makePaths(home);
+    const legacyPath = path.join(home, ".codex", "auth.json");
+    await fs.mkdir(path.dirname(legacyPath), { recursive: true });
+    await fs.writeFile(
+      legacyPath,
+      JSON.stringify({
+        auth_mode: "chatgpt",
+        tokens: {
+          access_token: makeJwt({ exp: Math.floor(Date.now() / 1000) + 3600 }),
+          refresh_token: "legacy-refresh-token",
+        },
+      }),
+      "utf-8",
+    );
+
+    await clearCodexAuthMaterial(paths);
+
+    await expect(readCodexAuthMaterial(paths)).resolves.toBeNull();
+    await expect(fs.readFile(path.join(paths.authDir, "codex-cli", "auth.json"), "utf-8")).rejects.toThrow();
   });
 });

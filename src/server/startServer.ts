@@ -19,6 +19,7 @@ import { writeTextFileAtomic } from "../utils/atomicFile";
 
 import { AgentSession } from "./session/AgentSession";
 import { SessionDb } from "./sessionDb";
+import { WorkspaceBackupService } from "./workspaceBackups";
 import {
   WEBSOCKET_PROTOCOL_VERSION,
   type ServerEvent,
@@ -74,7 +75,7 @@ async function loadJsonObjectSafe(filePath: string): Promise<Record<string, unkn
 
 async function persistProjectConfigPatch(
   projectAgentDir: string,
-  patch: Partial<Pick<AgentConfig, "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled">> & {
+  patch: Partial<Pick<AgentConfig, "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled" | "backupsEnabled">> & {
     providerOptions?: OpenAiCompatibleProviderOptionsByProvider;
   },
   runtimeProviderOptions?: AgentConfig["providerOptions"],
@@ -123,7 +124,7 @@ async function persistProjectConfigPatch(
 
 function mergeConfigPatch(
   config: AgentConfig,
-  patch: Partial<Pick<AgentConfig, "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled">> & {
+  patch: Partial<Pick<AgentConfig, "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled" | "backupsEnabled">> & {
     providerOptions?: OpenAiCompatibleProviderOptionsByProvider;
   }
 ): AgentConfig {
@@ -199,6 +200,30 @@ export async function startAgentServer(
     paths: getAiCoworkerPathsImpl({ homedir: opts.homedir }),
   });
   const sessionBindings = new Map<string, SessionBinding>();
+  const workspaceBackupService = new WorkspaceBackupService({
+    homedir: opts.homedir,
+    sessionDb,
+    getLiveSession: (sessionId) => {
+      const session = sessionBindings.get(sessionId)?.session;
+      if (!session) return null;
+      const info = session.getSessionInfoEvent();
+      return {
+        sessionId: session.id,
+        title: info.title,
+        provider: info.provider,
+        model: info.model,
+        updatedAt: info.updatedAt,
+        status: session.persistenceStatus,
+        busy: session.isBusy,
+        setBackupsEnabledOverride: async (enabled) => {
+          await session.setBackupsEnabledOverride(enabled);
+        },
+        reloadBackupStateFromDisk: async () => {
+          await session.reloadSessionBackupStateFromDisk();
+        },
+      };
+    },
+  });
 
   const buildSessionCommon = (binding: SessionBinding, sessionKind: SessionKind = "root") => {
     const emit = (evt: ServerEvent) => {
@@ -229,7 +254,7 @@ export async function startAgentServer(
         : undefined,
       persistProjectConfigPatchImpl: sessionKind === "root"
         ? async (
-            patch: Partial<Pick<AgentConfig, "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled">> & {
+            patch: Partial<Pick<AgentConfig, "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled" | "backupsEnabled">> & {
               providerOptions?: OpenAiCompatibleProviderOptionsByProvider;
             }
           ) => {
@@ -245,6 +270,41 @@ export async function startAgentServer(
       waitForSubagentImpl: subagentOps.wait,
       closeSubagentImpl: subagentOps.close,
       deleteSessionImpl: subagentOps.deleteSession,
+      listWorkspaceBackupsImpl: async (opts: { requesterSessionId: string; workingDirectory: string }) =>
+        await workspaceBackupService.listWorkspaceBackups(opts.workingDirectory),
+      createWorkspaceBackupCheckpointImpl: async (opts: {
+        requesterSessionId: string;
+        workingDirectory: string;
+        targetSessionId: string;
+      }) =>
+        await workspaceBackupService.createCheckpoint(opts.workingDirectory, opts.targetSessionId),
+      restoreWorkspaceBackupImpl: async (opts: {
+        requesterSessionId: string;
+        workingDirectory: string;
+        targetSessionId: string;
+        checkpointId?: string;
+      }) =>
+        await workspaceBackupService.restoreBackup(opts.workingDirectory, opts.targetSessionId, opts.checkpointId),
+      deleteWorkspaceBackupCheckpointImpl: async (opts: {
+        requesterSessionId: string;
+        workingDirectory: string;
+        targetSessionId: string;
+        checkpointId: string;
+      }) =>
+        await workspaceBackupService.deleteCheckpoint(opts.workingDirectory, opts.targetSessionId, opts.checkpointId),
+      deleteWorkspaceBackupEntryImpl: async (opts: {
+        requesterSessionId: string;
+        workingDirectory: string;
+        targetSessionId: string;
+      }) =>
+        await workspaceBackupService.deleteEntry(opts.workingDirectory, opts.targetSessionId),
+      getWorkspaceBackupDeltaImpl: async (opts: {
+        requesterSessionId: string;
+        workingDirectory: string;
+        targetSessionId: string;
+        checkpointId: string;
+      }) =>
+        await workspaceBackupService.getCheckpointDelta(opts.workingDirectory, opts.targetSessionId, opts.checkpointId),
     };
   };
 

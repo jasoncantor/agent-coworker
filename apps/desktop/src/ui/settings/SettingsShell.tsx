@@ -9,6 +9,7 @@ import type { SettingsPageId } from "../../app/types";
 import { ProvidersPage } from "./pages/ProvidersPage";
 import { UsagePage } from "./pages/UsagePage";
 import { WorkspacesPage } from "./pages/WorkspacesPage";
+import { BackupPage } from "./pages/BackupPage";
 import { McpServersPage } from "./pages/McpServersPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
 import { DeveloperPage } from "./pages/DeveloperPage";
@@ -23,6 +24,7 @@ const SETTINGS_PAGES: SettingsPageDefinition[] = [
   { id: "providers", label: "Providers", render: () => <ProvidersPage /> },
   { id: "usage", label: "Usage", render: () => <UsagePage /> },
   { id: "workspaces", label: "Workspaces", render: () => <WorkspacesPage /> },
+  { id: "backup", label: "Backup", render: () => <BackupPage /> },
   { id: "mcp", label: "MCP Servers", render: () => <McpServersPage /> },
   { id: "updates", label: "Updates", render: () => <UpdatesPage /> },
   { id: "developer", label: "Developer", render: () => <DeveloperPage /> },
@@ -72,8 +74,15 @@ export function SettingsShell() {
       <div className="settings-shell__drag-zone" aria-hidden="true" />
       <SettingsNavigation activePage={settingsPage} onSelectPage={setSettingsPage} onBack={closeSettings} />
 
-      <main className="settings-shell__main min-h-0 overflow-auto bg-gradient-to-b from-panel to-background">
-        <div className="settings-shell__content mx-auto w-full max-w-5xl p-6 max-[960px]:p-4">{activePage.render()}</div>
+      <main className="settings-shell__main min-h-0 overflow-auto bg-muted/10">
+        <div
+          className={cn(
+            "settings-shell__content w-full max-[960px]:p-4",
+            activePage.id === "backup" ? "h-full p-0" : "mx-auto max-w-5xl p-6"
+          )}
+        >
+          {activePage.render()}
+        </div>
       </main>
     </div>
   );

@@ -67,7 +67,7 @@ function makeBaseContext(): SessionContext {
       getAiCoworkerPathsImpl: () => ({ sessionsDir: "/tmp/sessions" } as any),
       getProviderCatalogImpl: async () => ({ all: [], default: {}, connected: [] }),
       getProviderStatusesImpl: async () => [],
-      sessionBackupFactory: async () => ({ getPublicState: () => ({}) } as any),
+      sessionBackupFactory: async () => ({ getPublicState: () => ({}), reloadFromDisk: async () => ({}) } as any),
       harnessContextStore: {
         get: () => null,
         set: (_id: string, value: any) => value,

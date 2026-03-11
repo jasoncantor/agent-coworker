@@ -17,7 +17,13 @@ import type {
   TodoItem,
 } from "../../types";
 import type { ServerEvent } from "../protocol";
-import type { SessionBackupHandle, SessionBackupInitOptions, SessionBackupPublicState } from "../sessionBackup";
+import type {
+  SessionBackupHandle,
+  SessionBackupInitOptions,
+  SessionBackupPublicState,
+  WorkspaceBackupDeltaPreview,
+  WorkspaceBackupPublicEntry,
+} from "../sessionBackup";
 import type { SessionDb, SessionPersistenceStatus } from "../sessionDb";
 import type { generateSessionTitle, SessionTitleSource } from "../sessionTitleService";
 import type { writePersistedSessionSnapshot } from "../sessionStore";
@@ -31,7 +37,7 @@ export type PersistedModelSelection = {
 };
 
 export type PersistedProjectConfigPatch = Partial<
-  Pick<AgentConfig, "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled">
+  Pick<AgentConfig, "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled" | "backupsEnabled">
 > & {
   providerOptions?: OpenAiCompatibleProviderOptionsByProvider;
 };
@@ -47,6 +53,7 @@ export type HydratedSessionState = {
   providerState: OpenAiContinuationState | null;
   todos: TodoItem[];
   harnessContext: HarnessContextState | null;
+  backupsEnabledOverride: boolean | null;
   costTracker: SessionUsageSnapshot | null;
 };
 
@@ -68,6 +75,7 @@ export type SessionRuntimeState = {
   sessionInfo: SessionInfoState;
   persistenceStatus: SessionPersistenceStatus;
   hasGeneratedTitle: boolean;
+  backupsEnabledOverride: boolean | null;
   sessionBackup: SessionBackupHandle | null;
   sessionBackupState: SessionBackupPublicState;
   sessionBackupInit: Promise<void> | null;
@@ -119,6 +127,38 @@ export type SessionDependencies = {
     requesterSessionId: string;
     targetSessionId: string;
   }) => Promise<void>;
+  listWorkspaceBackupsImpl?: (opts: {
+    requesterSessionId: string;
+    workingDirectory: string;
+  }) => Promise<WorkspaceBackupPublicEntry[]>;
+  createWorkspaceBackupCheckpointImpl?: (opts: {
+    requesterSessionId: string;
+    workingDirectory: string;
+    targetSessionId: string;
+  }) => Promise<WorkspaceBackupPublicEntry[]>;
+  restoreWorkspaceBackupImpl?: (opts: {
+    requesterSessionId: string;
+    workingDirectory: string;
+    targetSessionId: string;
+    checkpointId?: string;
+  }) => Promise<WorkspaceBackupPublicEntry[]>;
+  deleteWorkspaceBackupCheckpointImpl?: (opts: {
+    requesterSessionId: string;
+    workingDirectory: string;
+    targetSessionId: string;
+    checkpointId: string;
+  }) => Promise<WorkspaceBackupPublicEntry[]>;
+  deleteWorkspaceBackupEntryImpl?: (opts: {
+    requesterSessionId: string;
+    workingDirectory: string;
+    targetSessionId: string;
+  }) => Promise<WorkspaceBackupPublicEntry[]>;
+  getWorkspaceBackupDeltaImpl?: (opts: {
+    requesterSessionId: string;
+    workingDirectory: string;
+    targetSessionId: string;
+    checkpointId: string;
+  }) => Promise<WorkspaceBackupDeltaPreview>;
 };
 
 export type SessionContext = {
@@ -149,6 +189,7 @@ export type SessionContext = {
     }>
   ) => void;
   emitConfigUpdated: () => void;
+  syncSessionBackupAvailability: () => Promise<void>;
   refreshProviderStatus: () => Promise<void>;
   emitProviderCatalog: () => Promise<void>;
 };
