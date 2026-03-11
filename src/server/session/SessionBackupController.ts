@@ -211,6 +211,10 @@ export class SessionBackupController {
   }
 
   private clearSessionBackupState(mode: "disabled" | "initializing") {
+    const backup = this.context.state.sessionBackup;
+    if (backup) {
+      backup.close().catch(() => {});
+    }
     this.context.state.sessionBackup = null;
     this.context.state.sessionBackupInit = null;
     this.context.state.lastAutoCheckpointAt = 0;

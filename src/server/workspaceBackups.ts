@@ -162,6 +162,16 @@ export class WorkspaceBackupService {
     await this.guardLiveSession(targetSessionId);
 
     const manager = await SessionBackupManager.openExisting({ sessionDir: lookup.sessionDir });
+    
+    // Validate checkpoint exists before creating safety checkpoint
+    if (checkpointId) {
+      const state = manager.getPublicState();
+      const checkpointExists = state.checkpoints.some(cp => cp.id === checkpointId);
+      if (!checkpointExists) {
+        throw new Error(`Unknown checkpoint: ${checkpointId}`);
+      }
+    }
+    
     await manager.createCheckpoint("manual");
     if (checkpointId) {
       await manager.restoreCheckpoint(checkpointId);
