@@ -239,24 +239,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
       });
       deps.persist(get);
 
-      // Send the workspace backup policy synchronously BEFORE any pending
-      // messages so the session has the correct backupsEnabled value before
-      // a turn can trigger an automatic checkpoint.
-      {
-        const thread = get().threads.find((t) => t.id === threadId);
-        const ws = thread
-          ? get().workspaces.find((w) => w.id === thread.workspaceId)
-          : undefined;
-        if (ws) {
-          sendThread(get, threadId, (sessionId) => ({
-            type: "set_config",
-            sessionId,
-            config: { backupsEnabled: ws.defaultBackupsEnabled },
-          }));
-        }
-      }
-
-      void get().applyWorkspaceDefaultsToThread(threadId);
+      void get().applyWorkspaceDefaultsToThread(threadId, "auto");
       RUNTIME.threadSockets.get(threadId)?.send({
         type: "get_session_usage",
         sessionId: evt.sessionId,
@@ -304,7 +287,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
         };
       });
       if (!evt.busy && RUNTIME.pendingWorkspaceDefaultApplyThreadIds.has(threadId)) {
-        void get().applyWorkspaceDefaultsToThread(threadId);
+        void get().applyWorkspaceDefaultsToThread(threadId, "auto");
       }
       return;
     }

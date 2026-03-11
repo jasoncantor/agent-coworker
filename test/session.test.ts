@@ -673,6 +673,7 @@ describe("AgentSession", () => {
       expect(evt.config.yolo).toBe(false);
       expect(evt.config.observabilityEnabled).toBe(false);
       expect(evt.config.backupsEnabled).toBe(true);
+      expect(evt.config.defaultBackupsEnabled).toBe(true);
       expect(evt.config.subAgentModel).toBe("gemini-2.0-flash");
       expect(evt.config.maxSteps).toBe(100);
     });
@@ -733,6 +734,7 @@ describe("AgentSession", () => {
       expect(cfgEvt.config.subAgentModel).toBe("gpt-5.2-mini");
       expect(cfgEvt.config.observabilityEnabled).toBe(true);
       expect(cfgEvt.config.backupsEnabled).toBe(false);
+      expect(cfgEvt.config.defaultBackupsEnabled).toBe(false);
       expect(cfgEvt.config.maxSteps).toBe(25);
       expect(persistProjectConfigPatchImpl).toHaveBeenCalledTimes(1);
       expect(persistProjectConfigPatchImpl).toHaveBeenCalledWith({
@@ -740,6 +742,17 @@ describe("AgentSession", () => {
         observabilityEnabled: true,
         backupsEnabled: false,
       });
+    });
+
+    test("session_config keeps the persisted backup default separate from a live override", async () => {
+      const { session, events } = makeSession();
+
+      await session.setBackupsEnabledOverride(false);
+
+      const cfgEvt = events.filter((evt) => evt.type === "session_config").at(-1) as any;
+      expect(cfgEvt).toBeDefined();
+      expect(cfgEvt.config.backupsEnabled).toBe(false);
+      expect(cfgEvt.config.defaultBackupsEnabled).toBe(true);
     });
 
     test("setConfig persistence failures do not apply runtime config changes", async () => {

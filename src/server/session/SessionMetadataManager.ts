@@ -30,7 +30,8 @@ export class SessionMetadataManager {
 
   getSessionConfigEvent(): Extract<import("../protocol").ServerEvent, { type: "session_config" }> {
     const providerOptions = pickEditableOpenAiCompatibleProviderOptions(this.context.state.config.providerOptions);
-    const backupsEnabled = this.context.state.backupsEnabledOverride ?? this.context.state.config.backupsEnabled ?? true;
+    const defaultBackupsEnabled = this.context.state.config.backupsEnabled ?? true;
+    const backupsEnabled = this.context.state.backupsEnabledOverride ?? defaultBackupsEnabled;
     return {
       type: "session_config",
       sessionId: this.context.id,
@@ -38,6 +39,7 @@ export class SessionMetadataManager {
         yolo: this.context.state.yolo,
         observabilityEnabled: this.context.state.config.observabilityEnabled ?? false,
         backupsEnabled,
+        defaultBackupsEnabled,
         subAgentModel: this.context.state.config.subAgentModel,
         maxSteps: this.context.state.maxSteps,
         ...(providerOptions ? { providerOptions } : {}),

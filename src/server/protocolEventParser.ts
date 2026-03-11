@@ -379,6 +379,7 @@ const serverEventSchema = z.discriminatedUnion("type", [
       yolo: z.boolean(),
       observabilityEnabled: z.boolean(),
       backupsEnabled: z.boolean(),
+      defaultBackupsEnabled: z.boolean(),
       subAgentModel: z.string(),
       maxSteps: z.number(),
       providerOptions: editableOpenAiProviderOptionsByProviderSchema.optional(),

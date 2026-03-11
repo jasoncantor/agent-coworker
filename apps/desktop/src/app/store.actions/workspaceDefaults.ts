@@ -51,28 +51,31 @@ import type { ThreadRecord, WorkspaceRecord } from "../types";
 
 export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "applyWorkspaceDefaultsToThread" | "updateWorkspaceDefaults"> {
   return {
-    applyWorkspaceDefaultsToThread: async (threadId: string) => {
+    applyWorkspaceDefaultsToThread: async (threadId: string, mode: "auto" | "explicit" = "explicit") => {
       const thread = get().threads.find((t) => t.id === threadId);
       if (!thread) return;
       const ws = get().workspaces.find((w) => w.id === thread.workspaceId);
       if (!ws) return;
       const rt = get().threadRuntimeById[threadId];
       if (!rt?.sessionId) return;
+      const workspaceRuntime = get().workspaceRuntimeById[thread.workspaceId];
+      const harnessBackupsDefault = workspaceRuntime?.controlSessionConfig?.defaultBackupsEnabled;
+      const backupsEnabled = mode === "explicit" ? ws.defaultBackupsEnabled : harnessBackupsDefault;
 
-      // Always send backupsEnabled immediately — this is safe even while
-      // the session is busy and must arrive before any turn triggers an
-      // automatic checkpoint.
-      {
+      // Explicit user-driven default changes should still hit live sessions
+      // immediately. Automatic connect-time sync only trusts the harness-
+      // sourced default once the control session has provided it.
+      if (typeof backupsEnabled === "boolean") {
         const okBackups = sendThread(get, threadId, (sessionId) => ({
           type: "set_config",
           sessionId,
-          config: { backupsEnabled: ws.defaultBackupsEnabled },
+          config: { backupsEnabled },
         }));
         if (okBackups) {
           appendThreadTranscript(threadId, "client", {
             type: "set_config",
             sessionId: rt.sessionId,
-            config: { backupsEnabled: ws.defaultBackupsEnabled },
+            config: { backupsEnabled },
           });
         }
       }
@@ -220,7 +223,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         .threads.filter((thread) => thread.workspaceId === workspaceId)
         .map((thread) => thread.id);
       for (const threadId of threadIds) {
-        void get().applyWorkspaceDefaultsToThread(threadId);
+        void get().applyWorkspaceDefaultsToThread(threadId, "explicit");
       }
     },
   

@@ -107,6 +107,7 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
               workspace.id === workspaceId
                 ? {
                     ...workspace,
+                    defaultBackupsEnabled: evt.config.defaultBackupsEnabled,
                     defaultSubAgentModel: evt.config.subAgentModel,
                     providerOptions,
                   }

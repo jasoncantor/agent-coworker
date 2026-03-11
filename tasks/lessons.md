@@ -67,3 +67,4 @@
 - For desktop settings pages that act like tools or browsers, do not keep the default centered `max-w-*` content column; let them fill the available canvas and only constrain width when the page is primarily reading text/forms.
 - After a desktop layout polish pass, do one more color-intensity pass before calling it done; repeated high-saturation badges, icon chips, and destructive buttons can overwhelm an otherwise correct structure.
 - On warm-neutral desktop themes, avoid page-local pink/red outline treatments unless the user is actively in a destructive flow; they tend to read as accidental tinting rather than intentional hierarchy.
+- For workspace backup policy, never treat the desktop’s persisted `defaultBackupsEnabled` as authoritative on reconnect; the harness/core must publish the persisted default explicitly, and clients should only mirror that source of truth rather than replaying stale local state into live sessions.

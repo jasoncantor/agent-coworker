@@ -503,6 +503,7 @@ describe("WebSocket Lifecycle", () => {
       expect(configEvt.config).toBeDefined();
       expect(typeof configEvt.config.yolo).toBe("boolean");
       expect(typeof configEvt.config.observabilityEnabled).toBe("boolean");
+      expect(typeof configEvt.config.defaultBackupsEnabled).toBe("boolean");
       expect(typeof configEvt.config.subAgentModel).toBe("string");
       expect(typeof configEvt.config.maxSteps).toBe("number");
     } finally {

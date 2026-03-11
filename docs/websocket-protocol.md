@@ -6,7 +6,7 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
 
 - URL: `ws://127.0.0.1:{port}/ws`
 - Session resume: `?resumeSessionId=<sessionId>`
-- Current protocol version: `7.10`
+- Current protocol version: `7.11`
 
 ## Table of Contents
 
@@ -48,6 +48,11 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
   - Error & Keepalive: [error](#error) | [pong](#pong)
 
 ## Protocol v7 Notes
+
+Changes in `7.11`:
+
+- `session_config.config` now includes `defaultBackupsEnabled`, the harness-persisted workspace backup default, alongside the live effective `backupsEnabled` value.
+- Desktop and other clients should treat `defaultBackupsEnabled` as the source of truth for future sessions instead of inferring workspace defaults from a live session override.
 
 Changes in `7.10`:
 
@@ -152,7 +157,7 @@ When a WebSocket connection opens, the server sends these events in order:
 
 1. `server_hello` — session ID, config, protocol version, capabilities
 2. `session_settings` — current runtime settings (e.g. MCP toggle)
-3. `session_config` — current runtime config (`yolo`, `observabilityEnabled`, `backupsEnabled`, `subAgentModel`, `maxSteps`, `providerOptions`)
+3. `session_config` — current runtime config (`yolo`, `observabilityEnabled`, `backupsEnabled`, `defaultBackupsEnabled`, `subAgentModel`, `maxSteps`, `providerOptions`)
 4. `session_info` — session metadata including title
 5. `observability_status` — Langfuse observability state
 6. `provider_catalog` — available providers and models (async)
@@ -3056,6 +3061,7 @@ Current runtime config. Sent on connection and after `set_config`.
     "yolo": false,
     "observabilityEnabled": true,
     "backupsEnabled": true,
+    "defaultBackupsEnabled": true,
     "subAgentModel": "gpt-5.4",
     "maxSteps": 100,
     "providerOptions": {
@@ -3081,6 +3087,7 @@ Current runtime config. Sent on connection and after `set_config`.
 | `config.yolo` | `boolean` | Whether all commands are auto-approved |
 | `config.observabilityEnabled` | `boolean` | Whether observability is enabled |
 | `config.backupsEnabled` | `boolean` | Whether backups are enabled for the live session after applying any session-scoped override |
+| `config.defaultBackupsEnabled` | `boolean` | The persisted workspace backup default from the harness/core config, before any live session override is applied |
 | `config.subAgentModel` | `string` | Sub-agent model identifier |
 | `config.maxSteps` | `number` | Maximum steps per turn |
 | `config.providerOptions` | `object?` | Editable OpenAI-compatible provider options when configured |

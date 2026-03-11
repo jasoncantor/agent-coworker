@@ -85,6 +85,7 @@ describe("agent socket parser", () => {
           yolo: false,
           observabilityEnabled: true,
           backupsEnabled: true,
+          defaultBackupsEnabled: true,
           subAgentModel: "gpt-5.4",
           maxSteps: 100,
           providerOptions: {

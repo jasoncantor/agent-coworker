@@ -365,7 +365,7 @@ describe("workspace settings sync", () => {
     expect(threadSocket.opts.resumeSessionId).toBe("thread-session-new");
   });
 
-  test("control session_config keeps workspace backup defaults independent from session overrides", async () => {
+  test("control session_config hydrates the workspace backup default from the harness", async () => {
     await useAppStore.getState().newThread({ workspaceId });
     const controlSocket = socketByClient("desktop-control");
     emitServerHello(controlSocket, "control-session");
@@ -377,6 +377,7 @@ describe("workspace settings sync", () => {
         yolo: false,
         observabilityEnabled: true,
         backupsEnabled: false,
+        defaultBackupsEnabled: false,
         subAgentModel: "gpt-5-mini",
         maxSteps: 75,
       },
@@ -385,9 +386,35 @@ describe("workspace settings sync", () => {
     const workspace = useAppStore.getState().workspaces.find((entry) => entry.id === workspaceId);
     const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
     expect(workspace?.defaultSubAgentModel).toBe("gpt-5-mini");
-    expect(workspace?.defaultBackupsEnabled).toBe(true);
+    expect(workspace?.defaultBackupsEnabled).toBe(false);
     expect(runtime?.controlSessionConfig?.subAgentModel).toBe("gpt-5-mini");
     expect(runtime?.controlSessionConfig?.backupsEnabled).toBe(false);
+    expect(runtime?.controlSessionConfig?.defaultBackupsEnabled).toBe(false);
+  });
+
+  test("control session_config keeps session backup overrides separate from the workspace default", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+
+    controlSocket.emit({
+      type: "session_config",
+      sessionId: "control-session",
+      config: {
+        yolo: false,
+        observabilityEnabled: true,
+        backupsEnabled: false,
+        defaultBackupsEnabled: true,
+        subAgentModel: "gpt-5-mini",
+        maxSteps: 75,
+      },
+    });
+
+    const workspace = useAppStore.getState().workspaces.find((entry) => entry.id === workspaceId);
+    const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
+    expect(workspace?.defaultBackupsEnabled).toBe(true);
+    expect(runtime?.controlSessionConfig?.backupsEnabled).toBe(false);
+    expect(runtime?.controlSessionConfig?.defaultBackupsEnabled).toBe(true);
   });
 
   test("control session_config replaces editable providerOptions in workspace defaults", async () => {
@@ -423,6 +450,7 @@ describe("workspace settings sync", () => {
         yolo: false,
         observabilityEnabled: true,
         backupsEnabled: true,
+        defaultBackupsEnabled: true,
         subAgentModel: "gpt-5.4-mini",
         providerOptions: {
           openai: {
@@ -491,6 +519,7 @@ describe("workspace settings sync", () => {
         yolo: false,
         observabilityEnabled: true,
         backupsEnabled: true,
+        defaultBackupsEnabled: true,
         subAgentModel: "gpt-5.4-mini",
         maxSteps: 75,
       },
@@ -560,6 +589,47 @@ describe("workspace settings sync", () => {
           },
         },
       },
+    });
+  });
+
+  test("thread connect does not replay a stale local backup default before the harness sync arrives", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+    const threadSocket = socketByClient("desktop");
+
+    threadSocket.sent = [];
+    emitServerHello(threadSocket, "thread-session");
+
+    expect(
+      threadSocket.sent.some((message) => message?.type === "set_config" && "backupsEnabled" in (message?.config ?? {})),
+    ).toBe(false);
+  });
+
+  test("thread connect uses the harness backup default once the control session is hydrated", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+    controlSocket.emit({
+      type: "session_config",
+      sessionId: "control-session",
+      config: {
+        yolo: false,
+        observabilityEnabled: true,
+        backupsEnabled: false,
+        defaultBackupsEnabled: false,
+        subAgentModel: "gpt-5.2",
+        maxSteps: 75,
+      },
+    });
+
+    const threadSocket = socketByClient("desktop");
+    threadSocket.sent = [];
+    emitServerHello(threadSocket, "thread-session");
+
+    expect(threadSocket.sent[0]).toMatchObject({
+      type: "set_config",
+      config: { backupsEnabled: false },
     });
   });
 
@@ -688,12 +758,11 @@ describe("workspace settings sync", () => {
 
     // After becoming idle, the deferred model/config/mcp messages are sent
     expect(busyThreadSocket.sent.map((message) => message?.type)).toEqual([
-      "set_config",
       "set_model",
       "set_config",
       "set_enable_mcp",
     ]);
-    expect(busyThreadSocket.sent[2]).toMatchObject({
+    expect(busyThreadSocket.sent[1]).toMatchObject({
       type: "set_config",
       config: {
         subAgentModel: "gpt-5.2-mini",

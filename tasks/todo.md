@@ -2765,3 +2765,21 @@
 ### Verification
 - `~/.bun/bin/bun test test/session-backup-delta.test.ts test/workspace-backups.test.ts apps/desktop/test/backup-page.test.ts --bail` -> pass (`18 pass, 0 fail`)
 - `~/.bun/bin/bun run typecheck` -> pass
+
+# Task: Make disabled backups stay fully disabled across desktop and core sessions
+
+## Plan
+- [x] Trace the backup-default contract between core `session_config`, desktop workspace state, and live thread/session overrides.
+- [x] Patch the protocol/core/Desktop sync so the persisted workspace backup default is communicated explicitly and stale desktop state cannot re-enable backups on connect.
+- [x] Add regression coverage for control-session hydration and reconnect behavior, run the required tests/typecheck, and record the verified outcome below.
+
+## Review
+- `src/server/protocol.ts`, `src/server/session/SessionMetadataManager.ts`, and `src/server/protocolEventParser.ts` now expose `session_config.config.defaultBackupsEnabled` as a first-class harness/core field. `backupsEnabled` still reports the live effective session state, but clients now also receive the persisted workspace default instead of having to guess from a possibly overridden session snapshot.
+- `apps/desktop/src/app/store.helpers/controlSocket.ts` now hydrates `workspace.defaultBackupsEnabled` from the harness-provided `defaultBackupsEnabled`, so desktop persistence follows the real workspace config instead of stale local state. `apps/desktop/src/app/store.actions/workspaceDefaults.ts` and `apps/desktop/src/app/store.helpers/threadEventReducer.ts` now distinguish explicit user-driven backup updates from automatic connect-time sync: automatic thread connects only apply a backup toggle once the control session has provided the harness default, which stops reconnects/new threads from force-enabling backups from old desktop state.
+- Added regression coverage in `apps/desktop/test/workspace-settings-sync.test.ts` for both critical paths: the control session now hydrates the workspace backup default from the harness, and a new thread connect no longer replays a stale local `defaultBackupsEnabled` before that harness sync arrives. Core tests in `test/session.test.ts`, `test/server.test.ts`, and `test/agentSocket.parse.test.ts` now cover the expanded `session_config` contract.
+
+### Verification
+- `~/.bun/bin/bun test test/session.test.ts test/server.test.ts test/agentSocket.parse.test.ts apps/desktop/test/workspace-settings-sync.test.ts test/docs.check.test.ts --bail` -> pass (`294 pass, 0 fail`)
+- `~/.bun/bin/bun run typecheck` -> pass
+- `~/.bun/bin/bun test` -> pass (`1990 pass, 2 skip, 0 fail`)
+- `git diff --check` -> pass
