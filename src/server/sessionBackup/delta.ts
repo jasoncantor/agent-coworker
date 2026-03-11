@@ -27,16 +27,19 @@ async function collectSnapshotEntries(
   rootDir: string,
   currentDir: string,
   output: Map<string, SnapshotTreeEntry>,
+  maxEntries?: number,
 ): Promise<void> {
   const entries = await fs.readdir(currentDir, { withFileTypes: true });
   entries.sort((left, right) => left.name.localeCompare(right.name));
 
   for (const entry of entries) {
+    if (maxEntries !== undefined && output.size >= maxEntries) return;
+
     const absolutePath = path.join(currentDir, entry.name);
     const relativePath = path.relative(rootDir, absolutePath).split(path.sep).join("/");
 
     if (entry.isDirectory()) {
-      await collectSnapshotEntries(rootDir, absolutePath, output);
+      await collectSnapshotEntries(rootDir, absolutePath, output, maxEntries);
       continue;
     }
 
@@ -61,12 +64,13 @@ async function materializeSnapshot(
   sessionDir: string,
   snapshot: SessionBackupMetadataSnapshot,
   suffix: string,
+  maxEntries?: number,
 ): Promise<{ dir: string; entries: Map<string, SnapshotTreeEntry> }> {
   const dir = await fs.mkdtemp(path.join(sessionDir, suffix));
   try {
     await restoreSnapshot({ sessionDir, targetDir: dir, snapshot });
     const entries = new Map<string, SnapshotTreeEntry>();
-    await collectSnapshotEntries(dir, dir, entries);
+    await collectSnapshotEntries(dir, dir, entries, maxEntries);
     return { dir, entries };
   } catch (error) {
     await fs.rm(dir, { recursive: true, force: true });
@@ -79,6 +83,7 @@ export async function summarizeSnapshotDelta(opts: {
   baseline: SessionBackupMetadataSnapshot;
   current: SessionBackupMetadataSnapshot;
   maxFiles?: number;
+  maxEntries?: number;
 }): Promise<{
   counts: {
     added: number;
@@ -89,13 +94,13 @@ export async function summarizeSnapshotDelta(opts: {
   truncated: boolean;
 }> {
   const maxFiles = Math.max(1, Math.floor(opts.maxFiles ?? DEFAULT_MAX_FILES));
-  
+
   let baselineTree: { dir: string; entries: Map<string, SnapshotTreeEntry> } | undefined;
   let currentTree: { dir: string; entries: Map<string, SnapshotTreeEntry> } | undefined;
 
   try {
-    baselineTree = await materializeSnapshot(opts.sessionDir, opts.baseline, ".delta-baseline-");
-    currentTree = await materializeSnapshot(opts.sessionDir, opts.current, ".delta-current-");
+    baselineTree = await materializeSnapshot(opts.sessionDir, opts.baseline, ".delta-baseline-", opts.maxEntries);
+    currentTree = await materializeSnapshot(opts.sessionDir, opts.current, ".delta-current-", opts.maxEntries);
 
     const counts = { added: 0, modified: 0, deleted: 0 };
     const files: WorkspaceBackupDeltaFile[] = [];

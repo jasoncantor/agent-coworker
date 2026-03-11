@@ -5,6 +5,47 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
+type JsdomHarness = {
+  dom: JSDOM;
+  restore: () => void;
+};
+
+function setupJsdom(): JsdomHarness {
+  const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", {
+    url: "http://localhost",
+  });
+  const saved = {
+    window: globalThis.window,
+    document: globalThis.document,
+    navigator: globalThis.navigator,
+    HTMLElement: globalThis.HTMLElement,
+    Node: globalThis.Node,
+    actEnv: (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT,
+  };
+
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    navigator: dom.window.navigator,
+    HTMLElement: dom.window.HTMLElement,
+    Node: dom.window.Node,
+  });
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+  return {
+    dom,
+    restore: () => {
+      globalThis.window = saved.window;
+      globalThis.document = saved.document;
+      globalThis.navigator = saved.navigator;
+      globalThis.HTMLElement = saved.HTMLElement;
+      globalThis.Node = saved.Node;
+      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = saved.actEnv;
+      dom.window.close();
+    },
+  };
+}
+
 const MOCK_SYSTEM_APPEARANCE = {
   platform: "linux",
   themeSource: "system",
@@ -184,26 +225,9 @@ describe("desktop backup page", () => {
   });
 
   test("auto-refreshes once when the backup page opens", async () => {
-    const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", {
-      url: "http://localhost",
-    });
-    const previousWindow = globalThis.window;
-    const previousDocument = globalThis.document;
-    const previousNavigator = globalThis.navigator;
-    const previousHTMLElement = globalThis.HTMLElement;
-    const previousNode = globalThis.Node;
-    const previousActEnvironment = (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    const { dom, restore } = setupJsdom();
     const previousState = useAppStore.getState();
     let requestCount = 0;
-
-    Object.assign(globalThis, {
-      window: dom.window,
-      document: dom.window.document,
-      navigator: dom.window.navigator,
-      HTMLElement: dom.window.HTMLElement,
-      Node: dom.window.Node,
-    });
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
     useAppStore.setState({
       selectedWorkspaceId: "ws-1",
@@ -276,38 +300,15 @@ describe("desktop backup page", () => {
         root.unmount();
       });
       useAppStore.setState(previousState, true);
-      globalThis.window = previousWindow;
-      globalThis.document = previousDocument;
-      globalThis.navigator = previousNavigator;
-      globalThis.HTMLElement = previousHTMLElement;
-      globalThis.Node = previousNode;
-      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
-      dom.window.close();
+      restore();
     }
   });
 
   test("does not auto-request a checkpoint delta when the page opens", async () => {
-    const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", {
-      url: "http://localhost",
-    });
-    const previousWindow = globalThis.window;
-    const previousDocument = globalThis.document;
-    const previousNavigator = globalThis.navigator;
-    const previousHTMLElement = globalThis.HTMLElement;
-    const previousNode = globalThis.Node;
-    const previousActEnvironment = (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    const { dom, restore } = setupJsdom();
     const previousState = useAppStore.getState();
     let refreshCount = 0;
     let deltaCount = 0;
-
-    Object.assign(globalThis, {
-      window: dom.window,
-      document: dom.window.document,
-      navigator: dom.window.navigator,
-      HTMLElement: dom.window.HTMLElement,
-      Node: dom.window.Node,
-    });
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
     useAppStore.setState({
       selectedWorkspaceId: "ws-1",
@@ -405,13 +406,7 @@ describe("desktop backup page", () => {
         root.unmount();
       });
       useAppStore.setState(previousState, true);
-      globalThis.window = previousWindow;
-      globalThis.document = previousDocument;
-      globalThis.navigator = previousNavigator;
-      globalThis.HTMLElement = previousHTMLElement;
-      globalThis.Node = previousNode;
-      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
-      dom.window.close();
+      restore();
     }
   });
 });

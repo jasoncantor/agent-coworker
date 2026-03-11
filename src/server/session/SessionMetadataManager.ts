@@ -210,7 +210,7 @@ export class SessionMetadataManager {
 
     this.context.emit(this.getSessionConfigEvent());
     if (patch.backupsEnabled !== undefined) {
-      await this.context.syncSessionBackupAvailability?.();
+      await this.context.syncSessionBackupAvailability();
     }
     this.context.queuePersistSessionSnapshot("session.config_updated");
   }
@@ -218,7 +218,7 @@ export class SessionMetadataManager {
   async setBackupsEnabledOverride(backupsEnabledOverride: boolean | null) {
     this.context.state.backupsEnabledOverride = backupsEnabledOverride;
     this.context.emit(this.getSessionConfigEvent());
-    await this.context.syncSessionBackupAvailability?.();
+    await this.context.syncSessionBackupAvailability();
     this.context.queuePersistSessionSnapshot("session.backups_enabled_override_updated");
   }
 

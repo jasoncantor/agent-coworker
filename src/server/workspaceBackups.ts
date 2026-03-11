@@ -69,7 +69,7 @@ function lifecycleFromState(
 ): WorkspaceBackupLifecycle {
   if (sessionStatus === "active") return "active";
   if (sessionStatus === "closed") return "closed";
-  return metadataState === "active" ? "deleted" : "deleted";
+  return "deleted";
 }
 
 function tryExtractJsonString(raw: string, key: string): string | undefined {
@@ -116,7 +116,22 @@ async function readMetadataHint(metadataPath: string): Promise<WorkspaceBackupMe
 }
 
 export class WorkspaceBackupService {
+  private readonly sessionLocks = new Map<string, Promise<unknown>>();
+
   constructor(private readonly opts: WorkspaceBackupServiceOptions) {}
+
+  private async withSessionLock<T>(targetSessionId: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.sessionLocks.get(targetSessionId) ?? Promise.resolve();
+    const next = previous.then(fn, fn);
+    this.sessionLocks.set(targetSessionId, next);
+    try {
+      return await next;
+    } finally {
+      if (this.sessionLocks.get(targetSessionId) === next) {
+        this.sessionLocks.delete(targetSessionId);
+      }
+    }
+  }
 
   async listWorkspaceBackups(workingDirectoryRaw: string): Promise<WorkspaceBackupPublicEntry[]> {
     const workingDirectory = path.resolve(workingDirectoryRaw);
@@ -144,72 +159,80 @@ export class WorkspaceBackupService {
   }
 
   async createCheckpoint(workingDirectory: string, targetSessionId: string): Promise<WorkspaceBackupPublicEntry[]> {
-    const lookup = await this.findWorkspaceBackup(workingDirectory, targetSessionId);
-    if (!lookup) throw new Error(`Unknown workspace backup: ${targetSessionId}`);
-    if (!lookup.metadata) throw new Error(lookup.failureReason ?? `Workspace backup is unavailable: ${targetSessionId}`);
-    await this.guardLiveSession(targetSessionId);
+    return this.withSessionLock(targetSessionId, async () => {
+      const lookup = await this.findWorkspaceBackup(workingDirectory, targetSessionId);
+      if (!lookup) throw new Error(`Unknown workspace backup: ${targetSessionId}`);
+      if (!lookup.metadata) throw new Error(lookup.failureReason ?? `Workspace backup is unavailable: ${targetSessionId}`);
+      await this.guardLiveSession(targetSessionId);
 
-    const manager = await SessionBackupManager.openExisting({ sessionDir: lookup.sessionDir });
-    await manager.createCheckpoint("manual");
-    await this.syncLiveSession(targetSessionId);
-    return await this.listWorkspaceBackups(workingDirectory);
+      const manager = await SessionBackupManager.openExisting({ sessionDir: lookup.sessionDir });
+      await manager.createCheckpoint("manual");
+      await this.syncLiveSession(targetSessionId);
+      return await this.listWorkspaceBackups(workingDirectory);
+    });
   }
 
   async restoreBackup(workingDirectory: string, targetSessionId: string, checkpointId?: string): Promise<WorkspaceBackupPublicEntry[]> {
-    const lookup = await this.findWorkspaceBackup(workingDirectory, targetSessionId);
-    if (!lookup) throw new Error(`Unknown workspace backup: ${targetSessionId}`);
-    if (!lookup.metadata) throw new Error(lookup.failureReason ?? `Workspace backup is unavailable: ${targetSessionId}`);
-    await this.guardLiveSession(targetSessionId);
+    return this.withSessionLock(targetSessionId, async () => {
+      const lookup = await this.findWorkspaceBackup(workingDirectory, targetSessionId);
+      if (!lookup) throw new Error(`Unknown workspace backup: ${targetSessionId}`);
+      if (!lookup.metadata) throw new Error(lookup.failureReason ?? `Workspace backup is unavailable: ${targetSessionId}`);
+      await this.guardLiveSession(targetSessionId);
 
-    const manager = await SessionBackupManager.openExisting({ sessionDir: lookup.sessionDir });
-    
-    // Validate checkpoint exists before creating safety checkpoint
-    if (checkpointId) {
-      const state = manager.getPublicState();
-      const checkpointExists = state.checkpoints.some(cp => cp.id === checkpointId);
-      if (!checkpointExists) {
-        throw new Error(`Unknown checkpoint: ${checkpointId}`);
+      const manager = await SessionBackupManager.openExisting({ sessionDir: lookup.sessionDir });
+
+      // Validate checkpoint exists before creating safety checkpoint
+      if (checkpointId) {
+        const state = manager.getPublicState();
+        const checkpointExists = state.checkpoints.some(cp => cp.id === checkpointId);
+        if (!checkpointExists) {
+          throw new Error(`Unknown checkpoint: ${checkpointId}`);
+        }
       }
-    }
-    
-    await manager.createCheckpoint("manual");
-    if (checkpointId) {
-      await manager.restoreCheckpoint(checkpointId);
-    } else {
-      await manager.restoreOriginal();
-    }
-    await this.syncLiveSession(targetSessionId);
-    return await this.listWorkspaceBackups(workingDirectory);
+
+      await manager.createCheckpoint("manual");
+      if (checkpointId) {
+        await manager.restoreCheckpoint(checkpointId);
+      } else {
+        await manager.restoreOriginal();
+      }
+      await this.syncLiveSession(targetSessionId);
+      return await this.listWorkspaceBackups(workingDirectory);
+    });
   }
 
   async deleteCheckpoint(workingDirectory: string, targetSessionId: string, checkpointId: string): Promise<WorkspaceBackupPublicEntry[]> {
-    const lookup = await this.findWorkspaceBackup(workingDirectory, targetSessionId);
-    if (!lookup) throw new Error(`Unknown workspace backup: ${targetSessionId}`);
-    if (!lookup.metadata) throw new Error(lookup.failureReason ?? `Workspace backup is unavailable: ${targetSessionId}`);
-    await this.guardLiveSession(targetSessionId);
+    return this.withSessionLock(targetSessionId, async () => {
+      const lookup = await this.findWorkspaceBackup(workingDirectory, targetSessionId);
+      if (!lookup) throw new Error(`Unknown workspace backup: ${targetSessionId}`);
+      if (!lookup.metadata) throw new Error(lookup.failureReason ?? `Workspace backup is unavailable: ${targetSessionId}`);
+      await this.guardLiveSession(targetSessionId);
 
-    const manager = await SessionBackupManager.openExisting({ sessionDir: lookup.sessionDir });
-    const removed = await manager.deleteCheckpoint(checkpointId);
-    if (!removed) throw new Error(`Unknown checkpoint id: ${checkpointId}`);
-    await this.syncLiveSession(targetSessionId);
-    return await this.listWorkspaceBackups(workingDirectory);
+      const manager = await SessionBackupManager.openExisting({ sessionDir: lookup.sessionDir });
+      const removed = await manager.deleteCheckpoint(checkpointId);
+      if (!removed) throw new Error(`Unknown checkpoint id: ${checkpointId}`);
+      await this.syncLiveSession(targetSessionId);
+      return await this.listWorkspaceBackups(workingDirectory);
+    });
   }
 
   async deleteEntry(workingDirectory: string, targetSessionId: string): Promise<WorkspaceBackupPublicEntry[]> {
-    const lookup = await this.findWorkspaceBackup(workingDirectory, targetSessionId);
-    if (!lookup) throw new Error(`Unknown workspace backup: ${targetSessionId}`);
-    await this.guardLiveSession(targetSessionId);
+    return this.withSessionLock(targetSessionId, async () => {
+      const lookup = await this.findWorkspaceBackup(workingDirectory, targetSessionId);
+      if (!lookup) throw new Error(`Unknown workspace backup: ${targetSessionId}`);
+      await this.guardLiveSession(targetSessionId);
 
-    const liveSession = this.opts.getLiveSession(targetSessionId);
-    if (liveSession) {
-      if (!liveSession.setBackupsEnabledOverride) {
-        throw new Error("Live session backup override is unavailable");
+      const liveSession = this.opts.getLiveSession(targetSessionId);
+      if (liveSession) {
+        if (!liveSession.setBackupsEnabledOverride) {
+          throw new Error("Live session backup override is unavailable");
+        }
+        await liveSession.setBackupsEnabledOverride(false);
       }
-      await liveSession.setBackupsEnabledOverride(false);
-    }
 
-    await fs.rm(lookup.sessionDir, { recursive: true, force: true });
-    return await this.listWorkspaceBackups(workingDirectory);
+      await fs.rm(lookup.sessionDir, { recursive: true, force: true });
+      return await this.listWorkspaceBackups(workingDirectory);
+    });
   }
 
   async getCheckpointDelta(

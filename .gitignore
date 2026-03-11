@@ -32,4 +32,4 @@ uploads/
 .idea/
 *.swp
 *~
-/.agents/skills/ui-ux-pro-max/scripts/__pycache__
+__pycache__/

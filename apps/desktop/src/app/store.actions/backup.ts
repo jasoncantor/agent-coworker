@@ -240,7 +240,6 @@ export function createWorkspaceBackupActions(
         return;
       }
 
-      const runtime = get().threadRuntimeById[thread.id];
       const ok = sendThread(get, thread.id, (sessionId) => ({
         type: "set_config",
         sessionId,
@@ -255,7 +254,7 @@ export function createWorkspaceBackupActions(
 
       appendThreadTranscript(thread.id, "client", {
         type: "set_config",
-        sessionId: runtime?.sessionId,
+        sessionId: targetSessionId,
         config: {
           backupsEnabled: enabled,
         },

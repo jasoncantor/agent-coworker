@@ -189,7 +189,7 @@ export type SessionContext = {
     }>
   ) => void;
   emitConfigUpdated: () => void;
-  syncSessionBackupAvailability?: () => Promise<void>;
+  syncSessionBackupAvailability: () => Promise<void>;
   refreshProviderStatus: () => Promise<void>;
   emitProviderCatalog: () => Promise<void>;
 };

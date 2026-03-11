@@ -280,7 +280,7 @@ export class AgentSession {
       queuePersistSessionSnapshot: (reason) => this.queuePersistSessionSnapshot(reason),
       updateSessionInfo: (patch) => this.metadataManager.updateSessionInfo(patch),
       emitConfigUpdated: () => this.metadataManager.emitConfigUpdated(),
-      syncSessionBackupAvailability: undefined,
+      syncSessionBackupAvailability: async () => {},
       refreshProviderStatus: async () => await this.providerCatalogManager.refreshProviderStatus(),
       emitProviderCatalog: async () => await this.providerCatalogManager.emitProviderCatalog(),
     };
@@ -750,6 +750,10 @@ export class AgentSession {
   async deleteSession(targetSessionId: string) {
     await this.adminManager.deleteSession(targetSessionId);
   }
+
+  // Each workspace backup method calls getSessionBackupState() first to ensure
+  // the backup controller is initialized (lazy init) before the admin manager
+  // accesses backup data. This is intentional coupling, not redundancy.
 
   async listWorkspaceBackups() {
     await this.backupController.getSessionBackupState();
