@@ -66,6 +66,7 @@ describe("sessionDb mappers", () => {
       todos_json: "[]",
       harness_context_json: "{\"runId\":\"r-1\"}",
       cost_tracker_json: "{\"sessionId\":\"sess-2\",\"totalTurns\":1,\"totalPromptTokens\":10,\"totalCompletionTokens\":5,\"totalTokens\":15,\"estimatedTotalCostUsd\":0.001,\"costTrackingAvailable\":true,\"byModel\":[],\"turns\":[],\"budgetStatus\":{\"configured\":false,\"warnAtUsd\":null,\"stopAtUsd\":null,\"warningTriggered\":false,\"stopTriggered\":false,\"currentCostUsd\":0.001},\"createdAt\":\"2026-02-19T00:00:00.000Z\",\"updatedAt\":\"2026-02-19T00:00:01.000Z\"}",
+      backups_enabled_override: null,
     });
 
     expect(mapped).toMatchObject({
@@ -156,6 +157,7 @@ describe("sessionDb mappers", () => {
         title: "hello",
         model: "gpt-5.2",
         working_directory: "/workspace",
+        backups_enabled_override: null,
       }),
     ).toThrow("Invalid persisted session row");
   });
@@ -177,6 +179,7 @@ describe("sessionDb mappers", () => {
         output_directory: null,
         uploads_directory: null,
         enable_mcp: 1,
+        backups_enabled_override: null,
         has_pending_ask: 0,
         has_pending_approval: 1,
         message_count: 12,
@@ -210,6 +213,7 @@ describe("sessionDb mappers", () => {
         output_directory: null,
         uploads_directory: null,
         enable_mcp: 1,
+        backups_enabled_override: null,
         has_pending_ask: 0,
         has_pending_approval: 1,
         message_count: 12,
