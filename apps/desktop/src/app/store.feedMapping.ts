@@ -56,7 +56,7 @@ function humanizeUnderscoreLabel(value: string): string {
 
 function formatObservabilityDiagnosticLine(evt: {
   enabled: boolean;
-  health: { status: unknown; reason: unknown; message?: unknown };
+  health: { status?: unknown; reason?: unknown; message?: unknown };
   config?: unknown;
 }): string {
   const configured = isRecord(evt.config) && typeof evt.config.configured === "boolean" ? evt.config.configured : false;
@@ -787,7 +787,7 @@ const transcriptObservabilityStatusPayloadSchema = z.object({
     status: z.unknown(),
     reason: z.unknown(),
     message: z.unknown().optional(),
-  }).passthrough(),
+  }),
   config: z.unknown().optional(),
 }).passthrough();
 
