@@ -144,18 +144,18 @@ describe("desktop updates page", () => {
           phase: "downloaded",
           packaged: true,
           release: {
-            version: "0.1.19",
-            releaseName: "v0.1.19",
-            releaseDate: "2026-03-11T12:00:00.000Z",
-            releaseNotes: "<h1>Cowork 0.1.19</h1><p>This release adds session usage tracking and auth persistence improvements.</p><ul><li>Usage budgets</li></ul>",
-            releasePageUrl: "https://github.com/mweinbach/agent-coworker/releases/tag/v0.1.19",
+            version: "0.1.20",
+            releaseName: "v0.1.20",
+            releaseDate: "2026-03-12T12:00:00.000Z",
+            releaseNotes: "<h1>Cowork 0.1.20</h1><p>This release adds session usage tracking and auth persistence improvements.</p><ul><li>Usage budgets</li></ul>",
+            releasePageUrl: "https://github.com/mweinbach/agent-coworker/releases/tag/v0.1.20",
           },
         } as any,
       }),
     );
 
     expect(html).toContain("<h1");
-    expect(html).toContain("Cowork 0.1.19</h1>");
+    expect(html).toContain("Cowork 0.1.20</h1>");
     expect(html).toContain("<p>This release adds session usage tracking and auth persistence improvements.</p>");
     expect(html).toContain("<li");
     expect(html).toContain("Usage budgets</li>");
