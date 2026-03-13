@@ -21,6 +21,10 @@ import { AgentSession } from "./session/AgentSession";
 import { SessionDb } from "./sessionDb";
 import { WorkspaceBackupService } from "./workspaceBackups";
 import {
+  ConversationSearchService,
+  type ConversationSearchServiceOptions,
+} from "./conversationSearch";
+import {
   WEBSOCKET_PROTOCOL_VERSION,
   type ServerEvent,
 } from "./protocol";
@@ -78,7 +82,7 @@ async function persistProjectConfigPatch(
   patch: Partial<
     Pick<
       AgentConfig,
-      "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars"
+      "provider" | "model" | "subAgentModel" | "enableMcp" | "conversationSearchEnabled" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars"
     >
   > & {
     clearToolOutputOverflowChars?: boolean;
@@ -137,7 +141,7 @@ function mergeConfigPatch(
   patch: Partial<
     Pick<
       AgentConfig,
-      "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars"
+      "provider" | "model" | "subAgentModel" | "enableMcp" | "conversationSearchEnabled" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars"
     >
   > & {
     clearToolOutputOverflowChars?: boolean;
@@ -174,6 +178,9 @@ export interface StartAgentServerOptions {
   connectProviderImpl?: typeof connectModelProvider;
   getAiCoworkerPathsImpl?: typeof getAiCoworkerPaths;
   runTurnImpl?: typeof runTurnFn;
+  conversationSearchServiceFactory?: (
+    opts: ConversationSearchServiceOptions,
+  ) => Promise<ConversationSearchService> | ConversationSearchService;
 }
 
 export async function startAgentServer(
@@ -224,8 +231,16 @@ export async function startAgentServer(
 
   const { prompt: system, discoveredSkills } = await loadSystemPromptWithSkills(config);
   const getAiCoworkerPathsImpl = opts.getAiCoworkerPathsImpl ?? getAiCoworkerPathsDefault;
+  const coworkPaths = getAiCoworkerPathsImpl({ homedir: opts.homedir });
   const sessionDb = await SessionDb.create({
-    paths: getAiCoworkerPathsImpl({ homedir: opts.homedir }),
+    paths: coworkPaths,
+  });
+  const conversationSearchService = await (
+    opts.conversationSearchServiceFactory ??
+    (async (serviceOpts: ConversationSearchServiceOptions) => await ConversationSearchService.create(serviceOpts))
+  )({
+    paths: coworkPaths,
+    sessionDb,
   });
   const sessionBindings = new Map<string, SessionBinding>();
   const workspaceBackupService = new WorkspaceBackupService({
@@ -285,7 +300,7 @@ export async function startAgentServer(
           patch: Partial<
             Pick<
               AgentConfig,
-              "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars"
+              "provider" | "model" | "subAgentModel" | "enableMcp" | "conversationSearchEnabled" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars"
             >
           > & {
             clearToolOutputOverflowChars?: boolean;
@@ -297,6 +312,7 @@ export async function startAgentServer(
           }
         : undefined,
       sessionDb,
+      conversationSearchService,
       emit,
       createSubagentSessionImpl: subagentOps.create,
       listSubagentSessionsImpl: subagentOps.list,
@@ -659,6 +675,7 @@ export async function startAgentServer(
           void session.emitMcpServers();
           // Feature 7: push backup state on connect
           void session.getSessionBackupState();
+          void session.emitConversationSearchStatus();
           if (isResume) {
             for (const evt of session.drainDisconnectedReplayEvents()) {
               emitToCurrentSocket(evt);
@@ -761,6 +778,11 @@ export async function startAgentServer(
       }
     }
     sessionBindings.clear();
+    try {
+      await conversationSearchService.dispose();
+    } catch {
+      // ignore
+    }
     try {
       sessionDb.close();
     } catch {

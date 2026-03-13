@@ -22,6 +22,11 @@ import type {
   WorkspaceBackupDeltaPreview,
   WorkspaceBackupPublicEntry,
 } from "./sessionBackup";
+import type {
+  ConversationSearchMode,
+  ConversationSearchResult,
+  ConversationSearchStatusPayload,
+} from "./conversationSearch/types";
 import type { PersistentSubagentSummary, SessionKind, SubagentAgentType } from "../shared/persistentSubagents";
 export { ASK_SKIP_TOKEN } from "../shared/ask";
 
@@ -32,6 +37,7 @@ export type SessionConfigPatch = {
   yolo?: boolean;
   observabilityEnabled?: boolean;
   backupsEnabled?: boolean;
+  conversationSearchEnabled?: boolean;
   subAgentModel?: string;
   maxSteps?: number;
   toolOutputOverflowChars?: number | null;
@@ -44,6 +50,7 @@ export type SessionConfigState = {
   observabilityEnabled: boolean;
   backupsEnabled: boolean;
   defaultBackupsEnabled: boolean;
+  defaultConversationSearchEnabled: boolean;
   subAgentModel: string;
   maxSteps: number;
   toolOutputOverflowChars: number | null;
@@ -118,6 +125,20 @@ export type ClientMessage =
   | { type: "workspace_backup_delete_checkpoint"; sessionId: string; targetSessionId: string; checkpointId: string }
   | { type: "workspace_backup_delete_entry"; sessionId: string; targetSessionId: string }
   | { type: "workspace_backup_delta_get"; sessionId: string; targetSessionId: string; checkpointId: string }
+  | { type: "conversation_search_status_get"; sessionId: string }
+  | { type: "conversation_search_models_download"; sessionId: string }
+  | { type: "conversation_search_models_cancel"; sessionId: string }
+  | { type: "conversation_search_models_delete"; sessionId: string }
+  | { type: "conversation_search_index_rebuild"; sessionId: string; workspacePath?: string }
+  | {
+    type: "conversation_search";
+    sessionId: string;
+    query: string;
+    offset?: number;
+    limit?: number;
+    mode?: ConversationSearchMode;
+    workspacePath?: string;
+  }
   | { type: "harness_context_get"; sessionId: string }
   | { type: "harness_context_set"; sessionId: string; context: HarnessContextPayload }
   | { type: "reset"; sessionId: string }
@@ -377,6 +398,19 @@ export type ServerEvent =
   | { type: "subagent_created"; sessionId: string; subagent: PersistentSubagentSummary }
   | { type: "subagent_sessions"; sessionId: string; subagents: PersistentSubagentSummary[] }
   | { type: "session_deleted"; sessionId: string; targetSessionId: string }
+  | ({ type: "conversation_search_status"; sessionId: string } & ConversationSearchStatusPayload)
+  | {
+    type: "conversation_search_results";
+    sessionId: string;
+    workspacePath: string;
+    query: string;
+    mode: ConversationSearchMode;
+    offset: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+    results: ConversationSearchResult[];
+  }
   | {
     type: "session_config";
     sessionId: string;
@@ -386,7 +420,7 @@ export type ServerEvent =
   | { type: "error"; sessionId: string; message: string; code: ServerErrorCode; source: ServerErrorSource }
   | { type: "pong"; sessionId: string };
 
-export const WEBSOCKET_PROTOCOL_VERSION = "7.15";
+export const WEBSOCKET_PROTOCOL_VERSION = "7.16";
 
 export const CLIENT_MESSAGE_TYPES = [
   "client_hello",
@@ -432,6 +466,12 @@ export const CLIENT_MESSAGE_TYPES = [
   "workspace_backup_delete_checkpoint",
   "workspace_backup_delete_entry",
   "workspace_backup_delta_get",
+  "conversation_search_status_get",
+  "conversation_search_models_download",
+  "conversation_search_models_cancel",
+  "conversation_search_models_delete",
+  "conversation_search_index_rebuild",
+  "conversation_search",
   "harness_context_get",
   "harness_context_set",
   "reset",
@@ -490,6 +530,8 @@ export const SERVER_EVENT_TYPES = [
   "subagent_created",
   "subagent_sessions",
   "session_deleted",
+  "conversation_search_status",
+  "conversation_search_results",
   "session_config",
   "file_uploaded",
   "error",

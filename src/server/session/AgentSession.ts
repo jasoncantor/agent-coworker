@@ -29,6 +29,7 @@ import {
   writePersistedSessionSnapshot,
 } from "../sessionStore";
 import { DEFAULT_SESSION_TITLE, generateSessionTitle } from "../sessionTitleService";
+import { createConversationSearchToolControl } from "../conversationSearch";
 import { HistoryManager } from "./HistoryManager";
 import { InteractionManager } from "./InteractionManager";
 import { McpManager } from "./McpManager";
@@ -127,6 +128,8 @@ export class AgentSession {
   private readonly metadataManager: SessionMetadataManager;
   private readonly adminManager: SessionAdminManager;
   private readonly backupController: SessionBackupController;
+  private conversationSearchUnsubscribe: (() => void) | null = null;
+  private conversationSearchToolReady = false;
   private bufferDisconnectedEvents = false;
   private disconnectedReplayEvents: ServerEvent[] = [];
 
@@ -148,6 +151,7 @@ export class AgentSession {
     persistProjectConfigPatchImpl?: (patch: PersistedProjectConfigPatch) => Promise<void> | void;
     generateSessionTitleImpl?: typeof generateSessionTitle;
     sessionDb?: SessionDb | null;
+    conversationSearchService?: SessionDependencies["conversationSearchService"];
     writePersistedSessionSnapshotImpl?: typeof writePersistedSessionSnapshot;
     createSubagentSessionImpl?: SessionDependencies["createSubagentSessionImpl"];
     listSubagentSessionsImpl?: SessionDependencies["listSubagentSessionsImpl"];
@@ -227,6 +231,7 @@ export class AgentSession {
       persistProjectConfigPatchImpl: opts.persistProjectConfigPatchImpl,
       generateSessionTitleImpl: opts.generateSessionTitleImpl ?? generateSessionTitle,
       sessionDb: opts.sessionDb ?? null,
+      conversationSearchService: opts.conversationSearchService ?? null,
       writePersistedSessionSnapshotImpl: opts.writePersistedSessionSnapshotImpl ?? writePersistedSessionSnapshot,
       createSubagentSessionImpl: opts.createSubagentSessionImpl,
       listSubagentSessionsImpl: opts.listSubagentSessionsImpl,
@@ -313,6 +318,18 @@ export class AgentSession {
       writePersistedSessionSnapshot: this.deps.writePersistedSessionSnapshotImpl,
       buildCanonicalSnapshot: (updatedAt) => this.buildCanonicalSnapshot(updatedAt),
       buildPersistedSnapshotAt: (updatedAt) => this.buildPersistedSnapshotAt(updatedAt),
+      onPersisted: async (snapshot) => {
+        if (
+          snapshot.sessionKind === "root" &&
+          this.deps.conversationSearchService &&
+          (this.state.config.conversationSearchEnabled ?? false)
+        ) {
+          await this.deps.conversationSearchService.notifySessionPersisted({
+            workspacePath: snapshot.workingDirectory,
+            sessionId: this.id,
+          });
+        }
+      },
       emitTelemetry: (name, status, attributes, durationMs) => this.emitTelemetry(name, status, attributes, durationMs),
       emitError: (message) => this.emitError("internal_error", "session", message),
       formatError: (err) => this.formatErrorMessage(err),
@@ -372,6 +389,18 @@ export class AgentSession {
     });
     this.adminManager = new SessionAdminManager(this.context);
 
+    if (this.sessionKind === "root" && this.deps.conversationSearchService) {
+      this.conversationSearchToolReady = this.hasConversationSearchTool();
+      this.conversationSearchUnsubscribe = this.deps.conversationSearchService.subscribe((workspacePath) => {
+        if (workspacePath && workspacePath !== this.state.config.workingDirectory) return;
+        void this.handleConversationSearchStatusChanged();
+      });
+      void this.deps.conversationSearchService.registerWorkspace(
+        this.state.config.workingDirectory,
+        this.state.config.conversationSearchEnabled ?? false,
+      );
+    }
+
     this.historyManager.refreshRuntimeMessagesFromHistory();
 
     // Initialize cost tracker for this session.
@@ -404,6 +433,7 @@ export class AgentSession {
     generateSessionTitleImpl?: typeof generateSessionTitle;
     sessionDb?: SessionDb | null;
     writePersistedSessionSnapshotImpl?: typeof writePersistedSessionSnapshot;
+    conversationSearchService?: SessionDependencies["conversationSearchService"];
     createSubagentSessionImpl?: SessionDependencies["createSubagentSessionImpl"];
     listSubagentSessionsImpl?: SessionDependencies["listSubagentSessionsImpl"];
     sendSubagentInputImpl?: SessionDependencies["sendSubagentInputImpl"];
@@ -463,6 +493,7 @@ export class AgentSession {
       generateSessionTitleImpl: opts.generateSessionTitleImpl,
       sessionDb: opts.sessionDb,
       writePersistedSessionSnapshotImpl: opts.writePersistedSessionSnapshotImpl,
+      conversationSearchService: opts.conversationSearchService,
       createSubagentSessionImpl: opts.createSubagentSessionImpl,
       listSubagentSessionsImpl: opts.listSubagentSessionsImpl,
       sendSubagentInputImpl: opts.sendSubagentInputImpl,
@@ -742,6 +773,8 @@ export class AgentSession {
   dispose(reason: string) {
     this.state.abortController?.abort();
     this.interactionManager.rejectAllPending(`Session disposed (${reason})`);
+    this.conversationSearchUnsubscribe?.();
+    this.conversationSearchUnsubscribe = null;
     this.deps.harnessContextStore.clear(this.id);
     void this.backupController.closeSessionBackup();
   }
@@ -756,6 +789,36 @@ export class AgentSession {
 
   async listSessions() {
     await this.adminManager.listSessions();
+  }
+
+  async emitConversationSearchStatus() {
+    if (this.sessionKind !== "root") return;
+    await this.adminManager.emitConversationSearchStatus();
+  }
+
+  async getConversationSearchStatus() {
+    if (this.sessionKind !== "root") return null;
+    return await this.adminManager.getConversationSearchStatus();
+  }
+
+  async downloadConversationSearchModels() {
+    await this.adminManager.downloadConversationSearchModels();
+  }
+
+  async cancelConversationSearchModels() {
+    await this.adminManager.cancelConversationSearchModels();
+  }
+
+  async deleteConversationSearchModels() {
+    await this.adminManager.deleteConversationSearchModels();
+  }
+
+  async rebuildConversationSearchIndex(workspacePath?: string) {
+    await this.adminManager.rebuildConversationSearchIndex(workspacePath);
+  }
+
+  async searchConversations(query: string, opts: { workspacePath?: string; mode?: "keyword" | "semantic"; offset?: number; limit?: number }) {
+    await this.adminManager.searchConversations(query, opts);
   }
 
   async listSubagentSessions() {
@@ -926,6 +989,26 @@ export class AgentSession {
 
   private log(line: string) {
     this.runtimeSupport.log(line);
+  }
+
+  private async handleConversationSearchStatusChanged() {
+    if (this.sessionKind !== "root" || !this.deps.conversationSearchService) return;
+    await this.emitConversationSearchStatus();
+    const toolReady = this.hasConversationSearchTool();
+    if (toolReady !== this.conversationSearchToolReady) {
+      this.conversationSearchToolReady = toolReady;
+      this.listTools();
+    }
+  }
+
+  private hasConversationSearchTool(): boolean {
+    return Boolean(
+      createConversationSearchToolControl({
+        service: this.deps.conversationSearchService,
+        workspacePath: this.state.config.workingDirectory,
+        enabled: this.state.config.conversationSearchEnabled ?? false,
+      }),
+    );
   }
 
   private attachCostTrackerListeners(tracker: SessionCostTracker) {

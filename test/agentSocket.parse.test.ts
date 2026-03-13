@@ -86,6 +86,7 @@ describe("agent socket parser", () => {
           observabilityEnabled: true,
           backupsEnabled: true,
           defaultBackupsEnabled: true,
+          defaultConversationSearchEnabled: false,
           toolOutputOverflowChars: 25000,
           defaultToolOutputOverflowChars: 25000,
           subAgentModel: "gpt-5.2",
@@ -103,6 +104,85 @@ describe("agent socket parser", () => {
             },
           },
         },
+      },
+      {
+        type: "conversation_search_status",
+        sessionId: "s-1",
+        workspacePath: "/workspace",
+        enabled: true,
+        availability: "ready",
+        models: {
+          query: {
+            key: "query",
+            modelId: "perplexity-ai/pplx-embed-v1-0.6b",
+            revision: "main",
+            status: "ready",
+            bytesDownloaded: 100,
+            bytesTotal: 100,
+            progressPercent: 100,
+            downloadedAt: "2026-03-13T00:00:00.000Z",
+            error: null,
+          },
+          context: {
+            key: "context",
+            modelId: "perplexity-ai/pplx-embed-context-v1-0.6b",
+            revision: "main",
+            status: "ready",
+            bytesDownloaded: 100,
+            bytesTotal: 100,
+            progressPercent: 100,
+            downloadedAt: "2026-03-13T00:00:00.000Z",
+            error: null,
+          },
+        },
+        download: {
+          status: "idle",
+          activeModel: null,
+          startedAt: null,
+          updatedAt: "2026-03-13T00:00:00.000Z",
+          bytesDownloaded: null,
+          bytesTotal: null,
+          progressPercent: null,
+          canCancel: false,
+          error: null,
+        },
+        index: {
+          status: "ready",
+          sessionCount: 1,
+          chunkCount: 2,
+          lastIndexedAt: "2026-03-13T00:00:01.000Z",
+          lastError: null,
+          updatedAt: "2026-03-13T00:00:01.000Z",
+        },
+      },
+      {
+        type: "conversation_search_results",
+        sessionId: "s-1",
+        workspacePath: "/workspace",
+        query: "tool calling",
+        mode: "keyword",
+        offset: 0,
+        limit: 10,
+        total: 1,
+        hasMore: false,
+        results: [
+          {
+            sessionId: "s-hit",
+            title: "Tool Session",
+            createdAt: "2026-03-12T00:00:00.000Z",
+            updatedAt: "2026-03-13T00:00:00.000Z",
+            messageCount: 2,
+            score: 0.7,
+            hits: [
+              {
+                messageIndex: 0,
+                role: "assistant",
+                snippet: "Used tool calling to inspect files",
+                score: 0.7,
+              },
+            ],
+          },
+        ],
       },
       {
         type: "error",
@@ -292,5 +372,24 @@ describe("agent socket parser", () => {
     expect(parsed.reason).toBe("invalid_event");
     expect(parsed.eventType).toBe("session_usage");
     expect(parsed.message).toContain("expected boolean");
+  });
+
+  test("safeParseServerEvent rejects session_config without defaultConversationSearchEnabled", () => {
+    const raw = JSON.stringify({
+      type: "session_config",
+      sessionId: "s-1",
+      config: {
+        yolo: false,
+        observabilityEnabled: true,
+        backupsEnabled: true,
+        defaultBackupsEnabled: true,
+        toolOutputOverflowChars: 25000,
+        defaultToolOutputOverflowChars: 25000,
+        subAgentModel: "gpt-5.2",
+        maxSteps: 100,
+      },
+    });
+
+    expect(safeParseServerEvent(raw)).toBeNull();
   });
 });

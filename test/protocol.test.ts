@@ -963,6 +963,99 @@ describe("safeParseClientMessage", () => {
     });
   });
 
+  describe("conversation search", () => {
+    test("conversation search control messages parse as session-scoped requests", () => {
+      for (const type of [
+        "conversation_search_status_get",
+        "conversation_search_models_download",
+        "conversation_search_models_cancel",
+        "conversation_search_models_delete",
+      ] as const) {
+        const msg = expectOk(JSON.stringify({ type, sessionId: "s1" }));
+        expect(msg.type).toBe(type);
+        expect((msg as { sessionId: string }).sessionId).toBe("s1");
+      }
+    });
+
+    test("conversation_search_index_rebuild parses optional workspacePath", () => {
+      const msg = expectOk(JSON.stringify({
+        type: "conversation_search_index_rebuild",
+        sessionId: "s1",
+        workspacePath: "/tmp/project",
+      }));
+      expect(msg.type).toBe("conversation_search_index_rebuild");
+      if (msg.type === "conversation_search_index_rebuild") {
+        expect(msg.workspacePath).toBe("/tmp/project");
+      }
+    });
+
+    test("conversation_search parses valid query, mode, and pagination", () => {
+      const msg = expectOk(JSON.stringify({
+        type: "conversation_search",
+        sessionId: "s1",
+        query: "tool calling",
+        offset: 5,
+        limit: 25,
+        mode: "semantic",
+        workspacePath: "/tmp/project",
+      }));
+      expect(msg.type).toBe("conversation_search");
+      if (msg.type === "conversation_search") {
+        expect(msg.query).toBe("tool calling");
+        expect(msg.offset).toBe(5);
+        expect(msg.limit).toBe(25);
+        expect(msg.mode).toBe("semantic");
+        expect(msg.workspacePath).toBe("/tmp/project");
+      }
+    });
+
+    test("conversation search messages validate required fields and bounds", () => {
+      expect(expectErr(JSON.stringify({ type: "conversation_search_status_get" }))).toBe(
+        "conversation_search_status_get missing sessionId",
+      );
+      expect(expectErr(JSON.stringify({
+        type: "conversation_search_index_rebuild",
+        sessionId: "s1",
+        workspacePath: "",
+      }))).toBe("conversation_search_index_rebuild invalid workspacePath");
+      expect(expectErr(JSON.stringify({
+        type: "conversation_search",
+        sessionId: "s1",
+        query: "   ",
+      }))).toBe("conversation_search missing/invalid query");
+      expect(expectErr(JSON.stringify({
+        type: "conversation_search",
+        sessionId: "s1",
+        query: "history",
+        offset: -1,
+      }))).toBe("conversation_search invalid offset");
+      expect(expectErr(JSON.stringify({
+        type: "conversation_search",
+        sessionId: "s1",
+        query: "history",
+        limit: 0,
+      }))).toBe("conversation_search invalid limit");
+      expect(expectErr(JSON.stringify({
+        type: "conversation_search",
+        sessionId: "s1",
+        query: "history",
+        limit: 26,
+      }))).toBe("conversation_search invalid limit");
+      expect(expectErr(JSON.stringify({
+        type: "conversation_search",
+        sessionId: "s1",
+        query: "history",
+        mode: "fuzzy",
+      }))).toBe("conversation_search invalid mode");
+      expect(expectErr(JSON.stringify({
+        type: "conversation_search",
+        sessionId: "s1",
+        query: "history",
+        workspacePath: "",
+      }))).toBe("conversation_search invalid workspacePath");
+    });
+  });
+
   describe("delete_session", () => {
     test("valid delete_session message", () => {
       const msg = expectOk(
@@ -1031,6 +1124,7 @@ describe("safeParseClientMessage", () => {
             yolo: true,
             observabilityEnabled: false,
             backupsEnabled: true,
+            conversationSearchEnabled: true,
             toolOutputOverflowChars: null,
             subAgentModel: "gpt-5.2",
             maxSteps: 25,
@@ -1049,6 +1143,7 @@ describe("safeParseClientMessage", () => {
         expect(msg.config.yolo).toBe(true);
         expect(msg.config.observabilityEnabled).toBe(false);
         expect(msg.config.backupsEnabled).toBe(true);
+        expect(msg.config.conversationSearchEnabled).toBe(true);
         expect(msg.config.toolOutputOverflowChars).toBeNull();
         expect(msg.config.subAgentModel).toBe("gpt-5.2");
         expect(msg.config.maxSteps).toBe(25);
@@ -1092,6 +1187,9 @@ describe("safeParseClientMessage", () => {
       expect(
         expectErr(JSON.stringify({ type: "set_config", sessionId: "s1", config: { backupsEnabled: "no" } })),
       ).toBe("set_config config.backupsEnabled must be boolean");
+      expect(
+        expectErr(JSON.stringify({ type: "set_config", sessionId: "s1", config: { conversationSearchEnabled: "no" } })),
+      ).toBe("set_config config.conversationSearchEnabled must be boolean");
       expect(
         expectErr(
           JSON.stringify({ type: "set_config", sessionId: "s1", config: { toolOutputOverflowChars: -1 } }),
@@ -1711,6 +1809,12 @@ describe("safeParseClientMessage", () => {
       expect(CLIENT_MESSAGE_TYPES.includes("mcp_servers_migrate_legacy")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("subagent_create")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("subagent_sessions_get")).toBe(true);
+      expect(CLIENT_MESSAGE_TYPES.includes("conversation_search_status_get")).toBe(true);
+      expect(CLIENT_MESSAGE_TYPES.includes("conversation_search_models_download")).toBe(true);
+      expect(CLIENT_MESSAGE_TYPES.includes("conversation_search_models_cancel")).toBe(true);
+      expect(CLIENT_MESSAGE_TYPES.includes("conversation_search_models_delete")).toBe(true);
+      expect(CLIENT_MESSAGE_TYPES.includes("conversation_search_index_rebuild")).toBe(true);
+      expect(CLIENT_MESSAGE_TYPES.includes("conversation_search")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("commands")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("provider_catalog")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("provider_auth_methods")).toBe(true);
@@ -1725,6 +1829,8 @@ describe("safeParseClientMessage", () => {
       expect(SERVER_EVENT_TYPES.includes("subagent_created")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("subagent_sessions")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("model_stream_chunk")).toBe(true);
+      expect(SERVER_EVENT_TYPES.includes("conversation_search_status")).toBe(true);
+      expect(SERVER_EVENT_TYPES.includes("conversation_search_results")).toBe(true);
     });
 
     test("server_hello supports protocolVersion", () => {
@@ -1762,6 +1868,93 @@ describe("safeParseClientMessage", () => {
         expect(evt.code).toBe("invalid_json");
         expect(evt.source).toBe("protocol");
       }
+    });
+
+    test("conversation_search_status is a valid server event union member", () => {
+      const evt: ServerEvent = {
+        type: "conversation_search_status",
+        sessionId: "s1",
+        workspacePath: "/tmp/project",
+        enabled: true,
+        availability: "ready",
+        models: {
+          query: {
+            key: "query",
+            modelId: "perplexity-ai/pplx-embed-v1-0.6b",
+            revision: "main",
+            status: "ready",
+            bytesDownloaded: 128,
+            bytesTotal: 128,
+            progressPercent: 100,
+            downloadedAt: "2026-03-13T00:00:00.000Z",
+            error: null,
+          },
+          context: {
+            key: "context",
+            modelId: "perplexity-ai/pplx-embed-context-v1-0.6b",
+            revision: "main",
+            status: "ready",
+            bytesDownloaded: 256,
+            bytesTotal: 256,
+            progressPercent: 100,
+            downloadedAt: "2026-03-13T00:00:00.000Z",
+            error: null,
+          },
+        },
+        download: {
+          status: "idle",
+          activeModel: null,
+          startedAt: null,
+          updatedAt: "2026-03-13T00:00:00.000Z",
+          bytesDownloaded: null,
+          bytesTotal: null,
+          progressPercent: null,
+          canCancel: false,
+          error: null,
+        },
+        index: {
+          status: "ready",
+          sessionCount: 2,
+          chunkCount: 6,
+          lastIndexedAt: "2026-03-13T00:00:01.000Z",
+          lastError: null,
+          updatedAt: "2026-03-13T00:00:01.000Z",
+        },
+      };
+      expect(evt.type).toBe("conversation_search_status");
+    });
+
+    test("conversation_search_results is a valid server event union member", () => {
+      const evt: ServerEvent = {
+        type: "conversation_search_results",
+        sessionId: "s1",
+        workspacePath: "/tmp/project",
+        query: "tool calling",
+        mode: "keyword",
+        offset: 0,
+        limit: 10,
+        total: 1,
+        hasMore: false,
+        results: [
+          {
+            sessionId: "s-result",
+            title: "Tool Calling Session",
+            createdAt: "2026-03-12T00:00:00.000Z",
+            updatedAt: "2026-03-13T00:00:00.000Z",
+            messageCount: 3,
+            score: 0.9,
+            hits: [
+              {
+                messageIndex: 1,
+                role: "assistant",
+                snippet: "Used tool calling to inspect the repository.",
+                score: 0.9,
+              },
+            ],
+          },
+        ],
+      };
+      expect(evt.type).toBe("conversation_search_results");
     });
   });
 

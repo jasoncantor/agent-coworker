@@ -2,6 +2,7 @@ import type { ToolContext } from "./context";
 
 import { createAskTool } from "./ask";
 import { createBashTool } from "./bash";
+import { createConversationSearchTool } from "./conversationSearch";
 import { createEditTool } from "./edit";
 import { createGlobTool } from "./glob";
 import { createGrepTool } from "./grep";
@@ -44,12 +45,19 @@ export function createTools(ctx: ToolContext): Record<string, any> {
     usage: createUsageTool(ctx),
   };
 
+  const toolsWithConversationSearch = ctx.conversationSearchControl
+    ? {
+        ...baseTools,
+        conversationSearch: createConversationSearchTool(ctx),
+      }
+    : baseTools;
+
   if (!ctx.persistentAgentControl) {
-    return baseTools;
+    return toolsWithConversationSearch;
   }
 
   return {
-    ...baseTools,
+    ...toolsWithConversationSearch,
     spawnPersistentAgent: createSpawnPersistentAgentTool(ctx),
     listPersistentAgents: createListPersistentAgentsTool(ctx),
     sendAgentInput: createSendAgentInputTool(ctx),

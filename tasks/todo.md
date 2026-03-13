@@ -1,3 +1,24 @@
+# Task: Add optional workspace conversation search with managed local models
+
+## Plan
+- [x] Extend shared config/protocol/types for workspace-scoped conversation search defaults, websocket status/control messages, and result events.
+- [x] Implement the `src/server/conversationSearch` subsystem with managed local model downloads, shared state/locks, SQLite-backed indexing, and keyword/semantic search.
+- [x] Wire conversation search into session listing/admin handlers, tool registration, session persistence invalidation, and desktop workspace-default syncing.
+- [x] Add regression coverage for protocol parsing, workspace scoping, search service lifecycle, and server websocket flows.
+- [x] Run repo-required verification: focused tests, full `bun test`, `bun run typecheck`, `bun run docs:check`, `bun run build:server-binary`, `bun run build:desktop-resources`, and `bun run desktop:build`.
+
+## Review
+- Added optional workspace-scoped conversation search end to end: persisted workspace defaults, websocket status/control/result messages, a shared `~/.cowork/conversation-search` service with managed model/index state, workspace-filtered session listing/search, and conditional `conversationSearch` tool exposure.
+- Added regression coverage across protocol parsing, client event parsing, session DB workspace filtering, direct search-service lifecycle/indexing behavior, websocket control/search flows, and desktop workspace-default sync handling.
+- Verification:
+  - `HOME=$(mktemp -d /tmp/agent-coworker-test-home.XXXXXX) bun test` -> pass (`2232 pass, 2 skip, 0 fail`)
+  - `bun run typecheck` -> pass
+  - `bun run docs:check` -> pass
+  - `bun run build:server-binary` -> pass
+  - `bun run build:desktop-resources` -> pass
+  - `bun run desktop:build` -> pass; notarization skipped because Apple notarization credentials were not fully configured
+  - `bunx tsc --noEmit -p apps/TUI/tsconfig.json` -> pass
+
 # Task: Stop Harness Full from running on every main push
 
 ## Plan

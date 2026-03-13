@@ -123,6 +123,7 @@ const persistedWorkspaceSchema = z.object({
   providerOptions: workspaceProviderOptionsSchema.optional(),
   defaultEnableMcp: z.preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean()),
   defaultBackupsEnabled: z.preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean()),
+  defaultConversationSearchEnabled: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()),
   yolo: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()),
 }).passthrough();
 

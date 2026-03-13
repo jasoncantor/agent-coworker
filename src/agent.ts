@@ -7,6 +7,7 @@ import { createRuntime } from "./runtime";
 import type { RuntimeModelRawEvent } from "./runtime/types";
 import type { OpenAiContinuationState } from "./shared/openaiContinuation";
 import type { PersistentAgentControl } from "./tools";
+import type { ConversationSearchMode, ConversationSearchResponse } from "./server/conversationSearch";
 import type { AgentConfig, ModelMessage, TodoItem } from "./types";
 import type { SessionCostTracker, SessionUsageSnapshot } from "./session/costTracker";
 import { loadMCPServers, loadMCPTools } from "./mcp";
@@ -52,6 +53,14 @@ export interface RunTurnParams {
   allMessages?: ModelMessage[];
   providerState?: OpenAiContinuationState | null;
   persistentAgentControl?: PersistentAgentControl;
+  conversationSearchControl?: {
+    search: (opts: {
+      query: string;
+      mode?: ConversationSearchMode;
+      limit?: number;
+      offset?: number;
+    }) => Promise<ConversationSearchResponse>;
+  };
 
   log: (line: string) => void;
   askUser: (question: string, options?: string[]) => Promise<string>;
@@ -232,6 +241,7 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
       availableSkills: discoveredSkills,
       turnUserPrompt: extractTurnUserPrompt(messages),
       persistentAgentControl: params.persistentAgentControl,
+      conversationSearchControl: params.conversationSearchControl,
       costTracker: params.costTracker,
       onSessionUsageBudgetUpdated: params.onSessionUsageBudgetUpdated,
     };

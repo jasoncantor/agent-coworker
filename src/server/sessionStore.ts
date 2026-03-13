@@ -628,7 +628,8 @@ export async function writePersistedSessionSnapshot(opts: {
 }
 
 export async function listPersistedSessionSnapshots(
-  paths: Pick<AiCoworkerPaths, "sessionsDir">
+  paths: Pick<AiCoworkerPaths, "sessionsDir">,
+  opts: { workingDirectory?: string } = {},
 ): Promise<PersistedSessionSummary[]> {
   let entries: string[];
   try {
@@ -670,6 +671,7 @@ export async function listPersistedSessionSnapshots(
       ? parsed.session.sessionKind
       : "root";
     if (sessionKind !== "root") continue;
+    if (opts.workingDirectory && parsed.config.workingDirectory !== opts.workingDirectory) continue;
 
     summaries.push({
       sessionId: parsed.sessionId,

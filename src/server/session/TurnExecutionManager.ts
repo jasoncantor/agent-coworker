@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createConversationSearchToolControl } from "../conversationSearch";
 import {
   MODEL_STREAM_NORMALIZER_VERSION,
   normalizeModelStreamPart,
@@ -224,6 +225,14 @@ export class TurnExecutionManager {
                 },
               }
             : undefined,
+          conversationSearchControl:
+            this.context.state.sessionInfo.sessionKind === "root"
+              ? createConversationSearchToolControl({
+                  service: this.context.deps.conversationSearchService,
+                  workspacePath: this.context.state.config.workingDirectory,
+                  enabled: this.context.state.config.conversationSearchEnabled ?? false,
+                })
+              : undefined,
           log: (line) => this.log(line),
           askUser: (q, opts) => this.askUser(q, opts),
           approveCommand: (cmd) => this.approveCommand(cmd),

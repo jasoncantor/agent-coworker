@@ -170,6 +170,10 @@ async function sanitizeWorkspaces(value: unknown): Promise<WorkspaceRecord[]> {
       defaultProvider: asOptionalString(item.defaultProvider) as WorkspaceRecord["defaultProvider"],
       defaultModel: asOptionalString(item.defaultModel),
       defaultSubAgentModel: asOptionalString(item.defaultSubAgentModel),
+      defaultConversationSearchEnabled:
+        typeof item.defaultConversationSearchEnabled === "boolean"
+          ? item.defaultConversationSearchEnabled
+          : false,
       defaultToolOutputOverflowChars: asOptionalNullableNonNegativeInteger(item.defaultToolOutputOverflowChars),
       providerOptions: normalizeWorkspaceProviderOptions(item.providerOptions),
       defaultEnableMcp: typeof item.defaultEnableMcp === "boolean" ? item.defaultEnableMcp : true,

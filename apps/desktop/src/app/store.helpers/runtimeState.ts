@@ -72,6 +72,7 @@ export function defaultWorkspaceRuntime(): WorkspaceRuntime {
     controlConfig: null,
     controlSessionConfig: null,
     controlEnableMcp: null,
+    conversationSearchStatus: null,
     mcpServers: [],
     mcpLegacy: null,
     mcpFiles: [],

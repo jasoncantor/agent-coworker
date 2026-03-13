@@ -60,8 +60,11 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
       if (!rt?.sessionId) return;
       const workspaceRuntime = get().workspaceRuntimeById[thread.workspaceId];
       const harnessBackupsDefault = workspaceRuntime?.controlSessionConfig?.defaultBackupsEnabled;
+      const harnessConversationSearchDefault = workspaceRuntime?.controlSessionConfig?.defaultConversationSearchEnabled;
       const harnessToolOutputOverflowChars = workspaceRuntime?.controlSessionConfig?.defaultToolOutputOverflowChars;
       const backupsEnabled = mode === "explicit" ? ws.defaultBackupsEnabled : harnessBackupsDefault;
+      const conversationSearchEnabled =
+        mode === "explicit" ? ws.defaultConversationSearchEnabled : harnessConversationSearchDefault;
       const toolOutputOverflowChars = mode === "explicit" ? ws.defaultToolOutputOverflowChars : harnessToolOutputOverflowChars;
       const clearToolOutputOverflowChars =
         mode === "explicit"
@@ -71,9 +74,15 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
       // Explicit user-driven default changes should still hit live sessions
       // immediately. Automatic connect-time sync only trusts the harness-
       // sourced default once the control session has provided it.
-      if (typeof backupsEnabled === "boolean" || toolOutputOverflowChars !== undefined || clearToolOutputOverflowChars) {
+      if (
+        typeof backupsEnabled === "boolean" ||
+        typeof conversationSearchEnabled === "boolean" ||
+        toolOutputOverflowChars !== undefined ||
+        clearToolOutputOverflowChars
+      ) {
         const configPatch = {
           ...(typeof backupsEnabled === "boolean" ? { backupsEnabled } : {}),
+          ...(typeof conversationSearchEnabled === "boolean" ? { conversationSearchEnabled } : {}),
           ...(toolOutputOverflowChars !== undefined
             ? { toolOutputOverflowChars }
             : clearToolOutputOverflowChars
@@ -180,6 +189,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         workspacePatch.defaultProvider !== undefined ||
         workspacePatch.defaultModel !== undefined ||
         workspacePatch.defaultSubAgentModel !== undefined ||
+        workspacePatch.defaultConversationSearchEnabled !== undefined ||
         workspacePatch.defaultToolOutputOverflowChars !== undefined ||
         clearDefaultToolOutputOverflowChars === true ||
         workspacePatch.defaultEnableMcp !== undefined ||
@@ -217,6 +227,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         sessionId,
         config: {
           backupsEnabled: workspace.defaultBackupsEnabled,
+          conversationSearchEnabled: workspace.defaultConversationSearchEnabled,
           subAgentModel,
           ...(toolOutputOverflowChars !== undefined
             ? { toolOutputOverflowChars }

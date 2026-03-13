@@ -141,6 +141,23 @@ export function dispatchClientMessage({
       return session.setSessionTitle(message.title);
     case "list_sessions":
       return void session.listSessions();
+    case "conversation_search_status_get":
+      return void session.emitConversationSearchStatus();
+    case "conversation_search_models_download":
+      return void session.downloadConversationSearchModels();
+    case "conversation_search_models_cancel":
+      return void session.cancelConversationSearchModels();
+    case "conversation_search_models_delete":
+      return void session.deleteConversationSearchModels();
+    case "conversation_search_index_rebuild":
+      return void session.rebuildConversationSearchIndex(message.workspacePath);
+    case "conversation_search":
+      return void session.searchConversations(message.query, {
+        workspacePath: message.workspacePath,
+        mode: message.mode,
+        offset: message.offset,
+        limit: message.limit,
+      });
     case "delete_session":
       return void session.deleteSession(message.targetSessionId);
     case "subagent_create":

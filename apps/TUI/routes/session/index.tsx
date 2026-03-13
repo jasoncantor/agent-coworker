@@ -245,16 +245,14 @@ function FeedItemRenderer(props: { item: FeedItem; citationUrlsByIndex?: Readonl
             checkpoints: {(props.item as any).backup.checkpoints.length}
           </text>
           <Show when={(props.item as any).backup.checkpoints.length > 0}>
-            {() => {
-              const latest = (props.item as any).backup.checkpoints[
-                (props.item as any).backup.checkpoints.length - 1
-              ];
-              return (
-                <text fg={theme.textMuted}>
-                  latest: {latest.id} ({latest.trigger}, {latest.changed ? "changed" : "unchanged"}, {formatBytes(latest.patchBytes)})
-                </text>
-              );
-            }}
+            <text fg={theme.textMuted}>
+              latest: {(props.item as any).backup.checkpoints[(props.item as any).backup.checkpoints.length - 1].id} (
+              {(props.item as any).backup.checkpoints[(props.item as any).backup.checkpoints.length - 1].trigger},
+              {" "}
+              {(props.item as any).backup.checkpoints[(props.item as any).backup.checkpoints.length - 1].changed ? "changed" : "unchanged"},
+              {" "}
+              {formatBytes((props.item as any).backup.checkpoints[(props.item as any).backup.checkpoints.length - 1].patchBytes)})
+            </text>
           </Show>
         </box>
       </Match>

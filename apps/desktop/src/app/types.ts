@@ -38,6 +38,7 @@ export type WorkspaceRecord = {
   defaultProvider?: ProviderName;
   defaultModel?: string;
   defaultSubAgentModel?: string;
+  defaultConversationSearchEnabled: boolean;
   defaultToolOutputOverflowChars?: number | null;
   providerOptions?: WorkspaceProviderOptions;
   defaultEnableMcp: boolean;
@@ -136,6 +137,7 @@ export type WorkspaceRuntime = {
   controlConfig: ConfigSubset | null;
   controlSessionConfig: SessionConfigSubset | null;
   controlEnableMcp: boolean | null;
+  conversationSearchStatus: Extract<ServerEvent, { type: "conversation_search_status" }> | null;
   mcpServers: MCPServersEvent["servers"];
   mcpLegacy: MCPServersEvent["legacy"] | null;
   mcpFiles: MCPServersEvent["files"];

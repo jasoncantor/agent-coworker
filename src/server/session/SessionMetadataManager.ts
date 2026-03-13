@@ -34,6 +34,7 @@ export class SessionMetadataManager {
     const providerOptions = pickEditableOpenAiCompatibleProviderOptions(this.context.state.config.providerOptions);
     const defaultBackupsEnabled = this.context.state.config.backupsEnabled ?? true;
     const backupsEnabled = this.context.state.backupsEnabledOverride ?? defaultBackupsEnabled;
+    const defaultConversationSearchEnabled = this.context.state.config.conversationSearchEnabled ?? false;
     const defaultToolOutputOverflowChars = this.context.state.config.projectConfigOverrides?.toolOutputOverflowChars;
     const toolOutputOverflowChars = effectiveToolOutputOverflowChars(this.context.state.config.toolOutputOverflowChars);
     return {
@@ -44,6 +45,7 @@ export class SessionMetadataManager {
         observabilityEnabled: this.context.state.config.observabilityEnabled ?? false,
         backupsEnabled,
         defaultBackupsEnabled,
+        defaultConversationSearchEnabled,
         subAgentModel: this.context.state.config.subAgentModel,
         maxSteps: this.context.state.maxSteps,
         toolOutputOverflowChars,
@@ -200,6 +202,9 @@ export class SessionMetadataManager {
     if (patch.backupsEnabled !== undefined) {
       persistPatch.backupsEnabled = patch.backupsEnabled;
     }
+    if (patch.conversationSearchEnabled !== undefined) {
+      persistPatch.conversationSearchEnabled = patch.conversationSearchEnabled;
+    }
     if (patch.toolOutputOverflowChars !== undefined) {
       persistPatch.toolOutputOverflowChars = patch.toolOutputOverflowChars;
     }
@@ -230,6 +235,12 @@ export class SessionMetadataManager {
     if (patch.backupsEnabled !== undefined) {
       this.context.state.backupsEnabledOverride = null;
       this.context.state.config = { ...this.context.state.config, backupsEnabled: patch.backupsEnabled };
+    }
+    if (patch.conversationSearchEnabled !== undefined) {
+      this.context.state.config = {
+        ...this.context.state.config,
+        conversationSearchEnabled: patch.conversationSearchEnabled,
+      };
     }
     if (normalizedSubAgentModel !== undefined) {
       this.context.state.config = { ...this.context.state.config, subAgentModel: normalizedSubAgentModel };
@@ -269,6 +280,25 @@ export class SessionMetadataManager {
     this.context.emit(this.getSessionConfigEvent());
     if (patch.backupsEnabled !== undefined) {
       await this.context.syncSessionBackupAvailability();
+    }
+    if (
+      patch.conversationSearchEnabled !== undefined &&
+      this.context.state.sessionInfo.sessionKind === "root" &&
+      this.context.deps.conversationSearchService
+    ) {
+      await this.context.deps.conversationSearchService.registerWorkspace(
+        this.context.state.config.workingDirectory,
+        this.context.state.config.conversationSearchEnabled ?? false,
+      );
+      const status = await this.context.deps.conversationSearchService.getStatus(
+        this.context.state.config.workingDirectory,
+        this.context.state.config.conversationSearchEnabled ?? false,
+      );
+      this.context.emit({
+        type: "conversation_search_status",
+        sessionId: this.context.id,
+        ...status,
+      });
     }
     this.context.queuePersistSessionSnapshot("session.config_updated");
   }

@@ -388,6 +388,13 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     asBoolean(builtInDefaults.backupsEnabled) ??
     true;
 
+  const conversationSearchEnabled =
+    asBoolean(env.AGENT_CONVERSATION_SEARCH_ENABLED) ??
+    asBoolean(projectConfig.conversationSearchEnabled) ??
+    asBoolean(userConfig.conversationSearchEnabled) ??
+    asBoolean(builtInDefaults.conversationSearchEnabled) ??
+    false;
+
   const mergedObservability = parseLayer(observabilityLayerSchema, merged.observability, {});
   const observabilityEnabled =
     asBoolean(env.AGENT_OBSERVABILITY_ENABLED) ??
@@ -476,6 +483,7 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     configDirs: [projectAgentDir, userAgentDir, builtInConfigDir],
 
     enableMcp,
+    conversationSearchEnabled,
     includeRawChunks,
     backupsEnabled,
     observabilityEnabled,
