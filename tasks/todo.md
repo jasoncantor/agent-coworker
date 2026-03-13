@@ -1,3 +1,23 @@
+# Task: Stop Harness Full from running on every main push
+
+## Plan
+- [x] Confirm which workflow/job is causing the unwanted `Harness Full (Testing Env)` runs on push and identify the exact workflow surface to remove.
+- [x] Delete the `Harness Full (Testing Env)` job from the CI workflow instead of narrowing its trigger, per the follow-up request.
+- [x] Run workflow sanity checks plus the repo-required verification/build commands, then commit and push the change on `main`.
+
+## Review
+- The expensive `Harness Full (Testing Env)` run was not a separate workflow file; it was the `harness_full_testing` job inside `.github/workflows/ci.yml`, and it ran on every `push` to `main` or `testing` because the job only excluded `pull_request` events.
+- Removed the `harness_full_testing` job entirely from [ci.yml](/Users/mweinbach/Projects/agent-coworker/.github/workflows/ci.yml), leaving the normal `Docs + Tests` CI job and the existing top-level workflow triggers in place.
+- Verification:
+  - `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/ci.yml"); puts "ci.yml ok"'` -> pass
+  - `git diff --check` -> pass
+  - `HOME=$(mktemp -d) ~/.bun/bin/bun test` -> pass (`2213 pass, 2 skip, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `./node_modules/.bin/tsc --noEmit -p apps/TUI/tsconfig.json` -> fails in unchanged TUI files at `apps/TUI/routes/session/index.tsx:248` (`TS2769`) and `apps/TUI/ui/dialog-prompt.tsx:61` (`TS2322`)
+  - `~/.bun/bin/bun run build:server-binary` -> pass
+  - `~/.bun/bin/bun run build:desktop-resources` -> pass
+  - `~/.bun/bin/bun run desktop:build` -> pass; notarization skipped because Apple notarization credentials are not fully configured in this environment
+
 # Task: Harden opencode PR review workflow
 
 ## Plan
