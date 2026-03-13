@@ -6,7 +6,7 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
 
 - URL: `ws://127.0.0.1:{port}/ws`
 - Session resume: `?resumeSessionId=<sessionId>`
-- Current protocol version: `7.15`
+- Current protocol version: `7.16`
 
 ## Table of Contents
 
@@ -31,23 +31,30 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
   - Tools & Commands: [list_tools](#list_tools) | [list_commands](#list_commands) | [execute_command](#execute_command)
   - Skills: [list_skills](#list_skills) | [read_skill](#read_skill) | [disable_skill](#disable_skill) | [enable_skill](#enable_skill) | [delete_skill](#delete_skill)
   - MCP: [set_enable_mcp](#set_enable_mcp) | [mcp_servers_get](#mcp_servers_get) | [mcp_server_upsert](#mcp_server_upsert) | [mcp_server_delete](#mcp_server_delete) | [mcp_server_validate](#mcp_server_validate) | [mcp_server_auth_authorize](#mcp_server_auth_authorize) | [mcp_server_auth_callback](#mcp_server_auth_callback) | [mcp_server_auth_set_api_key](#mcp_server_auth_set_api_key) | [mcp_servers_migrate_legacy](#mcp_servers_migrate_legacy)
-  - Session Management: [session_close](#session_close) | [get_messages](#get_messages) | [set_session_title](#set_session_title) | [list_sessions](#list_sessions) | [delete_session](#delete_session) | [subagent_create](#subagent_create) | [subagent_sessions_get](#subagent_sessions_get) | [set_config](#set_config) | [upload_file](#upload_file) | [get_session_usage](#get_session_usage) | [set_session_usage_budget](#set_session_usage_budget)
+  - Session Management: [session_close](#session_close) | [get_messages](#get_messages) | [set_session_title](#set_session_title) | [list_sessions](#list_sessions) | [conversation_search_status_get](#conversation_search_status_get) | [conversation_search_models_download](#conversation_search_models_download) | [conversation_search_models_cancel](#conversation_search_models_cancel) | [conversation_search_models_delete](#conversation_search_models_delete) | [conversation_search_index_rebuild](#conversation_search_index_rebuild) | [conversation_search](#conversation_search) | [delete_session](#delete_session) | [subagent_create](#subagent_create) | [subagent_sessions_get](#subagent_sessions_get) | [set_config](#set_config) | [upload_file](#upload_file) | [get_session_usage](#get_session_usage) | [set_session_usage_budget](#set_session_usage_budget)
   - Backup: [session_backup_get](#session_backup_get) | [session_backup_checkpoint](#session_backup_checkpoint) | [session_backup_restore](#session_backup_restore) | [session_backup_delete_checkpoint](#session_backup_delete_checkpoint) | [workspace_backups_get](#workspace_backups_get) | [workspace_backup_checkpoint](#workspace_backup_checkpoint) | [workspace_backup_restore](#workspace_backup_restore) | [workspace_backup_delete_checkpoint](#workspace_backup_delete_checkpoint) | [workspace_backup_delete_entry](#workspace_backup_delete_entry) | [workspace_backup_delta_get](#workspace_backup_delta_get)
   - Harness: [harness_context_get](#harness_context_get) | [harness_context_set](#harness_context_set)
   - Keepalive: [ping](#ping)
 - [Server -> Client Events](#server---client-events)
-  - Handshake & Lifecycle: [server_hello](#server_hello) | [session_settings](#session_settings) | [session_info](#session_info) | [session_busy](#session_busy) | [session_config](#session_config)
+  - Handshake & Lifecycle: [server_hello](#server_hello) | [session_settings](#session_settings) | [session_info](#session_info) | [session_busy](#session_busy) | [session_config](#session_config) | [conversation_search_status](#conversation_search_status)
   - Conversation: [user_message](#user_message-1) | [model_stream_chunk](#model_stream_chunk) | [model_stream_raw](#model_stream_raw) | [assistant_message](#assistant_message) | [reasoning](#reasoning) | [log](#log) | [todos](#todos) | [reset_done](#reset_done)
   - Prompts: [ask](#ask) | [approval](#approval)
   - Provider: [provider_catalog](#provider_catalog) | [provider_auth_methods](#provider_auth_methods) | [provider_auth_challenge](#provider_auth_challenge) | [provider_auth_result](#provider_auth_result) | [provider_status](#provider_status) | [config_updated](#config_updated)
   - Tools & Skills: [tools](#tools) | [commands](#commands) | [skills_list](#skills_list) | [skill_content](#skill_content)
   - MCP: [mcp_servers](#mcp_servers) | [mcp_server_validation](#mcp_server_validation) | [mcp_server_auth_challenge](#mcp_server_auth_challenge) | [mcp_server_auth_result](#mcp_server_auth_result)
-  - Session Data: [messages](#messages) | [sessions](#sessions) | [subagent_created](#subagent_created) | [subagent_sessions](#subagent_sessions) | [session_deleted](#session_deleted) | [file_uploaded](#file_uploaded) | [turn_usage](#turn_usage) | [session_usage](#session_usage) | [budget_warning](#budget_warning) | [budget_exceeded](#budget_exceeded)
+  - Session Data: [messages](#messages) | [sessions](#sessions) | [conversation_search_results](#conversation_search_results) | [subagent_created](#subagent_created) | [subagent_sessions](#subagent_sessions) | [session_deleted](#session_deleted) | [file_uploaded](#file_uploaded) | [turn_usage](#turn_usage) | [session_usage](#session_usage) | [budget_warning](#budget_warning) | [budget_exceeded](#budget_exceeded)
   - Backup & Observability: [session_backup_state](#session_backup_state) | [workspace_backups](#workspace_backups) | [workspace_backup_delta](#workspace_backup_delta) | [observability_status](#observability_status)
   - Harness: [harness_context](#harness_context)
   - Error & Keepalive: [error](#error) | [pong](#pong)
 
 ## Protocol v7 Notes
+
+Changes in `7.16`:
+
+- New client messages: `conversation_search_status_get`, `conversation_search_models_download`, `conversation_search_models_cancel`, `conversation_search_models_delete`, `conversation_search_index_rebuild`, `conversation_search`.
+- New server events: `conversation_search_status`, `conversation_search_results`.
+- `set_config.config` now accepts `conversationSearchEnabled`, and `session_config.config` now reports `defaultConversationSearchEnabled`.
+- Conversation listing/search are workspace-scoped: `list_sessions` and `conversation_search` only return root sessions whose persisted `workingDirectory` matches the caller's current workspace.
 
 Changes in `7.15`:
 
@@ -177,7 +184,7 @@ When a WebSocket connection opens, the server sends these events in order:
 
 1. `server_hello` — session ID, config, protocol version, capabilities
 2. `session_settings` — current runtime settings (e.g. MCP toggle)
-3. `session_config` — current runtime config (`yolo`, `observabilityEnabled`, `backupsEnabled`, `defaultBackupsEnabled`, `toolOutputOverflowChars`, `defaultToolOutputOverflowChars`, `subAgentModel`, `maxSteps`, `providerOptions`, `userName`, `userProfile`)
+3. `session_config` — current runtime config (`yolo`, `observabilityEnabled`, `backupsEnabled`, `defaultBackupsEnabled`, `enableMemory`, `memoryRequireApproval`, `defaultConversationSearchEnabled`, `toolOutputOverflowChars`, `defaultToolOutputOverflowChars`, `subAgentModel`, `maxSteps`, `providerOptions`, `userName`, `userProfile`)
 4. `session_info` — session metadata including title
 5. `observability_status` — Langfuse observability state
 6. `provider_catalog` — available providers and models (async)
@@ -185,6 +192,7 @@ When a WebSocket connection opens, the server sends these events in order:
 8. `provider_status` — current provider auth/connection status (async)
 9. `mcp_servers` — layered MCP snapshot (async)
 10. `session_backup_state` — backup/checkpoint state (async)
+11. `conversation_search_status` — workspace conversation-search readiness and model/index status (async, root sessions only)
 
 If connecting with `?resumeSessionId=<id>`, the server resumes the existing session instead of creating a new one (warm in-memory attach or cold rehydrate from persisted storage). `session_close` disposes active runtime bindings but retains persisted history for later resume/view. On resume, `server_hello` includes additional fields (`isResume`, `busy`, `messageCount`, `hasPendingAsk`, `hasPendingApproval`) and may include `resumedFromStorage: true` for cold rehydrate.
 
@@ -1668,7 +1676,7 @@ Manually set the session title.
 
 ### list_sessions
 
-Enumerate persisted root sessions from the server's canonical session store. Persistent child subagents are not included here.
+Enumerate persisted root sessions from the server's canonical session store for the caller's current workspace only. Persistent child subagents are not included here, and sessions from other workspaces are excluded.
 
 ```json
 { "type": "list_sessions", "sessionId": "..." }
@@ -1681,6 +1689,127 @@ Enumerate persisted root sessions from the server's canonical session store. Per
 
 **Response:** `sessions`
 **Error:** `validation_failed` when called from a child session.
+
+---
+
+### conversation_search_status_get
+
+Return the current workspace conversation-search status for the caller's root session.
+
+```json
+{ "type": "conversation_search_status_get", "sessionId": "..." }
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `type` | `"conversation_search_status_get"` | Yes |
+| `sessionId` | `string` | Yes |
+
+**Response:** `conversation_search_status`
+**Error:** `validation_failed` when called from a child session.
+
+---
+
+### conversation_search_models_download
+
+Queue download of the shared local embedding models into `~/.cowork/conversation-search/models/`.
+
+```json
+{ "type": "conversation_search_models_download", "sessionId": "..." }
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `type` | `"conversation_search_models_download"` | Yes |
+| `sessionId` | `string` | Yes |
+
+**Response:** `conversation_search_status`
+**Error:** `validation_failed` when called from a child session.
+
+---
+
+### conversation_search_models_cancel
+
+Request cancellation of the active shared model download job.
+
+```json
+{ "type": "conversation_search_models_cancel", "sessionId": "..." }
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `type` | `"conversation_search_models_cancel"` | Yes |
+| `sessionId` | `string` | Yes |
+
+**Response:** `conversation_search_status`
+**Error:** `validation_failed` when called from a child session.
+
+---
+
+### conversation_search_models_delete
+
+Delete the shared local model cache and clear the shared conversation-search index.
+
+```json
+{ "type": "conversation_search_models_delete", "sessionId": "..." }
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `type` | `"conversation_search_models_delete"` | Yes |
+| `sessionId` | `string` | Yes |
+
+**Response:** `conversation_search_status`
+**Error:** `validation_failed` when called from a child session.
+
+---
+
+### conversation_search_index_rebuild
+
+Queue a rebuild of the current workspace's conversation-search index.
+
+```json
+{ "type": "conversation_search_index_rebuild", "sessionId": "...", "workspacePath": "/path/to/workspace" }
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `"conversation_search_index_rebuild"` | Yes | — |
+| `sessionId` | `string` | Yes | Root session identifier |
+| `workspacePath` | `string` | No | Assertion-only. When present, must exactly match the current workspace path. |
+
+**Response:** `conversation_search_status`
+**Error:** `validation_failed` for child sessions or workspace mismatches.
+
+---
+
+### conversation_search
+
+Search prior root-session conversations from the caller's current workspace. Search scope never widens beyond the current workspace, even when `workspacePath` is supplied.
+
+```json
+{
+  "type": "conversation_search",
+  "sessionId": "...",
+  "query": "backup regression",
+  "mode": "semantic",
+  "offset": 0,
+  "limit": 10
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `"conversation_search"` | Yes | — |
+| `sessionId` | `string` | Yes | Root session identifier |
+| `query` | `string` | Yes | Non-empty search query |
+| `mode` | `"keyword" \| "semantic"` | No | Defaults to `"semantic"` |
+| `offset` | `number` | No | Defaults to `0`; must be `>= 0` |
+| `limit` | `number` | No | Defaults to `10`; max `25` |
+| `workspacePath` | `string` | No | Assertion-only. When present, must exactly match the current workspace path. |
+
+**Response:** `conversation_search_results`
+**Error:** `validation_failed` for blank queries, bad bounds, workspace mismatches, child sessions, or disabled/not-ready search.
 
 ---
 
@@ -1779,6 +1908,7 @@ Update runtime configuration values.
 | `config.yolo` | `boolean` | No | Auto-approve all commands |
 | `config.observabilityEnabled` | `boolean` | No | Toggle observability |
 | `config.backupsEnabled` | `boolean` | No | Toggle session backups for the current session and persist the workspace default for future sessions |
+| `config.conversationSearchEnabled` | `boolean` | No | Enable or disable optional workspace conversation search. Enabling it may queue shared local model downloads and workspace indexing under `~/.cowork/conversation-search/`. |
 | `config.toolOutputOverflowChars` | `number \| null` | No | Workspace-scoped character threshold for when oversized tool outputs start spilling into `.ModelScratchpad`; `null` disables spill files. Spill results still keep a fixed inline preview (currently the first 5,000 characters). |
 | `config.clearToolOutputOverflowChars` | `boolean` | No | When `true`, delete the persisted workspace overflow override and resume inheriting the built-in or user-level default. Cannot be combined with `config.toolOutputOverflowChars`. |
 | `config.subAgentModel` | `string` | No | Non-empty sub-agent model ID for the current provider. Unsupported values are rejected with a `validation_failed` session error. |
@@ -3130,6 +3260,7 @@ Current runtime config. Sent on connection and after `set_config`.
     "observabilityEnabled": true,
     "backupsEnabled": true,
     "defaultBackupsEnabled": true,
+    "defaultConversationSearchEnabled": false,
     "toolOutputOverflowChars": 25000,
     "defaultToolOutputOverflowChars": 25000,
     "subAgentModel": "gpt-5.4",
@@ -3158,6 +3289,7 @@ Current runtime config. Sent on connection and after `set_config`.
 | `config.observabilityEnabled` | `boolean` | Whether observability is enabled |
 | `config.backupsEnabled` | `boolean` | Whether backups are enabled for the live session after applying any session-scoped override |
 | `config.defaultBackupsEnabled` | `boolean` | The persisted workspace backup default from the harness/core config, before any live session override is applied |
+| `config.defaultConversationSearchEnabled` | `boolean` | The persisted workspace conversation-search default. When `true`, root sessions in this workspace may use conversation search once the shared local models and index are ready. |
 | `config.toolOutputOverflowChars` | `number \| null` | Effective character threshold for when oversized tool outputs start spilling into `.ModelScratchpad`; `null` disables spill files. Spill results still keep a fixed inline preview (currently the first 5,000 characters). |
 | `config.defaultToolOutputOverflowChars` | `number \| null` | Persisted workspace overflow default when explicitly configured; omitted when the session is inheriting the built-in or user-level default |
 | `config.subAgentModel` | `string` | Sub-agent model identifier |
@@ -3174,6 +3306,135 @@ Current runtime config. Sent on connection and after `set_config`.
 | `config.providerOptions.codex-cli.reasoningEffort` | `"none" \| "low" \| "medium" \| "high" \| "xhigh"` | Current editable Codex CLI reasoning effort |
 | `config.providerOptions.codex-cli.reasoningSummary` | `"auto" \| "concise" \| "detailed"` | Current editable Codex CLI reasoning summary |
 | `config.providerOptions.codex-cli.textVerbosity` | `"low" \| "medium" \| "high"` | Current editable Codex CLI verbosity |
+
+---
+
+### conversation_search_status
+
+Workspace-scoped conversation-search status for the current root session. Sent on connect and after model/index lifecycle changes.
+
+```json
+{
+  "type": "conversation_search_status",
+  "sessionId": "...",
+  "workspacePath": "/path/to/workspace",
+  "enabled": true,
+  "availability": "ready",
+  "models": {
+    "query": {
+      "key": "query",
+      "modelId": "perplexity-ai/pplx-embed-v1-0.6b",
+      "revision": "main",
+      "status": "ready",
+      "bytesDownloaded": null,
+      "bytesTotal": null,
+      "progressPercent": null,
+      "downloadedAt": "2026-03-13T12:00:00.000Z",
+      "error": null
+    },
+    "context": {
+      "key": "context",
+      "modelId": "perplexity-ai/pplx-embed-context-v1-0.6b",
+      "revision": "main",
+      "status": "ready",
+      "bytesDownloaded": null,
+      "bytesTotal": null,
+      "progressPercent": null,
+      "downloadedAt": "2026-03-13T12:00:05.000Z",
+      "error": null
+    }
+  },
+  "download": {
+    "status": "idle",
+    "activeModel": null,
+    "startedAt": null,
+    "updatedAt": "2026-03-13T12:00:05.000Z",
+    "bytesDownloaded": null,
+    "bytesTotal": null,
+    "progressPercent": null,
+    "canCancel": false,
+    "error": null
+  },
+  "index": {
+    "status": "ready",
+    "sessionCount": 12,
+    "chunkCount": 384,
+    "lastIndexedAt": "2026-03-13T12:01:00.000Z",
+    "lastError": null,
+    "updatedAt": "2026-03-13T12:01:00.000Z"
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"conversation_search_status"` | — |
+| `sessionId` | `string` | Root session identifier |
+| `workspacePath` | `string` | Current workspace path |
+| `enabled` | `boolean` | Whether workspace conversation search is enabled |
+| `availability` | `"disabled" \| "pending_models" \| "downloading_models" \| "indexing" \| "ready" \| "error"` | High-level readiness summary |
+| `models.query` / `models.context` | `ConversationSearchModelState` | Per-model download/readiness state |
+| `download` | `ConversationSearchDownloadState` | Shared model download job state |
+| `index` | `ConversationSearchIndexState` | Current workspace index state |
+
+`ConversationSearchModelState.status` is `"missing" \| "queued" \| "downloading" \| "ready" \| "error"`.
+
+`ConversationSearchDownloadState.status` is `"idle" \| "queued" \| "running" \| "cancelling" \| "cancelled" \| "error"`.
+
+`ConversationSearchIndexState.status` is `"idle" \| "indexing" \| "ready" \| "error"`.
+
+---
+
+### conversation_search_results
+
+Workspace-scoped conversation-search response. Empty matches return `results: []` rather than an error.
+
+```json
+{
+  "type": "conversation_search_results",
+  "sessionId": "...",
+  "workspacePath": "/path/to/workspace",
+  "query": "backup regression",
+  "mode": "semantic",
+  "offset": 0,
+  "limit": 10,
+  "total": 2,
+  "hasMore": false,
+  "results": [
+    {
+      "sessionId": "abc-123",
+      "title": "Investigate workspace backups",
+      "createdAt": "2026-03-10T12:00:00.000Z",
+      "updatedAt": "2026-03-10T12:30:00.000Z",
+      "messageCount": 18,
+      "score": 0.82,
+      "hits": [
+        {
+          "messageIndex": 5,
+          "role": "assistant",
+          "snippet": "...backup metadata drift showed up after reconnect...",
+          "score": 0.82
+        }
+      ]
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"conversation_search_results"` | — |
+| `sessionId` | `string` | Root session identifier |
+| `workspacePath` | `string` | Current workspace path |
+| `query` | `string` | Submitted query |
+| `mode` | `"keyword" \| "semantic"` | Search mode used |
+| `offset` | `number` | Requested session offset |
+| `limit` | `number` | Requested session limit |
+| `total` | `number` | Total matched sessions in the current workspace |
+| `hasMore` | `boolean` | Whether more matched sessions exist after this page |
+| `results` | `ConversationSearchResult[]` | Matched root sessions with transcript hits |
+
+`ConversationSearchResult.hits` contains up to three transcript snippets per session. Each hit reports `messageIndex`, `role`, `snippet`, and `score`.
 
 ---
 

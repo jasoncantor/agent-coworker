@@ -22,6 +22,7 @@ export class PersistenceManager {
         attributes?: Record<string, string | number | boolean>,
         durationMs?: number
       ) => void;
+      onPersisted?: (snapshot: PersistedSessionMutation["snapshot"]) => Promise<void> | void;
       emitError: (message: string) => void;
       formatError: (err: unknown) => string;
     }
@@ -32,19 +33,65 @@ export class PersistenceManager {
       const startedAt = Date.now();
       const updatedAt = new Date().toISOString();
       if (this.opts.sessionDb) {
+        const snapshot = this.opts.buildCanonicalSnapshot(updatedAt);
         this.opts.sessionDb.persistSessionMutation({
           sessionId: this.opts.sessionId,
           eventType: reason,
           eventTs: updatedAt,
           direction: "system",
           payload: { reason },
-          snapshot: this.opts.buildCanonicalSnapshot(updatedAt),
+          snapshot,
         });
+        await this.opts.onPersisted?.(snapshot);
       } else {
         const snapshot = this.opts.buildPersistedSnapshotAt(updatedAt);
         await this.opts.writePersistedSessionSnapshot({
           paths: this.opts.getCoworkPaths(),
           snapshot,
+        });
+        await this.opts.onPersisted?.({
+          sessionKind:
+            "sessionKind" in snapshot.session
+              ? snapshot.session.sessionKind
+              : "root",
+          parentSessionId:
+            "parentSessionId" in snapshot.session
+              ? snapshot.session.parentSessionId
+              : null,
+          agentType:
+            "agentType" in snapshot.session
+              ? snapshot.session.agentType
+              : null,
+          title: snapshot.session.title,
+          titleSource: snapshot.session.titleSource,
+          titleModel: snapshot.session.titleModel,
+          provider: snapshot.session.provider,
+          model: snapshot.session.model,
+          workingDirectory: snapshot.config.workingDirectory,
+          outputDirectory: snapshot.config.outputDirectory,
+          uploadsDirectory: snapshot.config.uploadsDirectory,
+          enableMcp: snapshot.config.enableMcp,
+          backupsEnabledOverride:
+            "backupsEnabledOverride" in snapshot.config
+              ? snapshot.config.backupsEnabledOverride
+              : null,
+          createdAt: snapshot.createdAt,
+          updatedAt: snapshot.updatedAt,
+          status: "active",
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+          systemPrompt: snapshot.context.system,
+          messages: snapshot.context.messages,
+          providerState:
+            "providerState" in snapshot.context
+              ? snapshot.context.providerState
+              : null,
+          todos: snapshot.context.todos,
+          harnessContext: snapshot.context.harnessContext,
+          costTracker:
+            "costTracker" in snapshot.context
+              ? snapshot.context.costTracker
+              : null,
         });
       }
       this.opts.emitTelemetry(

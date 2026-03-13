@@ -95,6 +95,10 @@ const persistedWorkspaceSchema = z.object({
   defaultProvider: normalizedProviderSchema,
   defaultModel: optionalStringWithContentSchema,
   defaultSubAgentModel: optionalStringWithContentSchema,
+  defaultConversationSearchEnabled: z.preprocess(
+    (value) => (typeof value === "boolean" ? value : false),
+    z.boolean(),
+  ),
   defaultToolOutputOverflowChars: z.preprocess((value) => {
     if (value === undefined) return undefined;
     if (value === null) return null;
@@ -124,6 +128,7 @@ const persistedWorkspaceSchema = z.object({
     defaultProvider: workspace.defaultProvider,
     defaultModel: model,
     defaultSubAgentModel: workspace.defaultSubAgentModel ?? model,
+    defaultConversationSearchEnabled: workspace.defaultConversationSearchEnabled,
     defaultToolOutputOverflowChars: workspace.defaultToolOutputOverflowChars,
     providerOptions: normalizeWorkspaceProviderOptions(workspace.providerOptions),
     userName: workspace.userName,

@@ -2,6 +2,7 @@ import type { PersistentSubagentSummary, SubagentAgentType } from "../shared/per
 import type { AgentConfig } from "../types";
 import type { TodoItem } from "../types";
 import type { SessionCostTracker, SessionUsageSnapshot } from "../session/costTracker";
+import type { ConversationSearchMode, ConversationSearchResponse } from "../server/conversationSearch";
 
 export type PersistentAgentWaitResult = {
   agentId: string;
@@ -55,4 +56,14 @@ export interface ToolContext {
 
   /** Notify the session when tool-driven budget changes should be persisted/emitted immediately. */
   onSessionUsageBudgetUpdated?: (snapshot: SessionUsageSnapshot) => void;
+
+  /** Workspace-scoped conversation search, available only for ready root sessions. */
+  conversationSearchControl?: {
+    search: (opts: {
+      query: string;
+      mode?: ConversationSearchMode;
+      limit?: number;
+      offset?: number;
+    }) => Promise<ConversationSearchResponse>;
+  };
 }

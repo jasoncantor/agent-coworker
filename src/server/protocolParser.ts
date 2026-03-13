@@ -9,6 +9,7 @@ import {
 } from "../shared/openaiCompatibleOptions";
 import { SUBAGENT_AGENT_TYPE_VALUES } from "../shared/persistentSubagents";
 import { isProviderName } from "../types";
+import { CONVERSATION_SEARCH_MODES as SEARCH_MODES } from "./conversationSearch/types";
 
 import type { ClientMessage } from "./protocol";
 
@@ -28,6 +29,7 @@ const setConfigFieldErrorMessages: Record<string, string> = {
   backupsEnabled: "set_config config.backupsEnabled must be boolean",
   enableMemory: "set_config config.enableMemory must be boolean",
   memoryRequireApproval: "set_config config.memoryRequireApproval must be boolean",
+  conversationSearchEnabled: "set_config config.conversationSearchEnabled must be boolean",
   subAgentModel: "set_config config.subAgentModel must be non-empty string",
   maxSteps: "set_config config.maxSteps must be number 1-1000",
   toolOutputOverflowChars: "set_config config.toolOutputOverflowChars must be null or non-negative integer",
@@ -95,6 +97,7 @@ const setConfigPayloadSchema = z.object({
   backupsEnabled: z.boolean().optional(),
   enableMemory: z.boolean().optional(),
   memoryRequireApproval: z.boolean().optional(),
+  conversationSearchEnabled: z.boolean().optional(),
   subAgentModel: z.string().trim().min(1).optional(),
   maxSteps: z.number().min(1).max(1000).optional(),
   toolOutputOverflowChars: z.number().int().nonnegative().nullable().optional(),
@@ -553,6 +556,30 @@ const workspaceBackupDeltaGetSchema = schemaWithType("workspace_backup_delta_get
   checkpointId: requiredNonEmptyTrimmedString("workspace_backup_delta_get missing checkpointId"),
 });
 
+const conversationSearchStatusGetSchema = sessionOnlySchema("conversation_search_status_get");
+const conversationSearchModelsDownloadSchema = sessionOnlySchema("conversation_search_models_download");
+const conversationSearchModelsCancelSchema = sessionOnlySchema("conversation_search_models_cancel");
+const conversationSearchModelsDeleteSchema = sessionOnlySchema("conversation_search_models_delete");
+
+const conversationSearchIndexRebuildSchema = schemaWithType("conversation_search_index_rebuild", {
+  sessionId: requiredSessionId("conversation_search_index_rebuild"),
+  workspacePath: optionalNonEmptyTrimmedString("conversation_search_index_rebuild invalid workspacePath"),
+});
+
+const conversationSearchSchema = schemaWithType("conversation_search", {
+  sessionId: requiredSessionId("conversation_search"),
+  query: requiredNonEmptyTrimmedString("conversation_search missing/invalid query"),
+  offset: optionalNumberAtLeast("conversation_search invalid offset", 0),
+  limit: z.number({ error: "conversation_search invalid limit" })
+    .finite({ error: "conversation_search invalid limit" })
+    .int({ error: "conversation_search invalid limit" })
+    .min(1, { error: "conversation_search invalid limit" })
+    .max(25, { error: "conversation_search invalid limit" })
+    .optional(),
+  mode: z.enum(SEARCH_MODES, { error: "conversation_search invalid mode" }).optional(),
+  workspacePath: optionalNonEmptyTrimmedString("conversation_search invalid workspacePath"),
+});
+
 const getMessagesSchema = schemaWithType("get_messages", {
   sessionId: requiredSessionId("get_messages"),
   offset: optionalNumberAtLeast("get_messages invalid offset", 0),
@@ -677,6 +704,12 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   workspaceBackupDeleteCheckpointSchema,
   workspaceBackupDeleteEntrySchema,
   workspaceBackupDeltaGetSchema,
+  conversationSearchStatusGetSchema,
+  conversationSearchModelsDownloadSchema,
+  conversationSearchModelsCancelSchema,
+  conversationSearchModelsDeleteSchema,
+  conversationSearchIndexRebuildSchema,
+  conversationSearchSchema,
   getMessagesSchema,
   setSessionTitleSchema,
   deleteSessionSchema,

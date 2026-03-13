@@ -150,6 +150,12 @@ export interface AgentConfig {
   memoryRequireApproval?: boolean;
 
   /**
+   * Whether workspace-scoped conversation search is enabled.
+   * Defaults to false when not specified.
+   */
+  conversationSearchEnabled?: boolean;
+
+  /**
    * Whether to include raw model stream chunks in emitted stream events.
    * Defaults to true when not specified.
    */

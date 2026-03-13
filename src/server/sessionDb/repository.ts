@@ -37,6 +37,19 @@ export class SessionDbRepository {
     return rows.map(mapPersistedSessionSummaryRow);
   }
 
+  listSessionsByWorkspace(workingDirectory: string): PersistedSessionSummary[] {
+    const rows = this.db
+      .query(
+        `SELECT session_id, title, provider, model, created_at, updated_at, message_count
+         FROM sessions
+         WHERE session_kind = 'root' AND working_directory = ?
+         ORDER BY updated_at DESC`,
+      )
+      .all(workingDirectory) as Array<Record<string, unknown>>;
+
+    return rows.map(mapPersistedSessionSummaryRow);
+  }
+
   listSubagentSessions(parentSessionId: string): PersistentSubagentSummary[] {
     const rows = this.db
       .query(

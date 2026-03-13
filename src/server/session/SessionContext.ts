@@ -28,6 +28,7 @@ import type {
 import type { SessionDb, SessionPersistenceStatus } from "../sessionDb";
 import type { generateSessionTitle, SessionTitleSource } from "../sessionTitleService";
 import type { writePersistedSessionSnapshot } from "../sessionStore";
+import type { ConversationSearchService } from "../conversationSearch";
 
 export type SessionBackupFactory = (opts: SessionBackupInitOptions) => Promise<SessionBackupHandle>;
 
@@ -40,7 +41,7 @@ export type PersistedModelSelection = {
 export type PersistedProjectConfigPatch = Partial<
   Pick<
     AgentConfig,
-    "provider" | "model" | "subAgentModel" | "enableMcp" | "enableMemory" | "memoryRequireApproval" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars" | "userName"
+    "provider" | "model" | "subAgentModel" | "enableMcp" | "enableMemory" | "memoryRequireApproval" | "conversationSearchEnabled" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars" | "userName"
   >
 > & {
   userProfile?: Partial<NonNullable<AgentConfig["userProfile"]>>;
@@ -103,6 +104,7 @@ export type SessionDependencies = {
   persistProjectConfigPatchImpl?: (patch: PersistedProjectConfigPatch) => Promise<void> | void;
   generateSessionTitleImpl: typeof generateSessionTitle;
   sessionDb: SessionDb | null;
+  conversationSearchService?: ConversationSearchService | null;
   writePersistedSessionSnapshotImpl: typeof writePersistedSessionSnapshot;
   createSubagentSessionImpl?: (opts: {
     parentSessionId: string;

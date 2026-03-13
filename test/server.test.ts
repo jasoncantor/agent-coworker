@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startAgentServer, type StartAgentServerOptions } from "../src/server/startServer";
+import { ConversationSearchService } from "../src/server/conversationSearch";
 import {
   ASK_SKIP_TOKEN,
   CLIENT_MESSAGE_TYPES,
@@ -12,6 +13,12 @@ import {
   WEBSOCKET_PROTOCOL_VERSION,
 } from "../src/server/protocol";
 import { DEFAULT_PROVIDER_OPTIONS } from "../src/providers";
+import {
+  createConversationSearchStatus,
+  FakeConversationSearchService,
+  FakeEmbeddingModelManager,
+  persistRootSession,
+} from "./helpers/conversationSearch";
 
 function repoRoot(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -52,6 +59,39 @@ function serverOpts(tmpDir: string, overrides?: Partial<StartAgentServerOptions>
     },
     ...overrides,
   };
+}
+
+async function makeTmpWorkspaces(): Promise<{
+  homeDir: string;
+  workspaceA: string;
+  workspaceB: string;
+}> {
+  const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-search-home-"));
+  const workspaceA = path.join(homeDir, "workspace-a");
+  const workspaceB = path.join(homeDir, "workspace-b");
+  await fs.mkdir(path.join(workspaceA, ".agent"), { recursive: true });
+  await fs.mkdir(path.join(workspaceB, ".agent"), { recursive: true });
+  return { homeDir, workspaceA, workspaceB };
+}
+
+function workspaceServerOpts(
+  workspacePath: string,
+  homeDir: string,
+  overrides?: Partial<StartAgentServerOptions>,
+): StartAgentServerOptions {
+  const baseEnv = {
+    AGENT_WORKING_DIR: workspacePath,
+    AGENT_PROVIDER: "google",
+    COWORK_SKIP_DEFAULT_SKILLS_BOOTSTRAP: "1",
+  };
+  return serverOpts(workspacePath, {
+    homedir: homeDir,
+    ...overrides,
+    env: {
+      ...baseEnv,
+      ...(overrides?.env ?? {}),
+    },
+  });
 }
 
 /** Helper: open a WebSocket and collect the first N messages. */
@@ -133,6 +173,7 @@ function sendAndCollect(
           msg.type === "session_settings" ||
           msg.type === "session_config" ||
           msg.type === "session_info" ||
+          msg.type === "conversation_search_status" ||
           msg.type === "observability_status" ||
           msg.type === "provider_catalog" ||
           msg.type === "provider_auth_methods" ||
@@ -2275,6 +2316,247 @@ describe("Message Parsing (via protocol)", () => {
       const { responses } = await sendAndCollect(url, () => ({ type: 42 }), 1);
       expect(responses[0].type).toBe("error");
       expect(responses[0].message).toContain("Missing type");
+    } finally {
+      server.stop();
+    }
+  });
+});
+
+describe("Conversation Search", () => {
+  test("connect emits conversation_search_status", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+    try {
+      const status = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({ type: "ping", sessionId }),
+        (msg) => msg.type === "conversation_search_status",
+      );
+
+      expect(status.workspacePath).toBe(tmpDir);
+      expect(status.enabled).toBe(false);
+      expect(status.availability).toBe("disabled");
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("list_sessions only returns persisted root sessions from the same workspace", async () => {
+    const { homeDir, workspaceA, workspaceB } = await makeTmpWorkspaces();
+    await persistRootSession(homeDir, {
+      sessionId: "root-a",
+      title: "Workspace A Session",
+      workingDirectory: workspaceA,
+      messages: [{ role: "user", content: "alpha workspace" }],
+      updatedAt: "2026-03-13T00:00:00.000Z",
+    });
+    await persistRootSession(homeDir, {
+      sessionId: "root-b",
+      title: "Workspace B Session",
+      workingDirectory: workspaceB,
+      messages: [{ role: "user", content: "beta workspace" }],
+      updatedAt: "2026-03-13T00:00:01.000Z",
+    });
+
+    const { server, url } = await startAgentServer(workspaceServerOpts(workspaceA, homeDir));
+    try {
+      const event = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({ type: "list_sessions", sessionId }),
+        (msg) => msg.type === "sessions",
+      );
+
+      expect(event.sessions.some((session: any) => session.sessionId === "root-a")).toBe(true);
+      expect(event.sessions.some((session: any) => session.sessionId === "root-b")).toBe(false);
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("conversation_search returns empty results without emitting an error", async () => {
+    const tmpDir = await makeTmpProject();
+    await fs.writeFile(
+      path.join(tmpDir, ".agent", "config.json"),
+      `${JSON.stringify({ conversationSearchEnabled: true }, null, 2)}\n`,
+      "utf-8",
+    );
+    const fakeService = new FakeConversationSearchService([
+      createConversationSearchStatus(tmpDir, {
+        enabled: true,
+        availability: "ready",
+      }),
+    ]);
+
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      conversationSearchServiceFactory: async () => fakeService as any,
+    }));
+    try {
+      const event = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({
+          type: "conversation_search",
+          sessionId,
+          query: "nothing here",
+          mode: "keyword",
+        }),
+        (msg) => msg.type === "conversation_search_results",
+      );
+
+      expect(event.results).toEqual([]);
+      expect(event.total).toBe(0);
+      expect(event.hasMore).toBe(false);
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("child sessions cannot search conversations", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+    try {
+      const created = await createPersistentSubagent(url, "child task", "general");
+      const error = await sendAndWaitForEvent(
+        `${url}?resumeSessionId=${created.subagent.sessionId}`,
+        (sessionId) => ({
+          type: "conversation_search",
+          sessionId,
+          query: "history",
+        }),
+        (msg) => msg.type === "error",
+      );
+
+      expect(error.code).toBe("validation_failed");
+      expect(error.message).toContain("Only root sessions can search conversations");
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("conversation search model controls update status and ready workspaces expose the tool", async () => {
+    const tmpDir = await makeTmpProject();
+    await fs.writeFile(
+      path.join(tmpDir, ".agent", "config.json"),
+      `${JSON.stringify({ conversationSearchEnabled: true }, null, 2)}\n`,
+      "utf-8",
+    );
+    const fakeService = new FakeConversationSearchService([
+      createConversationSearchStatus(tmpDir, {
+        enabled: true,
+        availability: "pending_models",
+      }),
+    ]);
+
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      conversationSearchServiceFactory: async () => fakeService as any,
+    }));
+    try {
+      const initialTools = await sendAndCollect(url, (sessionId) => ({ type: "list_tools", sessionId }), 1);
+      expect(initialTools.responses[0].type).toBe("tools");
+      expect(initialTools.responses[0].tools.some((tool: any) => tool.name === "conversationSearch")).toBe(false);
+
+      const downloading = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({ type: "conversation_search_models_download", sessionId }),
+        (msg) => msg.type === "conversation_search_status" && msg.download.status === "running",
+      );
+      expect(fakeService.queueModelDownloadCalls).toBe(1);
+      expect(downloading.availability).toBe("downloading_models");
+
+      const cancelled = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({ type: "conversation_search_models_cancel", sessionId }),
+        (msg) => msg.type === "conversation_search_status" && msg.download.status === "cancelled",
+      );
+      expect(fakeService.cancelModelDownloadCalls).toBe(1);
+      expect(cancelled.availability).toBe("pending_models");
+
+      const deleted = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({ type: "conversation_search_models_delete", sessionId }),
+        (msg) =>
+          msg.type === "conversation_search_status"
+          && fakeService.deleteModelsCalls === 1
+          && msg.enabled === true
+          && msg.availability === "pending_models",
+      );
+      expect(fakeService.deleteModelsCalls).toBe(1);
+      expect(deleted.models.query.status).toBe("missing");
+
+      fakeService.setStatus(createConversationSearchStatus(tmpDir, {
+        enabled: true,
+        availability: "ready",
+        sessionCount: 1,
+        chunkCount: 2,
+      }));
+
+      const readyTools = await sendAndCollect(url, (sessionId) => ({ type: "list_tools", sessionId }), 1);
+      expect(readyTools.responses[0].type).toBe("tools");
+      expect(readyTools.responses[0].tools.some((tool: any) => tool.name === "conversationSearch")).toBe(true);
+
+      const rebuilding = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({ type: "conversation_search_index_rebuild", sessionId }),
+        (msg) => msg.type === "conversation_search_status" && msg.index.status === "indexing",
+      );
+      expect(fakeService.rebuildCalls).toContain(tmpDir);
+      expect(rebuilding.availability).toBe("indexing");
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("conversation_search excludes sessions from other workspaces", async () => {
+    const { homeDir, workspaceA, workspaceB } = await makeTmpWorkspaces();
+    await fs.writeFile(
+      path.join(workspaceA, ".agent", "config.json"),
+      `${JSON.stringify({ conversationSearchEnabled: true }, null, 2)}\n`,
+      "utf-8",
+    );
+    await persistRootSession(homeDir, {
+      sessionId: "root-a",
+      title: "Workspace A Search Session",
+      workingDirectory: workspaceA,
+      messages: [{ role: "assistant", content: "alpha tool search result" }],
+      updatedAt: "2026-03-13T00:00:00.000Z",
+    });
+    await persistRootSession(homeDir, {
+      sessionId: "root-b",
+      title: "Workspace B Search Session",
+      workingDirectory: workspaceB,
+      messages: [{ role: "assistant", content: "alpha tool search result" }],
+      updatedAt: "2026-03-13T00:00:01.000Z",
+    });
+
+    const { server, url } = await startAgentServer(workspaceServerOpts(workspaceA, homeDir, {
+      conversationSearchServiceFactory: async (opts) => await ConversationSearchService.create({
+        ...opts,
+        pollIntervalMs: 25,
+        modelManager: new FakeEmbeddingModelManager() as any,
+      }),
+    }));
+
+    try {
+      await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({ type: "conversation_search_status_get", sessionId }),
+        (msg) => msg.type === "conversation_search_status" && msg.availability === "ready",
+        10_000,
+      );
+
+      const results = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({
+          type: "conversation_search",
+          sessionId,
+          query: "alpha tool",
+          mode: "keyword",
+        }),
+        (msg) => msg.type === "conversation_search_results",
+        10_000,
+      );
+
+      expect(results.results.some((result: any) => result.sessionId === "root-a")).toBe(true);
+      expect(results.results.some((result: any) => result.sessionId === "root-b")).toBe(false);
     } finally {
       server.stop();
     }

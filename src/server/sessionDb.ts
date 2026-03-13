@@ -172,6 +172,10 @@ export class SessionDb {
     return this.repository.listSessions();
   }
 
+  listSessionsByWorkspace(workingDirectory: string): PersistedSessionSummary[] {
+    return this.repository.listSessionsByWorkspace(workingDirectory);
+  }
+
   listSubagentSessions(parentSessionId: string): PersistentSubagentSummary[] {
     return this.repository.listSubagentSessions(parentSessionId);
   }

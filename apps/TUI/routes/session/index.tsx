@@ -228,7 +228,7 @@ function FeedItemRenderer(props: { item: FeedItem; citationUrlsByIndex?: Readonl
       <Match when={props.item.type === "session_backup_state"}>
         {(() => {
           const backup = (props.item as any).backup;
-          const latestCheckpoint = backup.checkpoints[backup.checkpoints.length - 1];
+          const latestCheckpoint = () => backup.checkpoints[backup.checkpoints.length - 1];
 
           return (
         <box
@@ -249,10 +249,12 @@ function FeedItemRenderer(props: { item: FeedItem; citationUrlsByIndex?: Readonl
           <text fg={theme.textMuted}>
             checkpoints: {backup.checkpoints.length}
           </text>
-          <Show when={backup.checkpoints.length > 0}>
-            <text fg={theme.textMuted}>
-              latest: {latestCheckpoint.id} ({latestCheckpoint.trigger}, {latestCheckpoint.changed ? "changed" : "unchanged"}, {formatBytes(latestCheckpoint.patchBytes)})
-            </text>
+          <Show when={latestCheckpoint()}>
+            {(checkpoint) => (
+              <text fg={theme.textMuted}>
+                latest: {checkpoint().id} ({checkpoint().trigger}, {checkpoint().changed ? "changed" : "unchanged"}, {formatBytes(checkpoint().patchBytes)})
+              </text>
+            )}
           </Show>
         </box>
           );

@@ -6,6 +6,14 @@ import {
   OPENAI_TEXT_VERBOSITY_VALUES,
 } from "../shared/openaiCompatibleOptions";
 import {
+  CONVERSATION_SEARCH_AVAILABILITIES,
+  CONVERSATION_SEARCH_DOWNLOAD_STATUSES,
+  CONVERSATION_SEARCH_INDEX_STATUSES,
+  CONVERSATION_SEARCH_MODEL_KEYS,
+  CONVERSATION_SEARCH_MODEL_STATUSES,
+  CONVERSATION_SEARCH_MODES,
+} from "./conversationSearch/types";
+import {
   persistentSubagentSummarySchema,
   sessionKindSchema,
   subagentAgentTypeSchema,
@@ -31,6 +39,51 @@ const openAiCompatibleProviderOptionsSchema = z.object({
 const editableOpenAiProviderOptionsByProviderSchema = z.object({
   openai: openAiCompatibleProviderOptionsSchema.optional(),
   "codex-cli": openAiCompatibleProviderOptionsSchema.optional(),
+}).passthrough();
+const conversationSearchModelStateSchema = z.object({
+  key: z.enum(CONVERSATION_SEARCH_MODEL_KEYS),
+  modelId: z.string(),
+  revision: z.string().nullable(),
+  status: z.enum(CONVERSATION_SEARCH_MODEL_STATUSES),
+  bytesDownloaded: z.number().nullable(),
+  bytesTotal: z.number().nullable(),
+  progressPercent: z.number().nullable(),
+  downloadedAt: z.string().nullable(),
+  error: z.string().nullable(),
+}).passthrough();
+const conversationSearchDownloadStateSchema = z.object({
+  status: z.enum(CONVERSATION_SEARCH_DOWNLOAD_STATUSES),
+  activeModel: z.enum(CONVERSATION_SEARCH_MODEL_KEYS).nullable(),
+  startedAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  bytesDownloaded: z.number().nullable(),
+  bytesTotal: z.number().nullable(),
+  progressPercent: z.number().nullable(),
+  canCancel: z.boolean(),
+  error: z.string().nullable(),
+}).passthrough();
+const conversationSearchIndexStateSchema = z.object({
+  status: z.enum(CONVERSATION_SEARCH_INDEX_STATUSES),
+  sessionCount: z.number(),
+  chunkCount: z.number(),
+  lastIndexedAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+}).passthrough();
+const conversationSearchHitSchema = z.object({
+  messageIndex: z.number(),
+  role: z.string(),
+  snippet: z.string(),
+  score: z.number(),
+}).passthrough();
+const conversationSearchResultSchema = z.object({
+  sessionId: z.string(),
+  title: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  messageCount: z.number(),
+  score: z.number(),
+  hits: z.array(conversationSearchHitSchema),
 }).passthrough();
 
 export type ServerEventParseErrorReason = "invalid_json" | "invalid_envelope" | "unknown_type" | "invalid_event";
@@ -387,6 +440,28 @@ const serverEventSchema = z.discriminatedUnion("type", [
     targetSessionId: z.string(),
   }).passthrough(),
   z.object({
+    type: z.literal("conversation_search_status"),
+    sessionId: nonEmptyTrimmedStringSchema,
+    workspacePath: z.string(),
+    enabled: z.boolean(),
+    availability: z.enum(CONVERSATION_SEARCH_AVAILABILITIES),
+    models: z.record(z.enum(CONVERSATION_SEARCH_MODEL_KEYS), conversationSearchModelStateSchema),
+    download: conversationSearchDownloadStateSchema,
+    index: conversationSearchIndexStateSchema,
+  }).passthrough(),
+  z.object({
+    type: z.literal("conversation_search_results"),
+    sessionId: nonEmptyTrimmedStringSchema,
+    workspacePath: z.string(),
+    query: z.string(),
+    mode: z.enum(CONVERSATION_SEARCH_MODES),
+    offset: z.number(),
+    limit: z.number(),
+    total: z.number(),
+    hasMore: z.boolean(),
+    results: z.array(conversationSearchResultSchema),
+  }).passthrough(),
+  z.object({
     type: z.literal("session_config"),
     sessionId: nonEmptyTrimmedStringSchema,
     config: z.object({
@@ -394,6 +469,7 @@ const serverEventSchema = z.discriminatedUnion("type", [
       observabilityEnabled: z.boolean(),
       backupsEnabled: z.boolean(),
       defaultBackupsEnabled: z.boolean(),
+      defaultConversationSearchEnabled: z.boolean(),
       subAgentModel: z.string(),
       maxSteps: z.number(),
       toolOutputOverflowChars: z.number().int().nonnegative().nullable(),
@@ -486,6 +562,8 @@ const KNOWN_SERVER_EVENT_TYPES = new Set<string>([
   "subagent_created",
   "subagent_sessions",
   "session_deleted",
+  "conversation_search_status",
+  "conversation_search_results",
   "session_config",
   "file_uploaded",
   "error",

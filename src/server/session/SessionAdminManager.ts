@@ -3,6 +3,7 @@ import path from "node:path";
 
 import type { SubagentAgentType } from "../../shared/persistentSubagents";
 import { deletePersistedSessionSnapshot, listPersistedSessionSnapshots } from "../sessionStore";
+import type { ConversationSearchMode, ConversationSearchStatusPayload } from "../conversationSearch";
 import type { SessionContext } from "./SessionContext";
 
 export class SessionAdminManager {
@@ -49,11 +50,155 @@ export class SessionAdminManager {
     }
     try {
       const sessions = this.context.deps.sessionDb
-        ? this.context.deps.sessionDb.listSessions()
-        : await listPersistedSessionSnapshots(this.context.getCoworkPaths());
+        ? this.context.deps.sessionDb.listSessionsByWorkspace(this.context.state.config.workingDirectory)
+        : await listPersistedSessionSnapshots(this.context.getCoworkPaths(), {
+            workingDirectory: this.context.state.config.workingDirectory,
+          });
       this.context.emit({ type: "sessions", sessionId: this.context.id, sessions });
     } catch (err) {
       this.context.emitError("internal_error", "session", `Failed to list sessions: ${String(err)}`);
+    }
+  }
+
+  async getConversationSearchStatus(): Promise<ConversationSearchStatusPayload | null> {
+    if (!this.requireRootConversationSearchAccess("inspect conversation search status")) {
+      return null;
+    }
+    const service = this.context.deps.conversationSearchService;
+    if (!service) {
+      this.context.emitError("internal_error", "session", "Conversation search service is unavailable");
+      return null;
+    }
+    return await service.getStatus(
+      this.context.state.config.workingDirectory,
+      this.context.state.config.conversationSearchEnabled ?? false,
+    );
+  }
+
+  async emitConversationSearchStatus() {
+    const status = await this.getConversationSearchStatus();
+    if (!status) return;
+    this.context.emit({
+      type: "conversation_search_status",
+      sessionId: this.context.id,
+      ...status,
+    });
+  }
+
+  async downloadConversationSearchModels() {
+    if (!this.requireRootConversationSearchAccess("download conversation search models")) {
+      return;
+    }
+    const service = this.context.deps.conversationSearchService;
+    if (!service) {
+      this.context.emitError("internal_error", "session", "Conversation search service is unavailable");
+      return;
+    }
+    try {
+      await service.queueModelDownload();
+      await this.emitConversationSearchStatus();
+    } catch (err) {
+      this.context.emitError("internal_error", "session", `Failed to queue conversation search model download: ${String(err)}`);
+    }
+  }
+
+  async cancelConversationSearchModels() {
+    if (!this.requireRootConversationSearchAccess("cancel conversation search model download")) {
+      return;
+    }
+    const service = this.context.deps.conversationSearchService;
+    if (!service) {
+      this.context.emitError("internal_error", "session", "Conversation search service is unavailable");
+      return;
+    }
+    try {
+      await service.cancelModelDownload();
+      await this.emitConversationSearchStatus();
+    } catch (err) {
+      this.context.emitError("internal_error", "session", `Failed to cancel conversation search model download: ${String(err)}`);
+    }
+  }
+
+  async deleteConversationSearchModels() {
+    if (!this.requireRootConversationSearchAccess("delete conversation search models")) {
+      return;
+    }
+    const service = this.context.deps.conversationSearchService;
+    if (!service) {
+      this.context.emitError("internal_error", "session", "Conversation search service is unavailable");
+      return;
+    }
+    try {
+      await service.deleteModels();
+      await this.emitConversationSearchStatus();
+    } catch (err) {
+      this.context.emitError("internal_error", "session", `Failed to delete conversation search models: ${String(err)}`);
+    }
+  }
+
+  async rebuildConversationSearchIndex(workspacePath?: string) {
+    if (!this.requireRootConversationSearchAccess("rebuild conversation search index")) {
+      return;
+    }
+    const resolvedWorkspacePath = this.assertWorkspacePath(workspacePath);
+    if (!resolvedWorkspacePath) return;
+
+    const service = this.context.deps.conversationSearchService;
+    if (!service) {
+      this.context.emitError("internal_error", "session", "Conversation search service is unavailable");
+      return;
+    }
+
+    try {
+      await service.rebuildWorkspaceIndex(resolvedWorkspacePath);
+      await this.emitConversationSearchStatus();
+    } catch (err) {
+      this.context.emitError("internal_error", "session", `Failed to rebuild conversation search index: ${String(err)}`);
+    }
+  }
+
+  async searchConversations(
+    query: string,
+    opts: {
+      workspacePath?: string;
+      mode?: ConversationSearchMode;
+      offset?: number;
+      limit?: number;
+    },
+  ) {
+    if (!this.requireRootConversationSearchAccess("search conversations")) {
+      return;
+    }
+    const resolvedWorkspacePath = this.assertWorkspacePath(opts.workspacePath);
+    if (!resolvedWorkspacePath) return;
+
+    const service = this.context.deps.conversationSearchService;
+    if (!service) {
+      this.context.emitError("internal_error", "session", "Conversation search service is unavailable");
+      return;
+    }
+
+    try {
+      const result = await service.search({
+        workspacePath: resolvedWorkspacePath,
+        enabled: this.context.state.config.conversationSearchEnabled ?? false,
+        query,
+        mode: opts.mode ?? "semantic",
+        offset: opts.offset ?? 0,
+        limit: opts.limit ?? 10,
+      });
+      this.context.emit({
+        type: "conversation_search_results",
+        sessionId: this.context.id,
+        ...result,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("not ready") || message.includes("enabled")) {
+        this.context.emitError("validation_failed", "session", message);
+        return;
+      }
+      this.context.emitError("internal_error", "session", `Failed to search conversations: ${message}`);
     }
   }
 
@@ -231,5 +376,26 @@ export class SessionAdminManager {
     } catch (err) {
       this.context.emitError("internal_error", "session", `Failed to upload file: ${String(err)}`);
     }
+  }
+
+  private requireRootConversationSearchAccess(action: string): boolean {
+    if ((this.context.state.sessionInfo.sessionKind ?? "root") !== "root") {
+      this.context.emitError("validation_failed", "session", `Only root sessions can ${action}`);
+      return false;
+    }
+    return true;
+  }
+
+  private assertWorkspacePath(workspacePath?: string): string | null {
+    const activeWorkspacePath = this.context.state.config.workingDirectory;
+    if (workspacePath && workspacePath !== activeWorkspacePath) {
+      this.context.emitError(
+        "validation_failed",
+        "session",
+        "workspacePath must match the current workspace",
+      );
+      return null;
+    }
+    return activeWorkspacePath;
   }
 }

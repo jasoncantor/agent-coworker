@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { createConversationSearchToolControl } from "../conversationSearch";
 import { discoverSkills, stripSkillFrontMatter } from "../../skills";
 import { createTools } from "../../tools";
 import { expandCommandTemplate, listCommands as listServerCommands, resolveCommand } from "../commands";
@@ -20,6 +21,14 @@ export class SkillManager {
       log: () => {},
       askUser: async () => "",
       approveCommand: async () => false,
+      conversationSearchControl:
+        this.context.state.sessionInfo.sessionKind === "root"
+          ? createConversationSearchToolControl({
+              service: this.context.deps.conversationSearchService,
+              workspacePath: this.context.state.config.workingDirectory,
+              enabled: this.context.state.config.conversationSearchEnabled ?? false,
+            })
+          : undefined,
     });
 
     const tools = Object.entries(toolMap)

@@ -135,6 +135,7 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
                 ? {
                     ...workspace,
                     defaultBackupsEnabled: evt.config.defaultBackupsEnabled,
+                    defaultConversationSearchEnabled: evt.config.defaultConversationSearchEnabled,
                     defaultSubAgentModel: evt.config.subAgentModel,
                     defaultToolOutputOverflowChars: evt.config.defaultToolOutputOverflowChars,
                     providerOptions,
@@ -152,6 +153,19 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
             },
           }));
           void deps.persist(get);
+          return;
+        }
+
+        if (evt.type === "conversation_search_status") {
+          set((s) => ({
+            workspaceRuntimeById: {
+              ...s.workspaceRuntimeById,
+              [workspaceId]: {
+                ...s.workspaceRuntimeById[workspaceId],
+                conversationSearchStatus: evt,
+              },
+            },
+          }));
           return;
         }
 

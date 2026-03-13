@@ -191,6 +191,52 @@ describe("sessionDb", () => {
     }
   });
 
+  test("listSessionsByWorkspace only returns root sessions in the requested working directory", async () => {
+    const paths = await makeTmpCoworkHome();
+    const db = await SessionDb.create({ paths });
+    try {
+      const now = new Date().toISOString();
+      for (const [sessionId, workingDirectory, sessionKind] of [
+        ["root-a", "/tmp/workspace-a", "root"],
+        ["root-b", "/tmp/workspace-b", "root"],
+        ["child-a", "/tmp/workspace-a", "subagent"],
+      ] as const) {
+        db.persistSessionMutation({
+          sessionId,
+          eventType: "session.created",
+          snapshot: {
+            sessionKind,
+            parentSessionId: sessionKind === "root" ? null : "root-a",
+            agentType: sessionKind === "root" ? null : "general",
+            title: sessionId,
+            titleSource: "default",
+            titleModel: null,
+            provider: "google",
+            model: "gemini-3-flash-preview",
+            workingDirectory,
+            enableMcp: true,
+            createdAt: now,
+            updatedAt: now,
+            status: "active",
+            hasPendingAsk: false,
+            hasPendingApproval: false,
+            systemPrompt: "system",
+            messages: [{ role: "user", content: sessionId }],
+            providerState: null,
+            todos: [],
+            harnessContext: null,
+            costTracker: null,
+          },
+        });
+      }
+
+      expect(db.listSessionsByWorkspace("/tmp/workspace-a").map((session) => session.sessionId)).toEqual(["root-a"]);
+      expect(db.listSessionsByWorkspace("/tmp/workspace-b").map((session) => session.sessionId)).toEqual(["root-b"]);
+    } finally {
+      db.close();
+    }
+  });
+
   test("imports legacy JSON snapshots before marking legacy migration as applied", async () => {
     const paths = await makeTmpCoworkHome();
     const now = new Date().toISOString();
