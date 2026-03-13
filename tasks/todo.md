@@ -1,3 +1,26 @@
+# Task: Prevent blank assistant messages from splitting Thinking cards
+
+## Plan
+- [x] Reconstruct the affected desktop transcript/feed to confirm where the extra Thinking-card boundary is introduced.
+- [x] Suppress whitespace-only assistant message items in the desktop feed mapping/live stream path so reasoning/tool traces stay grouped.
+- [x] Add regression coverage, run focused verification, and record the result here.
+
+## Review
+- The split was caused by a whitespace-only assistant text chunk in the second deck-building turn. In the saved transcript at `/Users/mweinbach/Library/Application Support/Cowork/transcripts/e264d57c-2c2f-43e9-8658-94fb92cb6c94.jsonl`, the stream emitted a blank assistant text segment between the `skill`/planning steps and the later `todoWrite`/`webSearch` steps. Desktop feed reconstruction treated that newline as a real assistant message, which flushed the first `Thinking` card and started a second one.
+- `apps/desktop/src/app/store.feedMapping.ts` now suppresses whitespace-only assistant text when rebuilding feed items from streamed deltas and when replaying merged `assistant_message` payloads. That keeps the turn as one continuous reasoning/tool trace instead of inserting an invisible assistant-message boundary.
+- Added regressions in `apps/desktop/test/store-feed-mapping.test.ts` for both whitespace-only streamed assistant text and whitespace-only `assistant_message` payloads.
+- Sanity check against the real transcript now produces a single second `activity-group` containing the `skill`, `todoWrite`, and `webSearch` activity instead of two separate `Thinking` cards.
+- Verification:
+  - `~/.bun/bin/bun test apps/desktop/test/store-feed-mapping.test.ts apps/desktop/test/chat-activity-groups.test.ts --bail` -> pass (`26 pass, 0 fail`)
+  - `~/.bun/bin/bunx tsc --noEmit -p apps/desktop/tsconfig.json` -> pass
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `./node_modules/.bin/tsc --noEmit -p apps/TUI/tsconfig.json` -> fails in unchanged TUI code at `apps/TUI/routes/session/index.tsx:248` (`TS2769`) and `apps/TUI/ui/dialog-prompt.tsx:61` (`TS2322`)
+  - `~/.bun/bin/bun test` -> fails only in the external remote MCP coverage: `remote MCP (mcp.grep.app) > connects, discovers tools, and executes searchGitHub` returned `Streamable HTTP error ... 500: Internal Server Error`
+  - `~/.bun/bin/bun run build:server-binary` -> pass
+  - `~/.bun/bin/bun run build:desktop-resources` -> pass
+  - `~/.bun/bin/bun run desktop:build` -> pass
+  - `git diff --check` -> pass
+
 # Task: Fix user-facing citation indexing in conversation messages
 
 ## Plan

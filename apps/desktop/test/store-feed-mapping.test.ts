@@ -234,6 +234,110 @@ describe("desktop transcript feed mapping", () => {
     expect(assistant.map((item) => item.text)).toEqual(["First note.", "Second note."]);
   });
 
+  test("does not create a blank assistant message for whitespace-only streamed text", () => {
+    const transcript: TranscriptEvent[] = [
+      {
+        ts: "2024-01-01T00:00:00.000Z",
+        threadId: "thread-1",
+        direction: "client",
+        payload: { type: "user_message", text: "research it" },
+      },
+      {
+        ts: "2024-01-01T00:00:01.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-whitespace",
+          index: 0,
+          provider: "opencode-zen",
+          model: "nemotron-3-super-free",
+          partType: "reasoning_delta",
+          part: { id: "r1", mode: "reasoning", text: "Plan the work first." },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:02.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-whitespace",
+          index: 1,
+          provider: "opencode-zen",
+          model: "nemotron-3-super-free",
+          partType: "text_delta",
+          part: { id: "txt_1", text: "\n" },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:03.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-whitespace",
+          index: 2,
+          provider: "opencode-zen",
+          model: "nemotron-3-super-free",
+          partType: "tool_call",
+          part: { toolCallId: "tool-1", toolName: "todoWrite", input: { todos: [{ content: "Task", status: "pending" }] } },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:04.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-whitespace",
+          index: 3,
+          provider: "opencode-zen",
+          model: "nemotron-3-super-free",
+          partType: "reasoning_delta",
+          part: { id: "r2", mode: "reasoning", text: "Start with the first topic." },
+        },
+      },
+    ];
+
+    const feed = mapTranscriptToFeed(transcript);
+
+    expect(feed.map((item) => item.kind)).toEqual(["message", "reasoning", "tool", "reasoning"]);
+    expect(feed.filter((item) => item.kind === "message" && item.role === "assistant")).toHaveLength(0);
+  });
+
+  test("skips whitespace-only assistant_message payloads during transcript replay", () => {
+    const transcript: TranscriptEvent[] = [
+      {
+        ts: "2024-01-01T00:00:00.000Z",
+        threadId: "thread-1",
+        direction: "client",
+        payload: { type: "user_message", text: "research it" },
+      },
+      {
+        ts: "2024-01-01T00:00:01.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: { type: "assistant_message", text: "\n" },
+      },
+      {
+        ts: "2024-01-01T00:00:02.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: { type: "reasoning_summary", text: "Continue with the next step." },
+      },
+    ];
+
+    const feed = mapTranscriptToFeed(transcript);
+
+    expect(feed.map((item) => item.kind)).toEqual(["message", "reasoning"]);
+    expect(feed.filter((item) => item.kind === "message" && item.role === "assistant")).toHaveLength(0);
+  });
+
   test("suppresses client-side usage budget updates during transcript replay", () => {
     const transcript: TranscriptEvent[] = [
       {

@@ -375,13 +375,17 @@ function recentAssistantTextSinceLastUser(feed: FeedItem[]): string {
   return assistantTexts.reverse().join("\n\n").trim();
 }
 
+function hasVisibleAssistantText(text: string): boolean {
+  return text.trim().length > 0;
+}
+
 export function shouldSkipAssistantMessageAfterStreamReplay(
   stream: ThreadModelStreamRuntime,
   assistantText: string,
   feed: FeedItem[] = [],
 ): boolean {
   const normalizedAssistantText = assistantText.trim();
-  if (!normalizedAssistantText) return false;
+  if (!normalizedAssistantText) return true;
 
   if (stream.lastAssistantTurnId) {
     const assistantKey = stream.lastAssistantStreamKeyByTurn.get(stream.lastAssistantTurnId);
@@ -497,10 +501,10 @@ function applyModelStreamUpdate(
       ops.updateFeedItem(itemId, (item) =>
         item.kind === "message" && item.role === "assistant" ? { ...item, text: nextText } : item
       );
-    } else {
+    } else if (hasVisibleAssistantText(nextText)) {
       const id = ops.makeId();
       stream.assistantItemIdByStream.set(assistantKey, id);
-      push({ id, kind: "message", role: "assistant", ts: ops.nowIso(), text: update.text });
+      push({ id, kind: "message", role: "assistant", ts: ops.nowIso(), text: nextText });
     }
     return;
   }
