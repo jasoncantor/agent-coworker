@@ -1,3 +1,15 @@
+# Task: Move desktop fix stack onto current main
+
+## Plan
+- [x] Inspect the stale feature branch against current `main` and determine whether a direct merge/rebase is safe.
+- [x] Move only the session-specific citation and transcript fixes onto current `main` without pulling the older unrelated branch stack.
+- [ ] Run sanity verification on `main` and record the outcome here.
+
+## Review
+- The original working branch was based on an older point in history and carried a long unrelated stack (`opencode-go`, overflow, webFetch, and other prior work), so rebasing or merging the whole branch onto `main` was the wrong integration path for this request.
+- Instead, current `main` now carries only the session-specific fixes via cherry-picks: `52e729b` (`citations`) and `f5fbaed` (`fix transcript`), plus this follow-up task/lesson update.
+- The remaining verification pass runs from `main` after the cherry-picks complete, so the final report reflects the landed branch state rather than the stale feature branch.
+
 # Task: Prevent blank assistant messages from splitting Thinking cards
 
 ## Plan
