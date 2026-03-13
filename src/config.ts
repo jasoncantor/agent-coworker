@@ -172,6 +172,11 @@ const harnessLayerSchema = z.object({
 const modelSettingsLayerSchema = z.object({
   maxRetries: nonNegativeIntegerLikeSchema.optional(),
 }).passthrough();
+const userProfileLayerSchema = z.object({
+  instructions: z.string().optional(),
+  work: z.string().optional(),
+  details: z.string().optional(),
+}).passthrough();
 
 function parseCommandConfig(raw: unknown): AgentConfig["command"] | undefined {
   if (raw === undefined) return undefined;
@@ -219,6 +224,11 @@ function asRuntimeName(v: unknown): RuntimeName | null {
 function asString(v: unknown): string | undefined {
   const parsed = stringSchema.safeParse(v);
   return parsed.success ? parsed.data : undefined;
+}
+
+function asTrimmedString(v: unknown): string | undefined {
+  const parsed = stringSchema.safeParse(v);
+  return parsed.success ? parsed.data.trim() : undefined;
 }
 
 function asBoolean(v: unknown): boolean | null {
@@ -359,12 +369,17 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     undefined;
   const uploadsDirectory = uploadsDirRaw ? resolveDir(uploadsDirRaw, cwd) : undefined;
 
-  const userName =
-    asNonEmptyString(env.AGENT_USER_NAME) ||
-    asNonEmptyString(projectConfig.userName) ||
-    asNonEmptyString(userConfig.userName) ||
-    asString(builtInDefaults.userName) ||
-    "";
+  const userName = asTrimmedString(env.AGENT_USER_NAME) ?? asTrimmedString((merged as Record<string, unknown>).userName) ?? "";
+  const mergedUserProfile = parseLayer(
+    userProfileLayerSchema,
+    (merged as Record<string, unknown>).userProfile,
+    {},
+  );
+  const userProfile = {
+    instructions: asString(mergedUserProfile.instructions) ?? "",
+    work: asString(mergedUserProfile.work) ?? "",
+    details: asString(mergedUserProfile.details) ?? "",
+  };
   const knowledgeCutoff = supportedModel.knowledgeCutoff;
 
   const enableMcp =
@@ -459,6 +474,7 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     outputDirectory,
     uploadsDirectory,
     userName,
+    userProfile,
     knowledgeCutoff,
 
     projectAgentDir,

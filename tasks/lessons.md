@@ -1,6 +1,7 @@
 # Lessons
 
 - When the user explicitly changes a CI request from “narrow the trigger” to “delete the workflow,” stop refining the trigger and remove the job/workflow exactly as requested.
+- When the user expands a bugfix to include verification failures found during the lane, treat every concrete error you surfaced as in-scope work instead of stopping after the original fix.
 - For expensive environment-backed CI in this repo, never leave the heavy job gated only on `event_name != 'pull_request'`; explicitly scope it to the intended branch or manual dispatch so ordinary `main` pushes do not burn the testing environment.
 - For automated PR review bots in this repo, optimize for unresolved findings only: cancel in-flight review runs when a PR closes, skip drafts, disable public session-share noise, and never post long “everything looks good now” summaries.
 - When finishing PR review work in this repo, do not stop at local code/test changes; reply on each completed GitHub review thread and resolve it in the PR in the same pass.
@@ -92,3 +93,5 @@
 - When a review surfaces a missing provider capability, verify the repo’s intended product contract before turning it into a bug; `opencode-go` intentionally has no local pricing or pricing overrides here.
 - When a tool has both saved credentials and environment fallback, match the repo’s standard precedence: user-saved auth should win over ambient shell env unless the product explicitly says otherwise.
 - When the user supplies an authoritative model-cutoff table mid-implementation, stop and update the registry assumptions immediately instead of continuing to churn around older local defaults or partial web results.
+- When adding profile metadata, do not introduce a second name field; keep identity sourced from existing `userName` unless the user explicitly asks for a separate profile-name concept.
+- For optional prompt metadata fields, do not leave placeholder labels like "(if provided)" in templates; injection should conditionally remove whole lines when values are empty.

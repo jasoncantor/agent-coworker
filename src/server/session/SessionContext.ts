@@ -1,4 +1,5 @@
 import type { connectProvider as connectModelProvider, ConnectProviderResult, getAiCoworkerPaths } from "../../connect";
+import type { loadSystemPromptWithSkills } from "../../prompt";
 import type { SessionCostTracker, SessionUsageSnapshot } from "../../session/costTracker";
 import type { runTurn } from "../../agent";
 import type { HarnessContextStore } from "../../harness/contextStore";
@@ -39,9 +40,10 @@ export type PersistedModelSelection = {
 export type PersistedProjectConfigPatch = Partial<
   Pick<
     AgentConfig,
-    "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars"
+    "provider" | "model" | "subAgentModel" | "enableMcp" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars" | "userName"
   >
 > & {
+  userProfile?: Partial<NonNullable<AgentConfig["userProfile"]>>;
   clearToolOutputOverflowChars?: boolean;
   providerOptions?: OpenAiCompatibleProviderOptionsByProvider;
 };
@@ -91,6 +93,7 @@ export type SessionRuntimeState = {
 export type SessionDependencies = {
   connectProviderImpl: typeof connectModelProvider;
   getAiCoworkerPathsImpl: typeof getAiCoworkerPaths;
+  loadSystemPromptWithSkillsImpl: typeof loadSystemPromptWithSkills;
   getProviderCatalogImpl: typeof getProviderCatalog;
   getProviderStatusesImpl: typeof getProviderStatuses;
   sessionBackupFactory: SessionBackupFactory;

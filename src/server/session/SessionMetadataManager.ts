@@ -13,6 +13,30 @@ import type { SessionContext } from "./SessionContext";
 export class SessionMetadataManager {
   constructor(private readonly context: SessionContext) {}
 
+  private effectiveUserProfile() {
+    const profile = this.context.state.config.userProfile;
+    return {
+      instructions: profile?.instructions ?? "",
+      work: profile?.work ?? "",
+      details: profile?.details ?? "",
+    };
+  }
+
+  private promptRefreshConfig(patch: SessionConfigPatch): AgentConfig {
+    return {
+      ...this.context.state.config,
+      ...(patch.userName !== undefined ? { userName: patch.userName } : {}),
+      ...(patch.userProfile !== undefined
+        ? {
+            userProfile: {
+              ...this.effectiveUserProfile(),
+              ...patch.userProfile,
+            },
+          }
+        : {}),
+    };
+  }
+
   getPublicConfig() {
     return {
       provider: this.context.state.config.provider,
@@ -49,6 +73,8 @@ export class SessionMetadataManager {
         toolOutputOverflowChars,
         ...(defaultToolOutputOverflowChars !== undefined ? { defaultToolOutputOverflowChars } : {}),
         ...(providerOptions ? { providerOptions } : {}),
+        userName: this.context.state.config.userName,
+        userProfile: this.effectiveUserProfile(),
       },
     };
   }
@@ -190,6 +216,20 @@ export class SessionMetadataManager {
       }
     }
 
+    let refreshedSystemPrompt: Awaited<ReturnType<SessionContext["deps"]["loadSystemPromptWithSkillsImpl"]>> | null = null;
+    if (patch.userName !== undefined || patch.userProfile !== undefined) {
+      try {
+        refreshedSystemPrompt = await this.context.deps.loadSystemPromptWithSkillsImpl(this.promptRefreshConfig(patch));
+      } catch (err) {
+        this.context.emitError(
+          "internal_error",
+          "session",
+          `Failed to refresh system prompt: ${String(err)}`
+        );
+        return;
+      }
+    }
+
     const persistPatch: import("./SessionContext").PersistedProjectConfigPatch = {};
     if (normalizedSubAgentModel !== undefined) {
       persistPatch.subAgentModel = normalizedSubAgentModel;
@@ -208,6 +248,12 @@ export class SessionMetadataManager {
     }
     if (patch.providerOptions !== undefined) {
       persistPatch.providerOptions = patch.providerOptions;
+    }
+    if (patch.userName !== undefined) {
+      persistPatch.userName = patch.userName;
+    }
+    if (patch.userProfile !== undefined) {
+      persistPatch.userProfile = patch.userProfile;
     }
     if (Object.keys(persistPatch).length > 0 && this.context.deps.persistProjectConfigPatchImpl) {
       try {
@@ -264,7 +310,26 @@ export class SessionMetadataManager {
         ),
       };
     }
+    if (patch.userName !== undefined) {
+      this.context.state.config = {
+        ...this.context.state.config,
+        userName: patch.userName,
+      };
+    }
+    if (patch.userProfile !== undefined) {
+      this.context.state.config = {
+        ...this.context.state.config,
+        userProfile: {
+          ...this.effectiveUserProfile(),
+          ...patch.userProfile,
+        },
+      };
+    }
     if (patch.maxSteps !== undefined) this.context.state.maxSteps = patch.maxSteps;
+    if (refreshedSystemPrompt) {
+      this.context.state.system = refreshedSystemPrompt.prompt;
+      this.context.state.discoveredSkills = refreshedSystemPrompt.discoveredSkills;
+    }
 
     this.context.emit(this.getSessionConfigEvent());
     if (patch.backupsEnabled !== undefined) {

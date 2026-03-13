@@ -1,3 +1,69 @@
+# Task: Fix remaining PR #37 prompt templating review comments
+
+## Plan
+- [x] Inspect the unresolved `src/prompt.ts` review threads and confirm whether they can be addressed with one templating change.
+- [x] Make user-provided prompt variables literal-safe and non-recursive without changing the rest of the prompt contract.
+- [x] Add focused regressions, run the required verification lane, and resolve the completed PR threads.
+
+## Review
+- Addressed the two remaining PR #37 prompt-template review threads in [prompt.ts](/Users/mweinbach/Projects/agent-coworker/src/prompt.ts) by replacing the iterative `injectTemplateVariable` flow with a single callback-based `renderTemplateVariables()` pass. Empty-value template lines are stripped before substitution, then all remaining `{{...}}` tokens are resolved against the original prompt in one pass so user-provided text is always treated literally.
+- This fixes both reported regressions without changing the broader prompt contract: `$...` sequences in `userName` or `userProfile` no longer trigger replacement-pattern behavior, and `{{...}}` sequences inside user-supplied profile content no longer recurse into later template substitutions.
+- Added focused regressions in [prompt.test.ts](/Users/mweinbach/Projects/agent-coworker/test/prompt.test.ts) that prove literal `$&` and `$1` content survives unchanged and that profile text containing `{{workingDirectory}}` remains verbatim while the real prompt token still resolves elsewhere in the prompt.
+- Verification:
+  - `git diff --check` -> pass
+  - `HOME=$(mktemp -d) ~/.bun/bin/bun test test/prompt.test.ts --bail` -> pass (`51 pass, 0 fail`)
+  - `HOME=$(mktemp -d) ~/.bun/bin/bun test` -> pass (`2233 pass, 2 skip, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `./node_modules/.bin/tsc --noEmit -p apps/TUI/tsconfig.json` -> pass
+  - `~/.bun/bin/bun run build:server-binary` -> pass
+  - `~/.bun/bin/bun run build:desktop-resources` -> pass
+  - `~/.bun/bin/bun run desktop:build` -> pass; notarization explicitly skipped because notarization credentials are not fully configured in this environment
+
+# Task: Review PR #37 desktop management coverage for user profile context
+
+## Plan
+- [x] Inspect the PR #37 diff with emphasis on websocket protocol, session/config persistence, and any desktop-facing surfaces that need to manage the new profile fields.
+- [x] Verify whether the desktop app already receives and can update the new user profile state through the server/workspace settings flow; patch any missing protocol or desktop wiring if needed.
+- [x] Run focused regression tests first, then the repo-required test/build verification lane, and record the result plus any residual risks here.
+
+## Review
+- The review found a real desktop gap: the PR extended websocket `session_config` with `userName` and `userProfile`, but the desktop layer only updated sync fixtures. It was not persisting those workspace defaults, hydrating them from the control session, replaying them to live thread sessions, or exposing them in the workspace settings UI.
+- Patched the desktop workspace model and sanitizers so `userName` and `userProfile` now survive renderer bootstrap, IPC validation, and Electron persistence in [types.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/app/types.ts), [bootstrap.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/app/store.actions/bootstrap.ts), [desktopSchemas.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/lib/desktopSchemas.ts), and [persistence.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/electron/services/persistence.ts).
+- Patched desktop control/thread sync so harness `session_config` snapshots hydrate the new fields and workspace default updates replay them through `set_config` to both the control session and live thread sessions in [controlSocket.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/app/store.helpers/controlSocket.ts) and [workspaceDefaults.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/app/store.actions/workspaceDefaults.ts).
+- Added a new workspace settings card so the desktop app can actually manage the profile fields, not just store them, in [WorkspacesPage.tsx](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/ui/settings/pages/WorkspacesPage.tsx).
+- Added regression coverage for renderer bootstrap, persistence, workspace sync, and settings rendering in [workspace-settings-sync.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/workspace-settings-sync.test.ts), [persistence-state-sanitization.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/persistence-state-sanitization.test.ts), [desktop-schemas.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/desktop-schemas.test.ts), and [workspaces-page.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/workspaces-page.test.ts).
+- Verification:
+  - `HOME=$(mktemp -d) ~/.bun/bin/bun test apps/desktop/test/workspace-settings-sync.test.ts apps/desktop/test/workspaces-page.test.ts apps/desktop/test/desktop-schemas.test.ts apps/desktop/test/persistence-state-sanitization.test.ts --bail` -> pass (`32 pass, 0 fail`)
+  - `HOME=$(mktemp -d) ~/.bun/bin/bun test` -> pass (`2226 pass, 2 skip, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `./node_modules/.bin/tsc --noEmit -p apps/TUI/tsconfig.json` -> fails in unchanged TUI files at `apps/TUI/routes/session/index.tsx:248` (`TS2769`) and `apps/TUI/ui/dialog-prompt.tsx:62` (`TS2322`)
+  - `~/.bun/bin/bun run build:server-binary` -> pass
+  - `~/.bun/bin/bun run build:desktop-resources` -> pass
+  - `~/.bun/bin/bun run desktop:build` -> pass; macOS notarization skipped because Apple notarization credentials are not configured in this environment
+
+# Task: Address PR #37 review comments
+
+## Plan
+- [x] Inspect the unresolved PR #37 review threads and separate the real runtime regression from any already-satisfied parser contract.
+- [x] Refresh the cached session system prompt when `set_config` changes `userName` or `userProfile`, without changing unrelated runtime behavior.
+- [x] Add regression coverage for live prompt refresh and for clearing persisted profile fields with empty strings.
+- [x] Run focused tests, the full test suite, typechecks, required builds, and record the outcome here.
+
+## Review
+- Addressed the real `P1` regression in [SessionMetadataManager.ts](/Users/mweinbach/Projects/agent-coworker/src/server/session/SessionMetadataManager.ts): `setConfig()` now refreshes the cached `state.system` and `discoveredSkills` via the same system-prompt loader whenever `userName` or `userProfile` changes, so the next turn in the current session uses the updated prompt context immediately.
+- Kept the refresh path testable by adding an injected `loadSystemPromptWithSkillsImpl` dependency in [SessionContext.ts](/Users/mweinbach/Projects/agent-coworker/src/server/session/SessionContext.ts) and [AgentSession.ts](/Users/mweinbach/Projects/agent-coworker/src/server/session/AgentSession.ts), matching the repo’s existing dependency-injection pattern.
+- The `P2` parser concern was already satisfied in the current branch: `set_config` already accepted `userName: ""` and empty `userProfile` strings. Instead of churning that parser path again, I added an end-to-end server regression in [server.test.ts](/Users/mweinbach/Projects/agent-coworker/test/server.test.ts) and clarified the contract in [websocket-protocol.md](/Users/mweinbach/Projects/agent-coworker/docs/websocket-protocol.md) so empty strings are explicitly documented as clearing prompt context.
+- Added targeted regression coverage in [session.test.ts](/Users/mweinbach/Projects/agent-coworker/test/session.test.ts) to prove a live `setConfig()` profile edit changes the system prompt actually passed into the next `runTurn()` call.
+- Verification:
+  - `git diff --check` -> pass
+  - `HOME=$(mktemp -d) ~/.bun/bin/bun test test/protocol.test.ts test/session.test.ts test/server.test.ts --bail` -> pass (`447 pass, 0 fail`)
+  - `HOME=$(mktemp -d) ~/.bun/bin/bun test` -> pass (`2222 pass, 2 skip, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `./node_modules/.bin/tsc --noEmit -p apps/TUI/tsconfig.json` -> fails in unchanged TUI files at `apps/TUI/routes/session/index.tsx:248` (`TS2769`) and `apps/TUI/ui/dialog-prompt.tsx:62` (`TS2322`)
+  - `~/.bun/bin/bun run build:server-binary` -> pass
+  - `~/.bun/bin/bun run build:desktop-resources` -> pass
+  - `~/.bun/bin/bun run desktop:build` -> pass; macOS notarization skipped because Apple notarization credentials are not fully configured in this environment
+
 # Task: Stop Harness Full from running on every main push
 
 ## Plan
@@ -173,18 +239,53 @@
 - [x] Add regression coverage and run the required verification commands, then record the results here.
 
 ## Review
-- Added `src/shared/displayCitationMarkers.ts` to normalize stored raw citation markers into display-safe output for both desktop and TUI rendering. Resolvable citations are rendered as superscript links; unresolvable citations are removed entirely so the message text does not keep stray numbers or spacing artifacts.
-- Desktop message rendering now hydrates citation URLs from both inline `webSearch` results and overflow spill files, which fixes missing later-source links in long search outputs. The same shared citation normalization is also wired into the TUI markdown path so both clients present the same user-facing contract.
-- Added regressions in `test/displayCitationMarkers.test.ts` and `apps/desktop/test/message-links.test.ts` covering linked superscripts, missing-link elision, repeated citation handling, and overflow-backed URL recovery.
-- Verification:
-  - `~/.bun/bin/bun test test/displayCitationMarkers.test.ts apps/desktop/test/message-links.test.ts --bail` -> pass (`17 pass, 0 fail`)
-  - `~/.bun/bin/bun test` -> fails only in the external remote MCP coverage: `runTurn + remote MCP (mcp.grep.app) > loads the remote MCP tools and can execute them via the tools passed to streamText` returned `Streamable HTTP error ... 500: Internal Server Error`
-- `~/.bun/bin/bunx tsc --noEmit -p apps/desktop/tsconfig.json` -> pass
+
+# Task: Fix desktop user profile context blank screen on input
+
+## Plan
+- [x] Reproduce the desktop renderer failure in the actual Electron workspaces settings flow and isolate the real render loop source.
+- [x] Patch the render loop, then add regressions for both the chat-view loop and the workspaces typing path that triggered it.
+- [x] Fix the standalone TUI typecheck failures surfaced during verification, rerun the repo-required test/build lane, and record the outcome here.
+
+## Review
+- Reproduced the blank-screen bug in the real Electron app by launching desktop dev mode with remote debugging and typing into the `Workspace work context` field in Settings -> Workspaces. The renderer hit React's `Maximum update depth exceeded` warning and the page blanked.
+- Root cause was not the workspace profile form. The loop came from [ChatView.tsx](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/ui/ChatView.tsx): the citation-overflow effect reset `overflowCitationUrlsByMessageId` to a fresh empty `Map()` every render when the derived `citationOverflowFilePathsByMessageId` was empty. Because that derived map is rebuilt during render, the effect kept scheduling a new state update and the renderer never settled.
+- Fixed [ChatView.tsx](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/ui/ChatView.tsx) so the empty-path case preserves the existing empty map instead of creating a new one. That breaks the passive-effect update loop while keeping the citation reset behavior when there is real state to clear.
+- Added a dedicated desktop regression in [chat-view.stability.test.tsx](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/chat-view.stability.test.tsx) that mounts `ChatView` under `StrictMode` with an empty feed and asserts no max-depth warning is emitted. Extended [workspaces-page.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/workspaces-page.test.ts) to prove typing in the profile fields no longer triggers a render loop or blanks the settings shell.
+- The repo-required verification lane still surfaced the previously known standalone TUI type errors, and the user explicitly expanded scope to include them. Fixed [index.tsx](/Users/mweinbach/Projects/agent-coworker/apps/TUI/routes/session/index.tsx) by replacing the function-child `Show` branch with a direct rendered node, and fixed [dialog-prompt.tsx](/Users/mweinbach/Projects/agent-coworker/apps/TUI/ui/dialog-prompt.tsx) by aligning `onSubmit` with the OpenTUI input callback shape.
+- Manual Electron verification after the fix showed the Settings -> Workspaces page remained interactive after typing into `Workspace work context`, and the max-depth warning no longer appeared in the renderer console.
+
+### Verification
+- `HOME=$(mktemp -d) ~/.bun/bin/bun test apps/desktop/test/chat-view.stability.test.tsx apps/desktop/test/workspaces-page.test.ts --bail` -> pass (`5 pass, 0 fail`)
+- `HOME=$(mktemp -d) ~/.bun/bin/bun test` -> pass (`2231 pass, 2 skip, 0 fail`)
 - `~/.bun/bin/bun run typecheck` -> pass
-- `./node_modules/.bin/tsc --noEmit -p apps/TUI/tsconfig.json` -> fails in unchanged TUI code at `apps/TUI/routes/session/index.tsx:248` (`TS2769`) and `apps/TUI/ui/dialog-prompt.tsx:61` (`TS2322`)
+- `./node_modules/.bin/tsc --noEmit -p apps/TUI/tsconfig.json` -> pass
 - `~/.bun/bin/bun run build:server-binary` -> pass
 - `~/.bun/bin/bun run build:desktop-resources` -> pass
-- `~/.bun/bin/bun run desktop:build` -> pass
+- `~/.bun/bin/bun run desktop:build` -> pass; macOS notarization skipped because Apple notarization credentials are not configured in this environment
+- `git diff --check` -> pass
+
+# Task: Address unresolved PR #37 review comments
+
+## Plan
+- [x] Identify the open GitHub PR for the current branch and fetch all unresolved review threads/comments that need attention.
+- [x] Summarize each thread into a numbered fix candidate with the concrete code/doc/test surface it would require.
+- [x] Fix the remaining config-layering and `set_config` ordering issues, then rerun the required verification/build lane and update the PR threads.
+
+## Review
+- `src/config.ts` now resolves `userName` from the merged config layers with trimming that preserves explicit empty strings, so a persisted project-level clear (`""`) survives restart instead of falling back to inherited user or built-in defaults.
+- `src/server/session/AgentSession.ts` now serializes pending config mutations before `sendUserMessage()`, which removes the race where a back-to-back `set_config` and `user_message` could run one turn with the stale cached prompt.
+- Added focused regressions in `test/config.test.ts`, `test/session.test.ts`, and `test/server.test.ts` covering explicit-empty `userName` layering, in-flight `setConfig()` prompt refresh ordering, and restart persistence for cleared profile fields.
+
+### Verification
+- `git diff --check` -> pass
+- `HOME=$(mktemp -d) ~/.bun/bin/bun test test/config.test.ts test/session.test.ts test/server.test.ts --bail` -> pass (`344 pass, 0 fail`)
+- `HOME=$(mktemp -d) ~/.bun/bin/bun test` -> pass (`2228 pass, 2 skip, 0 fail`)
+- `~/.bun/bin/bun run typecheck` -> pass
+- `./node_modules/.bin/tsc --noEmit -p apps/TUI/tsconfig.json` -> fails in unchanged TUI code at `apps/TUI/routes/session/index.tsx:248` (`TS2769`) and `apps/TUI/ui/dialog-prompt.tsx:62` (`TS2322`)
+- `~/.bun/bin/bun run build:server-binary` -> pass
+- `~/.bun/bin/bun run build:desktop-resources` -> pass
+- `~/.bun/bin/bun run desktop:build` -> pass; macOS notarization skipped because Apple notarization credentials are not configured in this environment
 
 # Task: Ship v0.1.21
 
@@ -3791,3 +3892,51 @@
   - `~/.bun/bin/bun run build:server-binary` -> pass
   - `~/.bun/bin/bun run build:desktop-resources` -> pass
   - `~/.bun/bin/bun run desktop:build` -> pass
+
+# Task: Align profile name handling to `userName`
+
+## Plan
+- [x] Refactor profile config/protocol shapes so name is set through `userName` and `userProfile` only carries instructions/work/details.
+- [x] Update prompt variables/templates so name comes from `{{userName}}` only, removing `{{userProfileName}}`.
+- [x] Update TUI profile dialog/state wiring so “Edit Name” updates `userName`, then rerun required verification/build commands.
+
+## Review
+- Reworked config + websocket patch/state types so `set_config` now accepts top-level `userName` for name updates while `userProfile` is now limited to `instructions`, `work`, and `details`.
+- Updated prompt rendering and all shipped system prompt templates to remove `userProfileName` and rely on existing `userName` for user identity injection.
+- Updated the TUI User Profile flow so the name editor writes `userName`, while other fields keep writing `userProfile`.
+
+# Task: Make user profile/name prompt injection conditional via regex line injection
+
+## Plan
+- [x] Update prompt template wording to remove literal "(if provided)" suffixes for user name/profile lines.
+- [x] Refactor prompt variable injection to use regex-based line replacement that removes entire placeholder lines when values are empty.
+- [x] Run targeted prompt tests plus required typecheck/build/test commands and record results.
+
+## Review
+- Implemented regex-based injection behavior so blank `userName`/`userProfile*` values remove their full prompt lines instead of leaving empty labels.
+- Removed `(if provided)` phrasing in shipped prompt templates because conditional visibility is now handled by injection logic.
+- Verified with prompt-focused tests and required build/typecheck commands.
+
+# Task: Set up Linear for agent-coworker
+
+## Plan
+- [x] Validate the current Linear connection plus existing `AgentCoworker` team/project state so setup work is based on live workspace data.
+- [x] Create the minimal Linear project-side bootstrap for this repo without inventing a larger workflow structure than the workspace currently has.
+- [x] Verify the created Linear resources and document the outcome plus any remaining gaps here.
+
+## Review
+- Linear MCP was already configured and authenticated for this Codex environment, so setup work started from the live workspace instead of redoing connection setup.
+- Verified the only available team is `AgentCoworker` (`AGE`) and that there was no existing `agent-coworker` project before bootstrap. The workspace already had the default `Bug`, `Feature`, and `Improvement` issue labels plus Linear’s onboarding issues `AGE-1` through `AGE-4`.
+- Created the Linear project `agent-coworker` with Max as lead, attached it to the `AgentCoworker` team, and seeded it with a repo-specific summary/description focused on the WebSocket-first harness architecture and the repo’s default verification lane.
+- Created the project document `agent-coworker project brief` and attached it to the project as the initial source-of-truth note for scope, architecture, main code surfaces, verification commands, and triage guidance.
+- Remaining gap: the project now has a home, but it does not yet have milestones or backlog issues beyond Linear’s default onboarding tickets. That is intentional to avoid inventing roadmap structure the workspace does not already define.
+- Verification:
+  - Linear readback: project `agent-coworker` exists at `https://linear.app/agentcoworker/project/agent-coworker-9dd25d9290a3`
+  - Linear readback: document `agent-coworker project brief` exists at `https://linear.app/agentcoworker/document/agent-coworker-project-brief-76150c26ca36`
+  - `HOME=/tmp/agent-coworker-test-home-$(date +%s) ~/.bun/bin/bun test` -> pass (`2231 pass, 2 skip, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `./node_modules/.bin/tsc --noEmit -p apps/TUI/tsconfig.json` -> pass
+  - `~/.bun/bin/bun run build:server-binary` -> pass
+  - `~/.bun/bin/bun run build:desktop-resources` -> pass
+  - `~/.bun/bin/bun run desktop:build` -> pass; notarization skipped because Apple notarization credentials are not configured in this environment
+  - `git diff --check` -> pass

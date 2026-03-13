@@ -23,6 +23,22 @@ function stripPromptLine(prompt: string, matcher: RegExp): string {
     .join("\n");
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function renderTemplateVariables(prompt: string, vars: Record<string, string>): string {
+  let out = prompt;
+
+  for (const [key, value] of Object.entries(vars)) {
+    if (value.trim().length > 0) continue;
+    const lineRegex = new RegExp(`^.*\\{\\{${escapeRegExp(key)}\\}\\}.*(?:\\r?\\n|$)`, "gm");
+    out = out.replace(lineRegex, "");
+  }
+
+  return out.replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (match, key: string) => vars[key] ?? match);
+}
+
 function renderCapabilitySpecificPrompt(prompt: string, supportedModel: SupportedModel): string {
   if (supportedModel.supportsImageInput) return prompt;
 
@@ -145,6 +161,9 @@ export async function loadSystemPromptWithSkills(config: AgentConfig): Promise<S
     currentYear: new Date().getFullYear().toString(),
     modelName: supportedModel.displayName,
     userName: config.userName || "",
+    userProfileInstructions: config.userProfile?.instructions || "",
+    userProfileWork: config.userProfile?.work || "",
+    userProfileDetails: config.userProfile?.details || "",
     knowledgeCutoff: supportedModel.knowledgeCutoff,
     skillNames: skillNames || '"pdf", "doc", "slides", "spreadsheet"',
     skillExamples:
@@ -157,9 +176,7 @@ export async function loadSystemPromptWithSkills(config: AgentConfig): Promise<S
       ].join("\n"),
   };
 
-  prompt = prompt.replace(/{{(\w+)}}/g, (match, key) => {
-    return Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : match;
-  });
+  prompt = renderTemplateVariables(prompt, vars);
   prompt = renderCapabilitySpecificPrompt(prompt, supportedModel);
 
   prompt += `\n\n${buildSkillPolicySection(vars.skillNames, vars.skillExamples, config)}`;
