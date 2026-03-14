@@ -20,18 +20,12 @@ jobs:
     timeout-minutes: 30
     env:
       BASE_REF: main
-      GH_TOKEN: ${{ secrets.PR_AUTOSYNC_TOKEN != '' && secrets.PR_AUTOSYNC_TOKEN || github.token }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.PR_AUTOSYNC_TOKEN != '' && secrets.PR_AUTOSYNC_TOKEN || github.token }}
-
-      - name: Note workflow-token limitation
-        if: ${{ secrets.PR_AUTOSYNC_TOKEN == '' }}
-        run: |
-          echo "::warning::PR_AUTOSYNC_TOKEN is not configured. The workflow can still push merge commits with GITHUB_TOKEN, but downstream workflows may not run for those sync commits."
 
       - name: Configure git identity
         run: |

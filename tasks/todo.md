@@ -8,7 +8,7 @@
 ## Review
 - Added [auto-update-pr-branches.yml](/Users/mweinbach/Projects/agent-coworker/.github/workflows/auto-update-pr-branches.yml), which runs on every push to `main` plus manual dispatch, enumerates open PRs targeting `main`, filters out cross-repo PRs, and merges `origin/main` into each eligible head branch with explicit conflict/fetch/push handling.
 - The workflow uses merge commits instead of rebasing, skips already-current branches, and keeps going when a single PR branch cannot be fetched, conflicts, or cannot be pushed back.
-- Token behavior is explicit in the workflow: it supports an optional `PR_AUTOSYNC_TOKEN` secret for better downstream workflow fan-out, but falls back to `GITHUB_TOKEN` so the branch-sync automation still works without extra setup.
+- The workflow uses the default Actions `GITHUB_TOKEN` so it works without extra repo setup; if downstream PR workflows ever need to rerun off those sync commits, this workflow will need to be switched to a PAT or GitHub App token.
 - Verification:
   - `git diff --check` -> pass
   - `~/.bun/bin/bun run docs:check` -> pass
