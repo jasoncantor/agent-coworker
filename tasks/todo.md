@@ -1,3 +1,51 @@
+# Task: Debug Apple Event desktop conversation rendering
+
+## Plan
+- [x] Inspect the persisted `Apple Event News and Highlights` transcript from `TestFolder` and confirm which mapped feed items produce the duplicated-looking reasoning/tool/final-answer layout.
+- [x] Fix the desktop feed mapping or chat rendering path so raw-backed Kimi/OpenCode activity groups render cleanly without flooding the transcript view.
+- [x] Add a focused regression test for this transcript shape, then run the required test/build verification commands and record the outcome.
+
+## Review
+- Reproduced the issue from the real desktop transcript [01234b1b-46c2-4e6f-beca-6e2eba12caf7.jsonl](/Users/mweinbach/Library/Application%20Support/Cowork/transcripts/01234b1b-46c2-4e6f-beca-6e2eba12caf7.jsonl). The stored `assistant_message` at the end of the Kimi/OpenCode turn was a merged replay of the whole assistant narration (`Now I'll create a professional PDF report...`) that the desktop feed mapper appended after the real final PDF summary, which is why the thread ended with a duplicated wall of text.
+- Patched [store.feedMapping.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/app/store.feedMapping.ts) so transcript-replay assistant dedupe compares a normalized line-trimmed form of streamed and legacy `assistant_message` text. This preserves the real streamed assistant steps but drops merged replay payloads that only differ by paragraph indentation, which matches the Apple Event transcript shape.
+- Patched [legacyToolLogs.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/ui/chat/toolCards/legacyToolLogs.ts) so non-developer mode no longer converts `tool>` / `tool<` log lines into extra tool cards when modern `tool` feed items for that tool name already exist. In the Apple Event transcript that removed the double-materialization that was inflating the “Thinking” cards.
+- Added regression coverage in [store-feed-mapping.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/store-feed-mapping.test.ts) for an indented merged `assistant_message` after a streamed multi-step assistant turn, and in [legacy-tool-logs.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/legacy-tool-logs.test.ts) for mixed modern-tool plus legacy-log feeds.
+- Verified the real transcript replay after the patch: `mapTranscriptToFeed()` now yields `17` assistant/user messages instead of `18`, the stale trailing assistant message is gone, and `normalizeFeedForToolCards()` keeps the Apple Event thread at `24` tool items instead of inflating it to `52`. The final rendered tail now ends with the real PDF summary message rather than the duplicated “Now I'll create...” block.
+- Verification:
+  - `git diff --check` -> pass
+  - `~/.bun/bin/bun test apps/desktop/test/store-feed-mapping.test.ts apps/desktop/test/legacy-tool-logs.test.ts --bail` -> pass (`18 pass, 0 fail`)
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `./node_modules/.bin/tsc --noEmit -p apps/TUI/tsconfig.json` -> pass
+  - `~/.bun/bin/bun test` -> pass (`2249 pass, 2 skip, 0 fail`)
+  - `~/.bun/bin/bun run build:server-binary` -> pass
+  - `~/.bun/bin/bun run build:desktop-resources` -> pass
+  - `~/.bun/bin/bun run desktop:build` -> pass; notarization was skipped because the required Apple credentials were not fully configured in this environment
+
+# Task: Troubleshoot missing memories in TestFolder
+
+## Plan
+- [x] Trace the desktop memory loading path for `TestFolder` and confirm why the settings page reports `Not connected` or stays stuck on `Loading memories...` instead of settling to the real empty/non-empty state.
+- [x] Reproduce the failure with a targeted desktop-store test so the root cause is captured as a regression.
+- [x] Fix the request/connection flow, rerun the required tests/builds, and document the verified outcome.
+
+## Review
+- Verified the live `TestFolder` backend first: [state.json](/Users/mweinbach/Library/Application Support/Cowork/state.json) still points `TestFolder` at `/Users/mweinbach/Desktop/TestFolder`, [server.log](/Users/mweinbach/Library/Application Support/Cowork/logs/server.log) shows that workspace server listening on `ws://127.0.0.1:49407/ws`, a direct websocket probe returned `memory_list` with `0` entries, and both `/Users/mweinbach/Desktop/TestFolder/.agent/memory.sqlite` and `~/.agent/memory.sqlite` currently contain `0` rows. The workspace has no saved memories right now, but the desktop renderer was also failing to surface that empty state.
+- Root cause: there were two renderer-side lifecycle bugs. First, `requestWorkspaceMemories()` treated an in-progress first control-session handshake as a hard disconnect. Second, after the workspace server restarted onto a new URL/port, the desktop reused the old auto-reconnecting control socket instead of replacing it, so the Memory page could stay stuck on `Loading memories...` forever while talking to a dead endpoint.
+- Updated [apps/desktop/src/app/store.actions/memory.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/app/store.actions/memory.ts) so a memory refresh stays pending while the initial control session is still handshaking instead of surfacing a false `Not connected` error.
+- Updated [apps/desktop/src/app/store.helpers/controlSocket.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/app/store.helpers/controlSocket.ts) so stale control sockets are discarded when the workspace server URL changes, stale control-session state is cleared before reconnecting, and only the active control socket is allowed to clear runtime state on close. Pending memory loads now reset cleanly on active close instead of hanging behind a dead socket.
+- Updated [apps/desktop/src/ui/settings/pages/MemoryPage.tsx](/Users/mweinbach/Projects/agent-coworker/apps/desktop/src/ui/settings/pages/MemoryPage.tsx) so the page stops rendering the loading spinner after a short bounded wait and falls back to the normal empty-state copy when no memory response ever reaches the renderer. This keeps zero-memory workspaces from looking permanently broken even if a request gets orphaned.
+- Added regressions in [apps/desktop/test/protocol-v2-events.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/protocol-v2-events.test.ts) covering the initial-handshake race, the close-before-hello failure path, and stale control-socket replacement after a workspace server URL change, plus [apps/desktop/test/memory-page.test.ts](/Users/mweinbach/Projects/agent-coworker/apps/desktop/test/memory-page.test.ts) for the stalled empty-state UI fallback.
+- Verification:
+  - `~/.bun/bin/bun test apps/desktop/test/memory-page.test.ts --bail` -> pass
+  - `~/.bun/bin/bun test apps/desktop/test/protocol-v2-events.test.ts --bail` -> pass
+  - `git diff --check` -> pass
+  - `~/.bun/bin/bun run typecheck` -> pass
+  - `./node_modules/.bin/tsc --noEmit -p apps/TUI/tsconfig.json` -> pass
+  - `~/.bun/bin/bun test` -> pass (`2247 pass, 2 skip, 0 fail`)
+  - `~/.bun/bin/bun run build:server-binary` -> pass
+  - `~/.bun/bin/bun run build:desktop-resources` -> pass
+  - `~/.bun/bin/bun run desktop:build` -> pass; notarization was skipped because the required Apple credentials were not fully configured in this environment
+
 # Task: Fix remaining memory-management review findings on codex/add-memory-management-feature
 
 ## Plan

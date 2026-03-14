@@ -56,6 +56,11 @@ export function normalizeFeedForToolCards(feed: FeedItem[], developerMode: boole
 
   const out: FeedItem[] = [];
   const pendingByName = new Map<string, number[]>();
+  const modernToolNames = new Set(
+    feed
+      .filter((item): item is Extract<FeedItem, { kind: "tool" }> => item.kind === "tool")
+      .map((item) => item.name)
+  );
 
   for (const item of feed) {
     if (item.kind !== "log") {
@@ -65,6 +70,13 @@ export function normalizeFeedForToolCards(feed: FeedItem[], developerMode: boole
 
     const parsed = parseLegacyToolLogLine(item.line);
     if (!parsed) {
+      out.push(item);
+      continue;
+    }
+
+    // Modern tool feed items already render these invocations cleanly. Keeping the legacy
+    // log lines as logs avoids double-materializing the same tool activity in non-dev mode.
+    if (modernToolNames.has(parsed.name)) {
       out.push(item);
       continue;
     }

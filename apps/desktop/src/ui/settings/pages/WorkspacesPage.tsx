@@ -269,7 +269,7 @@ export function WorkspaceUserProfileCard({
             onChange={(event) =>
               setDraft((current) => ({
                 ...current,
-                userName: event.currentTarget.value,
+                userName: event.target.value,
               }))
             }
             onBlur={(event) => commitUserName(event.currentTarget.value)}
@@ -286,7 +286,7 @@ export function WorkspaceUserProfileCard({
             onChange={(event) =>
               setDraft((current) => ({
                 ...current,
-                work: event.currentTarget.value,
+                work: event.target.value,
               }))
             }
             onBlur={(event) => commitProfileField("work", event.currentTarget.value)}
@@ -303,7 +303,7 @@ export function WorkspaceUserProfileCard({
             onChange={(event) =>
               setDraft((current) => ({
                 ...current,
-                instructions: event.currentTarget.value,
+                instructions: event.target.value,
               }))
             }
             onBlur={(event) => commitProfileField("instructions", event.currentTarget.value)}
@@ -320,7 +320,7 @@ export function WorkspaceUserProfileCard({
             onChange={(event) =>
               setDraft((current) => ({
                 ...current,
-                details: event.currentTarget.value,
+                details: event.target.value,
               }))
             }
             onBlur={(event) => commitProfileField("details", event.currentTarget.value)}

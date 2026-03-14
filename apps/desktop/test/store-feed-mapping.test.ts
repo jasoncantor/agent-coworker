@@ -817,6 +817,152 @@ describe("desktop transcript feed mapping", () => {
     expect(assistant.map((item) => item.text)).toEqual(["progress note", "final answer"]);
   });
 
+  test("skips a merged assistant_message when it only differs by paragraph indentation", () => {
+    const transcript: TranscriptEvent[] = [
+      {
+        ts: "2024-01-01T00:00:00.000Z",
+        threadId: "thread-1",
+        direction: "client",
+        payload: { type: "user_message", text: "research it" },
+      },
+      {
+        ts: "2024-01-01T00:00:01.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-indented-merge",
+          index: 0,
+          provider: "opencode-zen",
+          model: "kimi-k2.5",
+          partType: "start",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:02.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-indented-merge",
+          index: 1,
+          provider: "opencode-zen",
+          model: "kimi-k2.5",
+          partType: "text_delta",
+          part: { id: "s1", text: "progress note" },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:03.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-indented-merge",
+          index: 2,
+          provider: "opencode-zen",
+          model: "kimi-k2.5",
+          partType: "text_end",
+          part: { id: "s1" },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:04.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-indented-merge",
+          index: 3,
+          provider: "opencode-zen",
+          model: "kimi-k2.5",
+          partType: "finish",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:05.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-indented-merge",
+          index: 4,
+          provider: "opencode-zen",
+          model: "kimi-k2.5",
+          partType: "start",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:06.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-indented-merge",
+          index: 5,
+          provider: "opencode-zen",
+          model: "kimi-k2.5",
+          partType: "text_delta",
+          part: { id: "s1", text: "final answer" },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:07.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-indented-merge",
+          index: 6,
+          provider: "opencode-zen",
+          model: "kimi-k2.5",
+          partType: "text_end",
+          part: { id: "s1" },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:08.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-indented-merge",
+          index: 7,
+          provider: "opencode-zen",
+          model: "kimi-k2.5",
+          partType: "finish",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:09.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "assistant_message",
+          text: "progress note\n\n  final answer",
+        },
+      },
+    ];
+
+    const feed = mapTranscriptToFeed(transcript);
+    const assistant = feed.filter((item) => item.kind === "message" && item.role === "assistant");
+
+    expect(assistant).toHaveLength(2);
+    expect(assistant.map((item) => item.text)).toEqual(["progress note", "final answer"]);
+  });
+
   test("inserts a late legacy reasoning summary before the raw-backed final assistant message", () => {
     const transcript: TranscriptEvent[] = [
       {

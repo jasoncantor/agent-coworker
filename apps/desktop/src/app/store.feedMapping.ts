@@ -375,6 +375,16 @@ function recentAssistantTextSinceLastUser(feed: FeedItem[]): string {
   return assistantTexts.reverse().join("\n\n").trim();
 }
 
+function normalizeTranscriptReplayText(text: string): string {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function hasVisibleAssistantText(text: string): boolean {
   return text.trim().length > 0;
 }
@@ -384,12 +394,12 @@ export function shouldSkipAssistantMessageAfterStreamReplay(
   assistantText: string,
   feed: FeedItem[] = [],
 ): boolean {
-  const normalizedAssistantText = assistantText.trim();
+  const normalizedAssistantText = normalizeTranscriptReplayText(assistantText);
   if (!normalizedAssistantText) return true;
 
   if (stream.lastAssistantTurnId) {
     const assistantKey = stream.lastAssistantStreamKeyByTurn.get(stream.lastAssistantTurnId);
-    const streamed = (assistantKey ? stream.assistantTextByStream.get(assistantKey) ?? "" : "").trim();
+    const streamed = normalizeTranscriptReplayText(assistantKey ? stream.assistantTextByStream.get(assistantKey) ?? "" : "");
     if (streamed) {
       if (normalizedAssistantText === streamed) return true;
 
@@ -399,7 +409,7 @@ export function shouldSkipAssistantMessageAfterStreamReplay(
     }
   }
 
-  const aggregatedAssistantText = recentAssistantTextSinceLastUser(feed);
+  const aggregatedAssistantText = normalizeTranscriptReplayText(recentAssistantTextSinceLastUser(feed));
   if (!aggregatedAssistantText) return false;
   if (normalizedAssistantText === aggregatedAssistantText) return true;
 

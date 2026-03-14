@@ -19,7 +19,7 @@ export function createWorkspaceMemoryActions(
   return {
     requestWorkspaceMemories: async (workspaceId: string) => {
       await ensureServerRunning(get, set, workspaceId);
-      ensureControlSocket(get, set, workspaceId);
+      const socket = ensureControlSocket(get, set, workspaceId);
 
       set((s) => ({
         workspaceRuntimeById: {
@@ -36,6 +36,13 @@ export function createWorkspaceMemoryActions(
         sessionId,
       }));
       if (!ok) {
+        const waitingForInitialControlSession =
+          Boolean(socket)
+          && !get().workspaceRuntimeById[workspaceId]?.controlSessionId;
+        if (waitingForInitialControlSession) {
+          return;
+        }
+
         set((s) => ({
           workspaceRuntimeById: {
             ...s.workspaceRuntimeById,

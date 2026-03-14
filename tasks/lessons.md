@@ -1,5 +1,6 @@
 # Lessons
 
+- For desktop admin pages that auto-fetch data, do not assume store-level success/error handling is enough; add a UI-level fallback so an orphaned request cannot leave the page stuck on a perpetual loading message when the correct end state is simply empty.
 - For desktop request spinners in this repo, clear the loading flag on both success events and structured control-session errors; server-side failures like `memory_list` SQLite errors may never emit the success payload that normally resets UI state.
 - When the user explicitly changes a CI request from “narrow the trigger” to “delete the workflow,” stop refining the trigger and remove the job/workflow exactly as requested.
 - When the user expands a bugfix to include verification failures found during the lane, treat every concrete error you surfaced as in-scope work instead of stopping after the original fix.

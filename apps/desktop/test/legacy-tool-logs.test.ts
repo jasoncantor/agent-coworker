@@ -46,4 +46,47 @@ describe("legacy tool log normalization", () => {
     ];
     expect(normalizeFeedForToolCards(feed, true)).toEqual(feed);
   });
+
+  test("does not double-materialize legacy logs when matching modern tool items already exist", () => {
+    const feed: FeedItem[] = [
+      { id: "m1", kind: "message", role: "user", ts: "2026-01-01T00:00:00.000Z", text: "hi" },
+      {
+        id: "t1",
+        kind: "tool",
+        ts: "2026-01-01T00:00:01.000Z",
+        name: "bash",
+        state: "output-available",
+        args: { command: "echo hi" },
+        result: { stdout: "hi" },
+      },
+      { id: "l1", kind: "log", ts: "2026-01-01T00:00:02.000Z", line: "tool> bash {\"command\":\"echo hi\"}" },
+      { id: "l2", kind: "log", ts: "2026-01-01T00:00:03.000Z", line: "tool< bash {\"stdout\":\"hi\"}" },
+      { id: "l3", kind: "log", ts: "2026-01-01T00:00:04.000Z", line: "tool> read {\"path\":\"README.md\"}" },
+      { id: "l4", kind: "log", ts: "2026-01-01T00:00:05.000Z", line: "tool< read {\"chars\":42}" },
+    ];
+
+    expect(normalizeFeedForToolCards(feed, false)).toEqual([
+      { id: "m1", kind: "message", role: "user", ts: "2026-01-01T00:00:00.000Z", text: "hi" },
+      {
+        id: "t1",
+        kind: "tool",
+        ts: "2026-01-01T00:00:01.000Z",
+        name: "bash",
+        state: "output-available",
+        args: { command: "echo hi" },
+        result: { stdout: "hi" },
+      },
+      { id: "l1", kind: "log", ts: "2026-01-01T00:00:02.000Z", line: "tool> bash {\"command\":\"echo hi\"}" },
+      { id: "l2", kind: "log", ts: "2026-01-01T00:00:03.000Z", line: "tool< bash {\"stdout\":\"hi\"}" },
+      {
+        id: "l3",
+        kind: "tool",
+        ts: "2026-01-01T00:00:04.000Z",
+        name: "read",
+        state: "output-available",
+        args: { path: "README.md" },
+        result: { chars: 42 },
+      },
+    ]);
+  });
 });

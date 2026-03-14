@@ -22,9 +22,20 @@ type DraftMemory = {
 };
 
 export const HOT_MEMORY_ID = "hot";
+export const MEMORY_LOADING_STALL_MS = 1_500;
 
 export function resolveDraftMemoryId(rawId: string): string {
   return rawId.trim() || HOT_MEMORY_ID;
+}
+
+export function isMemoryLoadStalled(
+  memoriesLoading: boolean,
+  requestedAt: number | null,
+  nowMs: number,
+  stallMs = MEMORY_LOADING_STALL_MS,
+): boolean {
+  if (!memoriesLoading || requestedAt === null) return false;
+  return nowMs - requestedAt >= stallMs;
 }
 
 function emptyDraft(): DraftMemory {
@@ -52,15 +63,47 @@ export function MemoryPage() {
   const [draft, setDraft] = useState<DraftMemory>(emptyDraft);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filterScope, setFilterScope] = useState<"all" | "workspace" | "user">("all");
+  const [memoryLoadRequestedAt, setMemoryLoadRequestedAt] = useState<number | null>(null);
+  const [memoryLoadStalled, setMemoryLoadStalled] = useState(false);
+
+  const requestMemories = (workspaceId: string) => {
+    setMemoryLoadRequestedAt(Date.now());
+    setMemoryLoadStalled(false);
+    void requestWorkspaceMemories(workspaceId);
+  };
 
   useEffect(() => {
     if (!workspace) return;
     setEditingId(null);
     setDraft(emptyDraft());
-    void requestWorkspaceMemories(workspace.id);
+    requestMemories(workspace.id);
   }, [workspace?.id]);
 
+  useEffect(() => {
+    if (!memoriesLoading) {
+      setMemoryLoadRequestedAt(null);
+      setMemoryLoadStalled(false);
+      return;
+    }
+
+    const requestedAt = memoryLoadRequestedAt ?? Date.now();
+    if (memoryLoadRequestedAt === null) {
+      setMemoryLoadRequestedAt(requestedAt);
+    }
+
+    if (isMemoryLoadStalled(true, requestedAt, Date.now())) {
+      setMemoryLoadStalled(true);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setMemoryLoadStalled(true);
+    }, Math.max(0, MEMORY_LOADING_STALL_MS - (Date.now() - requestedAt)));
+    return () => window.clearTimeout(timer);
+  }, [memoriesLoading, memoryLoadRequestedAt, workspace?.id]);
+
   const filtered = filterScope === "all" ? memories : memories.filter((m) => m.scope === filterScope);
+  const showMemoryLoading = memoriesLoading && !memoryLoadStalled;
 
   const startEdit = (entry: MemoryListEntry) => {
     setEditingId(entry.id);
@@ -188,16 +231,16 @@ export function MemoryPage() {
             <Button
               variant="outline"
               type="button"
-              disabled={memoriesLoading}
-              onClick={() => workspace && void requestWorkspaceMemories(workspace.id)}
+              disabled={showMemoryLoading}
+              onClick={() => workspace && requestMemories(workspace.id)}
             >
-              {memoriesLoading ? "Loading..." : "Refresh"}
+              {showMemoryLoading ? "Loading..." : "Refresh"}
             </Button>
           </div>
 
           {filtered.length === 0 ? (
             <div className="text-xs text-muted-foreground">
-              {memoriesLoading ? "Loading memories..." : "No memories found."}
+              {showMemoryLoading ? "Loading memories..." : "No memories found."}
             </div>
           ) : null}
 

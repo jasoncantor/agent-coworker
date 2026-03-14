@@ -36,10 +36,34 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
   function ensureControlSocket(get: StoreGet, set: StoreSet, workspaceId: string) {
     const rt = get().workspaceRuntimeById[workspaceId];
     const url = rt?.serverUrl;
-    if (!url) return;
+    if (!url) return null;
     const resumeSessionId = rt?.controlSessionId ?? undefined;
 
-    if (RUNTIME.controlSockets.has(workspaceId)) return;
+    const existingSocket = RUNTIME.controlSockets.get(workspaceId);
+    if (existingSocket) {
+      const existingUrl = Reflect.get(existingSocket as object, "url");
+      if (typeof existingUrl !== "string" || existingUrl === url) {
+        return existingSocket;
+      }
+
+      RUNTIME.controlSockets.delete(workspaceId);
+      set((s) => ({
+        workspaceRuntimeById: {
+          ...s.workspaceRuntimeById,
+          [workspaceId]: {
+            ...s.workspaceRuntimeById[workspaceId],
+            controlSessionId: null,
+            controlConfig: null,
+            controlSessionConfig: null,
+          },
+        },
+      }));
+      try {
+        existingSocket.close();
+      } catch {
+        // ignore stale socket close failures
+      }
+    }
 
     const socket = new AgentSocket({
       url,
@@ -433,16 +457,45 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
         }
       },
       onClose: () => {
+        if (RUNTIME.controlSockets.get(workspaceId) !== socket) {
+          return;
+        }
         RUNTIME.controlSockets.delete(workspaceId);
-        set(() => ({
-          providerStatusRefreshing: false,
-          providerLastAuthChallenge: null,
-        }));
+        set((s) => {
+          const workspaceRuntime = s.workspaceRuntimeById[workspaceId];
+          const hadPendingMemories = workspaceRuntime?.memoriesLoading ?? false;
+          return {
+            providerStatusRefreshing: false,
+            providerLastAuthChallenge: null,
+            notifications: hadPendingMemories
+              ? deps.pushNotification(s.notifications, {
+                  id: deps.makeId(),
+                  ts: deps.nowIso(),
+                  kind: "error",
+                  title: "Not connected",
+                  detail: "Unable to request memories.",
+                })
+              : s.notifications,
+            workspaceRuntimeById: workspaceRuntime
+              ? {
+                  ...s.workspaceRuntimeById,
+                  [workspaceId]: {
+                    ...workspaceRuntime,
+                    controlSessionId: null,
+                    controlConfig: null,
+                    controlSessionConfig: null,
+                    memoriesLoading: false,
+                  },
+                }
+              : s.workspaceRuntimeById,
+          };
+        });
       },
     });
 
     RUNTIME.controlSockets.set(workspaceId, socket);
     socket.connect();
+    return socket;
   }
 
   function sendControl(get: StoreGet, workspaceId: string, build: (sessionId: string) => ClientMessage): boolean {

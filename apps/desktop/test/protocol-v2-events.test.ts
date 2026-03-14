@@ -2,13 +2,17 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 type MockSocketOpts = {
   client: string;
+  url?: string;
+  onClose?: (reason: string) => void;
   onEvent?: (evt: any) => void;
 };
 
 class MockAgentSocket {
   sent: any[] = [];
+  url?: string;
 
   constructor(public readonly opts: MockSocketOpts) {
+    this.url = opts.url;
     MOCK_SOCKETS.push(this);
   }
 
@@ -19,7 +23,9 @@ class MockAgentSocket {
     return true;
   }
 
-  close() {}
+  close() {
+    this.opts.onClose?.("closed");
+  }
 
   emit(evt: any) {
     this.opts.onEvent?.(evt);
@@ -108,6 +114,11 @@ function emitServerHello(socket: MockAgentSocket, sessionId: string) {
   });
 }
 
+async function flushAsyncWork() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 describe("desktop protocol v2 mapping", () => {
   let workspaceId = "";
 
@@ -160,6 +171,100 @@ describe("desktop protocol v2 mapping", () => {
     expect(sentTypes).toContain("provider_auth_methods_get");
     expect(sentTypes).toContain("refresh_provider_status");
     expect(sentTypes).toContain("mcp_servers_get");
+  });
+
+  test("requestWorkspaceMemories waits for the initial control hello before surfacing not connected", async () => {
+    const requestPromise = useAppStore.getState().requestWorkspaceMemories(workspaceId);
+    await flushAsyncWork();
+    const controlSocket = socketByClient("desktop-control");
+
+    expect(useAppStore.getState().workspaceRuntimeById[workspaceId]?.memoriesLoading).toBe(true);
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+
+    emitServerHello(controlSocket, "control-session");
+    controlSocket.emit({
+      type: "memory_list",
+      sessionId: "control-session",
+      memories: [
+        {
+          id: "hot",
+          scope: "workspace",
+          content: "remember this",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          updatedAt: "2024-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+    await requestPromise;
+
+    const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
+    expect(runtime?.memoriesLoading).toBe(false);
+    expect(runtime?.memories).toHaveLength(1);
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+
+    const memoryListMessages = controlSocket.sent.filter((msg) => msg?.type === "memory_list");
+    expect(memoryListMessages).toHaveLength(1);
+  });
+
+  test("closing a pending initial control connection clears memory loading and reports not connected", async () => {
+    const requestPromise = useAppStore.getState().requestWorkspaceMemories(workspaceId);
+    await flushAsyncWork();
+    const controlSocket = socketByClient("desktop-control");
+
+    expect(useAppStore.getState().workspaceRuntimeById[workspaceId]?.memoriesLoading).toBe(true);
+
+    controlSocket.close();
+    await requestPromise;
+
+    const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
+    expect(runtime?.memoriesLoading).toBe(false);
+
+    const notification = useAppStore.getState().notifications.at(-1);
+    expect(notification?.title).toBe("Not connected");
+    expect(notification?.detail).toBe("Unable to request memories.");
+  });
+
+  test("requestWorkspaceMemories replaces a stale control socket when the workspace server URL changes", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const originalSocket = socketByClient("desktop-control");
+    emitServerHello(originalSocket, "old-control-session");
+
+    useAppStore.setState((state) => ({
+      workspaceRuntimeById: {
+        ...state.workspaceRuntimeById,
+        [workspaceId]: {
+          ...state.workspaceRuntimeById[workspaceId],
+          serverUrl: "ws://replacement",
+        },
+      },
+    }));
+
+    const requestPromise = useAppStore.getState().requestWorkspaceMemories(workspaceId);
+    await flushAsyncWork();
+
+    const replacementSocket = socketByClient("desktop-control");
+    expect(replacementSocket).not.toBe(originalSocket);
+    expect(originalSocket.opts.url).toBe("ws://mock");
+    expect(replacementSocket.opts.url).toBe("ws://replacement");
+
+    const runtimeWhileConnecting = useAppStore.getState().workspaceRuntimeById[workspaceId];
+    expect(runtimeWhileConnecting?.controlSessionId).toBeNull();
+    expect(runtimeWhileConnecting?.memoriesLoading).toBe(true);
+    expect(replacementSocket.sent.filter((msg) => msg?.type === "memory_list")).toHaveLength(0);
+
+    emitServerHello(replacementSocket, "replacement-session");
+    replacementSocket.emit({
+      type: "memory_list",
+      sessionId: "replacement-session",
+      memories: [],
+    });
+    await requestPromise;
+
+    const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
+    expect(runtime?.controlSessionId).toBe("replacement-session");
+    expect(runtime?.memoriesLoading).toBe(false);
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+    expect(replacementSocket.sent.filter((msg) => msg?.type === "memory_list")).toHaveLength(1);
   });
 
   test("mcp events update runtime slices and notifications", async () => {
