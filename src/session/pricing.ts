@@ -12,6 +12,7 @@
  *   - https://openai.com/api/pricing
  *   - https://ai.google.dev/pricing
  *   - https://www.anthropic.com/pricing
+ *   - https://docs.baseten.co/docs/model-apis/overview
  *
  * Override or extend entries at runtime with
  * `COWORK_MODEL_PRICING_OVERRIDES='{"provider:model":{"inputPerMillion":...,"outputPerMillion":...}}'`.
@@ -63,6 +64,15 @@ const BASE_PRICING_TABLE: Record<string, ModelPricing> = {
     cachedInputPerMillion: 0.08,
   },
 
+  // ── Baseten ──────────────────────────────────────────────────────────
+  "baseten:moonshotai/Kimi-K2.5": {
+    inputPerMillion: 0.6,
+    outputPerMillion: 3,
+  },
+  "baseten:zai-org/GLM-5": {
+    inputPerMillion: 0.95,
+    outputPerMillion: 3.15,
+  },
   // OpenCode Go is intentionally excluded from local pricing estimates.
   "opencode-zen:glm-5": {
     inputPerMillion: 1,
@@ -218,6 +228,7 @@ function isPricingOverrideKey(value: string): value is `${ProviderName}:${string
   return provider === "google"
     || provider === "openai"
     || provider === "anthropic"
+    || provider === "baseten"
     || provider === "opencode-zen"
     || provider === "codex-cli";
 }

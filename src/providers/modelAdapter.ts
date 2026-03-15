@@ -85,6 +85,17 @@ export function createAnthropicModelAdapter(modelId: string, savedKey?: string):
   });
 }
 
+export function createBasetenModelAdapter(modelId: string, savedKey?: string): ProviderModelAdapter {
+  return createModelAdapter(modelId, "baseten.completions", async () => {
+    const key = firstNonEmpty(savedKey, envKey("BASETEN_API_KEY"));
+    const headers: HeaderMap = {};
+    if (key) {
+      headers.authorization = `Api-Key ${key}`;
+    }
+    return headers;
+  });
+}
+
 function createOpenCodeModelAdapter(
   provider: OpenCodeProviderName,
   modelId: string,

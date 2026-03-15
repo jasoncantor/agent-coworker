@@ -4,6 +4,7 @@ import path from "node:path";
 
 import {
   createAnthropicModelAdapter,
+  createBasetenModelAdapter,
   createCodexCliModelAdapter,
   createGoogleModelAdapter,
   createOpenAiModelAdapter,
@@ -75,18 +76,30 @@ describe("provider model adapters", () => {
     });
   });
 
+  test("Baseten adapter wires Api-Key authorization header", async () => {
+    await withEnv("BASETEN_API_KEY", "bkey", async () => {
+      const adapter = createBasetenModelAdapter("moonshotai/Kimi-K2.5");
+      const headers = await adapter.config.headers();
+      expect(headers.authorization).toBe("Api-Key bkey");
+    });
+  });
+
   test("adapters omit auth headers when no key source is available", async () => {
     await withEnv("OPENAI_API_KEY", undefined, async () => {
       await withEnv("GOOGLE_GENERATIVE_AI_API_KEY", undefined, async () => {
         await withEnv("GOOGLE_API_KEY", undefined, async () => {
           await withEnv("ANTHROPIC_API_KEY", undefined, async () => {
-            const openAiHeaders = await createOpenAiModelAdapter("gpt-5.2").config.headers();
-            const googleHeaders = await createGoogleModelAdapter("gemini-3.1").config.headers();
-            const anthropicHeaders = await createAnthropicModelAdapter("claude-opus-4-6").config.headers();
+            await withEnv("BASETEN_API_KEY", undefined, async () => {
+              const openAiHeaders = await createOpenAiModelAdapter("gpt-5.2").config.headers();
+              const googleHeaders = await createGoogleModelAdapter("gemini-3.1").config.headers();
+              const anthropicHeaders = await createAnthropicModelAdapter("claude-opus-4-6").config.headers();
+              const basetenHeaders = await createBasetenModelAdapter("moonshotai/Kimi-K2.5").config.headers();
 
-            expect(openAiHeaders).toEqual({});
-            expect(googleHeaders).toEqual({});
-            expect(anthropicHeaders).toEqual({});
+              expect(openAiHeaders).toEqual({});
+              expect(googleHeaders).toEqual({});
+              expect(anthropicHeaders).toEqual({});
+              expect(basetenHeaders).toEqual({});
+            });
           });
         });
       });

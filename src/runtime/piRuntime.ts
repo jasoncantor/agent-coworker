@@ -16,6 +16,7 @@ import {
 import { mapPiEventToRawParts } from "./piStreamParts";
 
 import { getSavedProviderApiKey } from "../config";
+import { getBasetenModelSpec, resolveBasetenApiKey } from "../providers/basetenShared";
 import {
   getOpenCodeModelPricing,
   getOpenCodeModelSpec,
@@ -193,6 +194,33 @@ function getOpenCodePiModel(provider: OpenCodeProviderName, modelId: string): Pi
   };
 }
 
+function getBasetenPiModel(modelId: string): PiModel | null {
+  const modelSpec = getBasetenModelSpec(modelId);
+  if (!modelSpec) return null;
+
+  return {
+    id: modelSpec.id,
+    name: modelSpec.name,
+    api: "openai-completions",
+    provider: "baseten",
+    baseUrl: modelSpec.baseUrl,
+    reasoning: modelSpec.reasoning,
+    input: [...modelSpec.input],
+    ...(modelSpec.pricing
+      ? {
+          cost: {
+            input: modelSpec.pricing.input,
+            output: modelSpec.pricing.output,
+            cacheRead: 0,
+            cacheWrite: 0,
+          },
+        }
+      : {}),
+    contextWindow: modelSpec.contextWindow,
+    maxTokens: modelSpec.maxTokens,
+  };
+}
+
 type RuntimeStepOverrides = RuntimeStepOverride;
 
 type RuntimeStepState = {
@@ -230,6 +258,17 @@ export async function resolvePiModel(params: RuntimeRunTurnParams): Promise<Reso
     return {
       model: applySupportedModelMetadata(model, provider, modelId),
       apiKey: getSavedProviderApiKey(params.config, "anthropic"),
+    };
+  }
+
+  if (provider === "baseten") {
+    const model = getBasetenPiModel(modelId);
+    if (!model) throw new Error(`No PI model metadata available for provider baseten (model: ${modelId}).`);
+    return {
+      model: applySupportedModelMetadata(model, provider, modelId),
+      apiKey: resolveBasetenApiKey({
+        savedKey: getSavedProviderApiKey(params.config, "baseten"),
+      }),
     };
   }
 

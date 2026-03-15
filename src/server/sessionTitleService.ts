@@ -4,6 +4,7 @@ import type { AgentConfig } from "../types";
 
 const TITLE_MODEL_BY_PROVIDER = {
   anthropic: "claude-haiku-4-5",
+  baseten: "moonshotai/Kimi-K2.5",
   "codex-cli": "gpt-5.2-codex",
   google: "gemini-3-flash-preview",
   openai: "gpt-5-mini",

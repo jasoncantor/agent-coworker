@@ -1,0 +1,10 @@
+{
+  "id": "nvidia/Nemotron-120B-A12B",
+  "provider": "baseten",
+  "displayName": "Nemotron 120B A12B",
+  "knowledgeCutoff": "Unknown",
+  "supportsImageInput": false,
+  "promptTemplate": "system.md",
+  "providerOptionsDefaults": {},
+  "isDefault": false
+}

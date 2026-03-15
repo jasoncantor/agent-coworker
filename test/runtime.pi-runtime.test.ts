@@ -267,6 +267,37 @@ describe("pi runtime regressions", () => {
     expect(resolved.model.cost).toBeUndefined();
   });
 
+  test("baseten runtime model resolution returns explicit Kimi K2.5 metadata and env-key fallback", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-baseten-kimi-"));
+    const config = makeConfig(homeDir, {
+      provider: "baseten",
+      model: "moonshotai/Kimi-K2.5",
+      subAgentModel: "moonshotai/Kimi-K2.5",
+    });
+
+    const resolved = await withEnv("BASETEN_API_KEY", "env-baseten-key", async () => (
+      await piRuntimeInternal.resolvePiModel(makeParams(config))
+    ));
+
+    expect(resolved.apiKey).toBe("env-baseten-key");
+    expect(resolved.model).toMatchObject({
+      id: "moonshotai/Kimi-K2.5",
+      api: "openai-completions",
+      provider: "baseten",
+      baseUrl: "https://inference.baseten.co/v1",
+      reasoning: true,
+      contextWindow: 262_144,
+      maxTokens: 131_072,
+      cost: {
+        input: 0.6,
+        output: 3,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+    });
+    expect(resolved.model.input).toEqual(["text", "image"]);
+  });
+
   test("opencode-zen runtime model resolution returns explicit GLM-5 PI metadata and env-key fallback", async () => {
     const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-opencode-zen-"));
     const config = makeConfig(homeDir, {

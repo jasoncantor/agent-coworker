@@ -31,6 +31,20 @@ describe("pricing", () => {
             expect(pricing!.inputPerMillion).toBe(0.15);
         });
 
+        it("resolves exact match for baseten models", () => {
+            const kimi = resolveModelPricing("baseten", "moonshotai/Kimi-K2.5");
+            expect(kimi).not.toBeNull();
+            expect(kimi!.inputPerMillion).toBe(0.6);
+            expect(kimi!.outputPerMillion).toBe(3);
+
+            const glm = resolveModelPricing("baseten", "zai-org/GLM-5");
+            expect(glm).not.toBeNull();
+            expect(glm!.inputPerMillion).toBe(0.95);
+            expect(glm!.outputPerMillion).toBe(3.15);
+
+            expect(resolveModelPricing("baseten", "nvidia/Nemotron-120B-A12B")).toBeNull();
+        });
+
         it("returns null for opencode-go models without local pricing", () => {
             expect(resolveModelPricing("opencode-go", "glm-5")).toBeNull();
             expect(resolveModelPricing("opencode-go", "kimi-k2.5")).toBeNull();
@@ -236,6 +250,7 @@ describe("pricing", () => {
             const catalog = listPricingCatalog();
             const providers = new Set(catalog.map((e) => e.provider));
             expect(providers.has("anthropic")).toBe(true);
+            expect(providers.has("baseten")).toBe(true);
             expect(providers.has("openai")).toBe(true);
             expect(providers.has("google")).toBe(true);
             expect(providers.has("opencode-zen")).toBe(true);

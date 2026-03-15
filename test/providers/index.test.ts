@@ -33,6 +33,19 @@ describe("src/providers/index.ts", () => {
       expect(headers["x-api-key"]).toBe("anthropic-key");
     });
 
+    test("creates Baseten model with saved key", async () => {
+      const config = makeConfig({
+        provider: "baseten",
+        model: "moonshotai/Kimi-K2.5",
+        subAgentModel: "moonshotai/Kimi-K2.5",
+      });
+      const model = getModelForProvider(config, "moonshotai/Kimi-K2.5", "baseten-key") as any;
+      const headers = await model.config.headers();
+      expect(model.modelId).toBe("moonshotai/Kimi-K2.5");
+      expect(model.provider).toBe("baseten.completions");
+      expect(headers.authorization).toBe("Api-Key baseten-key");
+    });
+
     test("creates OpenCode Go model with saved key", async () => {
       const config = makeConfig({ provider: "opencode-go", model: "glm-5", subAgentModel: "glm-5" });
       const model = getModelForProvider(config, "glm-5", "opencode-key") as any;
@@ -82,6 +95,7 @@ describe("src/providers/index.ts", () => {
       expect(defaultModelForProvider("google")).toBe(PROVIDERS.google.defaultModel);
       expect(defaultModelForProvider("openai")).toBe(PROVIDERS.openai.defaultModel);
       expect(defaultModelForProvider("anthropic")).toBe(PROVIDERS.anthropic.defaultModel);
+      expect(defaultModelForProvider("baseten")).toBe(PROVIDERS.baseten.defaultModel);
       expect(defaultModelForProvider("opencode-go")).toBe(PROVIDERS["opencode-go"].defaultModel);
       expect(defaultModelForProvider("opencode-zen")).toBe(PROVIDERS["opencode-zen"].defaultModel);
       expect(defaultModelForProvider("codex-cli")).toBe(PROVIDERS["codex-cli"].defaultModel);
@@ -99,6 +113,10 @@ describe("src/providers/index.ts", () => {
 
     test("returns key candidates for anthropic", () => {
       expect(getProviderKeyCandidates("anthropic")).toBe(PROVIDERS.anthropic.keyCandidates);
+    });
+
+    test("returns key candidates for baseten", () => {
+      expect(getProviderKeyCandidates("baseten")).toBe(PROVIDERS.baseten.keyCandidates);
     });
 
     test("returns key candidates for opencode-go", () => {

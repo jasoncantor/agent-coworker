@@ -11,6 +11,10 @@ export const PROVIDER_MODEL_CATALOG = {
     defaultModel: defaultModelIdForProvider("anthropic"),
     availableModels: listSupportedModelIds("anthropic"),
   },
+  baseten: {
+    defaultModel: defaultModelIdForProvider("baseten"),
+    availableModels: listSupportedModelIds("baseten"),
+  },
   "opencode-go": {
     defaultModel: defaultModelIdForProvider("opencode-go"),
     availableModels: listSupportedModelIds("opencode-go"),
@@ -43,6 +47,7 @@ export function availableModelsForProvider(provider: ProviderName): readonly str
 
 export const PROVIDER_MODEL_CHOICES: Record<ProviderName, readonly string[]> = {
   anthropic: PROVIDER_MODEL_CATALOG.anthropic.availableModels,
+  baseten: PROVIDER_MODEL_CATALOG.baseten.availableModels,
   "opencode-go": PROVIDER_MODEL_CATALOG["opencode-go"].availableModels,
   "opencode-zen": PROVIDER_MODEL_CATALOG["opencode-zen"].availableModels,
   "codex-cli": PROVIDER_MODEL_CATALOG["codex-cli"].availableModels,

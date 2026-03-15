@@ -107,6 +107,43 @@ describe("providers/connectionCatalog", () => {
     });
   });
 
+  test("lists Baseten in the provider catalog with the expected model set", async () => {
+    const payload = await getProviderCatalog({
+      readStore: async () => ({
+        version: 1,
+        updatedAt: "2026-02-17T00:00:00.000Z",
+        services: {},
+      }),
+    });
+
+    expect(payload.default.baseten).toBe("moonshotai/Kimi-K2.5");
+    expect(payload.all).toContainEqual({
+      id: "baseten",
+      name: "Baseten",
+      models: [
+        {
+          id: "moonshotai/Kimi-K2.5",
+          displayName: "Kimi K2.5",
+          knowledgeCutoff: "Unknown",
+          supportsImageInput: true,
+        },
+        {
+          id: "nvidia/Nemotron-120B-A12B",
+          displayName: "Nemotron 120B A12B",
+          knowledgeCutoff: "Unknown",
+          supportsImageInput: false,
+        },
+        {
+          id: "zai-org/GLM-5",
+          displayName: "GLM-5",
+          knowledgeCutoff: "Unknown",
+          supportsImageInput: false,
+        },
+      ],
+      defaultModel: "moonshotai/Kimi-K2.5",
+    });
+  });
+
   test("connected providers exclude oauth_pending entries", async () => {
     const payload = await getProviderCatalog({
       readStore: async () => ({

@@ -64,6 +64,10 @@ describe("reasoningModeForProvider", () => {
     expect(reasoningModeForProvider("anthropic")).toBe("reasoning");
   });
 
+  test('returns "reasoning" for baseten', () => {
+    expect(reasoningModeForProvider("baseten")).toBe("reasoning");
+  });
+
   test('returns "reasoning" for opencode-go', () => {
     expect(reasoningModeForProvider("opencode-go")).toBe("reasoning");
   });

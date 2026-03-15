@@ -4,6 +4,9 @@ import anthropicClaudeHaiku45 from "../../config/models/anthropic/claude-haiku-4
 import anthropicClaudeOpus46 from "../../config/models/anthropic/claude-opus-4-6.json";
 import anthropicClaudeSonnet45 from "../../config/models/anthropic/claude-sonnet-4-5.json";
 import anthropicClaudeSonnet46 from "../../config/models/anthropic/claude-sonnet-4-6.json";
+import basetenMoonshotAiKimiK25 from "../../config/models/baseten/moonshotai-kimi-k2.5.json";
+import basetenNvidiaNemotron120bA12b from "../../config/models/baseten/nvidia-nemotron-120b-a12b.json";
+import basetenZaiOrgGlm5 from "../../config/models/baseten/zai-org-glm-5.json";
 import codexCliGpt5Codex from "../../config/models/codex-cli/gpt-5-codex.json";
 import codexCliGpt51CodexMax from "../../config/models/codex-cli/gpt-5.1-codex-max.json";
 import codexCliGpt51CodexMini from "../../config/models/codex-cli/gpt-5.1-codex-mini.json";
@@ -34,6 +37,7 @@ const providerNameSchema = z.enum([
   "google",
   "openai",
   "anthropic",
+  "baseten",
   "opencode-go",
   "opencode-zen",
   "codex-cli",
@@ -58,6 +62,9 @@ const RAW_MODEL_REGISTRY_ENTRIES = [
   anthropicClaudeOpus46,
   anthropicClaudeSonnet45,
   anthropicClaudeSonnet46,
+  basetenMoonshotAiKimiK25,
+  basetenNvidiaNemotron120bA12b,
+  basetenZaiOrgGlm5,
   codexCliGpt5Codex,
   codexCliGpt51CodexMax,
   codexCliGpt51CodexMini,
@@ -91,6 +98,7 @@ function buildRegistry(entries: SupportedModel[]) {
     google: [],
     openai: [],
     anthropic: [],
+    baseten: [],
     "opencode-go": [],
     "opencode-zen": [],
     "codex-cli": [],

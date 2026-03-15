@@ -102,6 +102,38 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
     });
   });
 
+  test("baseten saved key overrides BASETEN_API_KEY", async () => {
+    const { home } = await makeTmpDirs();
+    const savedKey = "saved-baseten-key";
+    const envKey = "env-baseten-key";
+
+    await writeJson(path.join(home, ".cowork", "auth", "connections.json"), {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      services: {
+        baseten: {
+          service: "baseten",
+          mode: "api_key",
+          apiKey: savedKey,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    await withEnv("BASETEN_API_KEY", envKey, async () => {
+      const cfg = makeConfig({
+        provider: "baseten",
+        model: "moonshotai/Kimi-K2.5",
+        subAgentModel: "moonshotai/Kimi-K2.5",
+        userAgentDir: path.join(home, ".agent"),
+      });
+
+      const model = getModel(cfg) as any;
+      const headers = await model.config.headers();
+      expect(headers.authorization).toBe(`Api-Key ${savedKey}`);
+    });
+  });
+
   test("opencode-go saved key overrides OPENCODE_API_KEY", async () => {
     const { home } = await makeTmpDirs();
     const savedKey = "saved-opencode-key";
@@ -279,6 +311,36 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
       const model = getModel(cfg) as any;
       const headers = await model.config.headers();
       expect(headers.authorization).toBe(`Bearer ${envKey}`);
+    });
+  });
+
+  test("baseten falls back to BASETEN_API_KEY when saved entry has no api key", async () => {
+    const { home } = await makeTmpDirs();
+    const envKey = "env-baseten-fallback";
+
+    await writeJson(path.join(home, ".cowork", "auth", "connections.json"), {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      services: {
+        baseten: {
+          service: "baseten",
+          mode: "oauth_pending",
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    await withEnv("BASETEN_API_KEY", envKey, async () => {
+      const cfg = makeConfig({
+        provider: "baseten",
+        model: "moonshotai/Kimi-K2.5",
+        subAgentModel: "moonshotai/Kimi-K2.5",
+        userAgentDir: path.join(home, ".agent"),
+      });
+
+      const model = getModel(cfg) as any;
+      const headers = await model.config.headers();
+      expect(headers.authorization).toBe(`Api-Key ${envKey}`);
     });
   });
 
