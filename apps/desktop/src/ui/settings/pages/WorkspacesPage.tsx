@@ -408,6 +408,14 @@ export function IosRelayCard({
   const localDeviceName = (relayState.localDeviceName ?? deviceName) || "Cowork Mac";
   const publishedWorkspaceName = relayState.publishedWorkspaceName ?? (isPublished ? workspace.name : null);
   const isRelayReady = relayState.supported && workspace.iosRelayEnabled && relayState.advertising && isPublished;
+  const diagnosticLogs = relayState.diagnosticLogs ?? [];
+  const pairedPeerLabel = relayState.peer
+    ? `${relayState.peer.name} (${relayState.peer.state})`
+    : relayConfig.rememberedPeerName
+      ? `${relayConfig.rememberedPeerName} (paired)`
+      : relayConfig.rememberedPeerId
+        ? `${relayConfig.rememberedPeerId} (paired)`
+        : null;
 
   return (
     <Card className="border-border/80 bg-card/85">
@@ -539,6 +547,72 @@ export function IosRelayCard({
           <div>
             <div className="font-medium text-foreground">Support</div>
             <div className="text-muted-foreground">{relayState.supported ? "macOS helper available" : "Unavailable on this platform"}</div>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="rounded-xl border border-border/70 p-4">
+            <div className="text-sm font-medium text-foreground">Paired and Nearby iPhones</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Discovery entries only appear while the phone is on the Pair Desktop screen. The currently paired iPhone is shown separately here.
+            </div>
+            <div className="mt-4 space-y-2 text-sm">
+              {pairedPeerLabel ? (
+                <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-3">
+                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Current iPhone</div>
+                  <div className="mt-1 font-medium text-foreground">{pairedPeerLabel}</div>
+                </div>
+              ) : null}
+              {relayState.discoveredPeers && relayState.discoveredPeers.length > 0 ? (
+                relayState.discoveredPeers.map((peer) => (
+                  <div key={peer.id} className="rounded-lg border border-border/70 px-3 py-3">
+                    <div className="font-medium text-foreground">{peer.name}</div>
+                    <div className="mt-1 break-all text-xs text-muted-foreground">{peer.deviceId}</div>
+                  </div>
+                ))
+              ) : !pairedPeerLabel ? (
+                <div className="rounded-lg border border-dashed border-border/70 px-3 py-3 text-muted-foreground">
+                  No nearby iPhone relay peers discovered yet.
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/70 p-4">
+            <div className="text-sm font-medium text-foreground">Relay diagnostics</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Recent helper lifecycle, advertising, discovery, and approval messages from this Mac.
+            </div>
+            <div className="mt-4 space-y-2 text-sm">
+              {diagnosticLogs.length > 0 ? (
+                [...diagnosticLogs].slice(-8).reverse().map((entry) => (
+                  <div key={entry.id} className="rounded-lg border border-border/70 px-3 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(entry.at).toLocaleTimeString()}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-[11px] font-medium uppercase tracking-[0.12em]",
+                          entry.level === "error"
+                            ? "text-rose-600"
+                            : entry.level === "warning"
+                              ? "text-amber-600"
+                              : "text-muted-foreground",
+                        )}
+                      >
+                        {entry.level}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-muted-foreground">{entry.message}</div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-lg border border-dashed border-border/70 px-3 py-3 text-muted-foreground">
+                  No relay diagnostics yet.
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

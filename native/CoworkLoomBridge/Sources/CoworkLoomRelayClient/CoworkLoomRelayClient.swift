@@ -70,6 +70,11 @@ public final class RelaySocket: @unchecked Sendable {
 @MainActor
 public final class CoworkLoomRelayClient {
     private let configuration: CoworkLoomRelayClientConfiguration
+    private let identityManager = LoomIdentityManager(
+        service: "com.cowork.loom.relay.client.identity.v1",
+        account: "p256-signing",
+        synchronizable: false
+    )
     private let node: LoomNode
     private let multiplexer = RelayChannelMultiplexer()
 
@@ -85,7 +90,8 @@ public final class CoworkLoomRelayClient {
             configuration: LoomNetworkConfiguration(
                 serviceType: configuration.serviceType,
                 enabledDirectTransports: [.tcp]
-            )
+            ),
+            identityManager: identityManager
         )
         self.discovery = node.makeDiscovery(localDeviceID: configuration.deviceID)
     }
@@ -186,6 +192,7 @@ public final class CoworkLoomRelayClient {
         let metadata = peer.advertisement.metadata
         return metadata[RelayProtocolConstants.roleMetadataKey] == RelayProtocolConstants.hostMetadataRole
             && metadata[RelayProtocolConstants.protocolMetadataKey] == String(RelayProtocolConstants.protocolVersion)
+            && peer.advertisement.identityKeyID != nil
     }
 
     private func startConsuming(stream: LoomMultiplexedStream, session: LoomAuthenticatedSession) {
@@ -245,8 +252,10 @@ public final class CoworkLoomRelayClient {
     }
 
     private func makeHelloRequest() -> LoomSessionHelloRequest {
+        let identityKeyID = try? identityManager.currentIdentity().keyID
         let advertisement = LoomPeerAdvertisement(
             deviceID: configuration.deviceID,
+            identityKeyID: identityKeyID,
             deviceType: currentDeviceType(),
             metadata: [
                 RelayProtocolConstants.protocolMetadataKey: String(RelayProtocolConstants.protocolVersion),

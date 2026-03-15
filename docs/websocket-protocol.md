@@ -31,7 +31,7 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
   - Tools & Commands: [list_tools](#list_tools) | [list_commands](#list_commands) | [execute_command](#execute_command)
   - Skills: [list_skills](#list_skills) | [read_skill](#read_skill) | [disable_skill](#disable_skill) | [enable_skill](#enable_skill) | [delete_skill](#delete_skill)
   - MCP: [set_enable_mcp](#set_enable_mcp) | [mcp_servers_get](#mcp_servers_get) | [mcp_server_upsert](#mcp_server_upsert) | [mcp_server_delete](#mcp_server_delete) | [mcp_server_validate](#mcp_server_validate) | [mcp_server_auth_authorize](#mcp_server_auth_authorize) | [mcp_server_auth_callback](#mcp_server_auth_callback) | [mcp_server_auth_set_api_key](#mcp_server_auth_set_api_key) | [mcp_servers_migrate_legacy](#mcp_servers_migrate_legacy)
-  - Session Management: [session_close](#session_close) | [get_messages](#get_messages) | [set_session_title](#set_session_title) | [list_sessions](#list_sessions) | [delete_session](#delete_session) | [subagent_create](#subagent_create) | [subagent_sessions_get](#subagent_sessions_get) | [set_config](#set_config) | [upload_file](#upload_file) | [get_session_usage](#get_session_usage) | [set_session_usage_budget](#set_session_usage_budget)
+  - Session Management: [session_close](#session_close) | [get_messages](#get_messages) | [workspace_files_get](#workspace_files_get) | [workspace_file_read](#workspace_file_read) | [set_session_title](#set_session_title) | [list_sessions](#list_sessions) | [delete_session](#delete_session) | [subagent_create](#subagent_create) | [subagent_sessions_get](#subagent_sessions_get) | [set_config](#set_config) | [upload_file](#upload_file) | [get_session_usage](#get_session_usage) | [set_session_usage_budget](#set_session_usage_budget)
   - Backup: [session_backup_get](#session_backup_get) | [session_backup_checkpoint](#session_backup_checkpoint) | [session_backup_restore](#session_backup_restore) | [session_backup_delete_checkpoint](#session_backup_delete_checkpoint) | [workspace_backups_get](#workspace_backups_get) | [workspace_backup_checkpoint](#workspace_backup_checkpoint) | [workspace_backup_restore](#workspace_backup_restore) | [workspace_backup_delete_checkpoint](#workspace_backup_delete_checkpoint) | [workspace_backup_delete_entry](#workspace_backup_delete_entry) | [workspace_backup_delta_get](#workspace_backup_delta_get)
   - Harness: [harness_context_get](#harness_context_get) | [harness_context_set](#harness_context_set)
   - Keepalive: [ping](#ping)
@@ -1666,6 +1666,42 @@ Manually set the session title.
 
 ---
 
+### workspace_files_get
+
+List directory entries for the current workspace without transferring file contents. The optional `path` is relative to the session's `workingDirectory`; omit it to list the workspace root.
+
+```json
+{ "type": "workspace_files_get", "sessionId": "...", "path": "src" }
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `"workspace_files_get"` | Yes | — |
+| `sessionId` | `string` | Yes | Non-empty session ID |
+| `path` | `string` | No | Relative workspace directory to enumerate |
+
+**Response:** `workspace_files`
+
+---
+
+### workspace_file_read
+
+Read a single workspace file on demand. The `path` is relative to the session's `workingDirectory`.
+
+```json
+{ "type": "workspace_file_read", "sessionId": "...", "path": "README.md" }
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `"workspace_file_read"` | Yes | — |
+| `sessionId` | `string` | Yes | Non-empty session ID |
+| `path` | `string` | Yes | Relative file path within the workspace |
+
+**Response:** `workspace_file_content`
+
+---
+
 ### list_sessions
 
 Enumerate persisted root sessions from the server's canonical session store. Persistent child subagents are not included here.
@@ -2980,6 +3016,82 @@ Message history response to `get_messages`.
 
 ---
 
+### workspace_files
+
+Directory listing response to `workspace_files_get`.
+
+```json
+{
+  "type": "workspace_files",
+  "sessionId": "...",
+  "workspacePath": "/path/to/project",
+  "directory": "src",
+  "entries": [
+    {
+      "path": "src/index.ts",
+      "name": "index.ts",
+      "kind": "file",
+      "size": 512,
+      "modifiedAt": "2026-03-15T00:00:00.000Z",
+      "hidden": false
+    }
+  ],
+  "truncated": false
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"workspace_files"` | — |
+| `sessionId` | `string` | Session identifier |
+| `workspacePath` | `string` | Absolute workspace root path |
+| `directory` | `string` | Relative directory that was requested (`""` for root) |
+| `entries` | `WorkspaceFileEntry[]` | Directory entries sorted with directories first |
+| `truncated` | `boolean` | Whether the server capped the result set |
+
+**WorkspaceFileEntry:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `string` | Relative path from the workspace root |
+| `name` | `string` | Basename of the entry |
+| `kind` | `"file" \| "directory"` | Entry type |
+| `size` | `number?` | File size in bytes when available |
+| `modifiedAt` | `string?` | ISO 8601 modified timestamp when available |
+| `hidden` | `boolean` | Whether the basename starts with `.` |
+
+---
+
+### workspace_file_content
+
+Lazy file-content response to `workspace_file_read`.
+
+```json
+{
+  "type": "workspace_file_content",
+  "sessionId": "...",
+  "workspacePath": "/path/to/project",
+  "path": "README.md",
+  "content": "# Project",
+  "truncated": false,
+  "binary": false,
+  "totalBytes": 10
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"workspace_file_content"` | — |
+| `sessionId` | `string` | Session identifier |
+| `workspacePath` | `string` | Absolute workspace root path |
+| `path` | `string` | Relative path from the workspace root |
+| `content` | `string` | UTF-8 preview content (empty for binary files) |
+| `truncated` | `boolean` | Whether the preview was capped server-side |
+| `binary` | `boolean` | Whether the file was detected as binary |
+| `totalBytes` | `number` | Full file size in bytes |
+
+---
+
 ### sessions
 
 Persisted session list response to `list_sessions`.
@@ -3016,6 +3128,8 @@ Persisted session list response to `list_sessions`.
 | `title` | `string` | Session title |
 | `provider` | `ProviderName` | Provider |
 | `model` | `string` | Model |
+| `workspaceName` | `string?` | Workspace display name derived from the session working directory |
+| `workspacePath` | `string?` | Absolute working directory for the session |
 | `createdAt` | `string` | ISO 8601 creation timestamp |
 | `updatedAt` | `string` | ISO 8601 last update timestamp |
 | `messageCount` | `number` | Number of messages in history |

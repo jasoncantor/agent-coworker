@@ -27,7 +27,7 @@ export class SessionDbRepository {
   listSessions(): PersistedSessionSummary[] {
     const rows = this.db
       .query(
-        `SELECT session_id, title, provider, model, created_at, updated_at, message_count
+        `SELECT session_id, title, provider, model, working_directory, created_at, updated_at, message_count
          FROM sessions
          WHERE session_kind = 'root'
          ORDER BY updated_at DESC`,

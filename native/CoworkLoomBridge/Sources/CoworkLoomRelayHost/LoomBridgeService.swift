@@ -100,6 +100,11 @@ public typealias BridgeEventEmitter = @Sendable (BridgeEvent) -> Void
 public final class LoomBridgeService {
     private let emitEvent: BridgeEventEmitter
     private let trustProvider = ApprovedPeerTrustProvider()
+    private let identityManager = LoomIdentityManager(
+        service: "com.cowork.desktop.loom.relay.host.identity.v1",
+        account: "p256-signing",
+        synchronizable: false
+    )
     private lazy var relayHost = RelayHostController(
         sendEnvelope: { [weak self] envelope in
             try? await self?.sendEnvelope(envelope)
@@ -124,6 +129,7 @@ public final class LoomBridgeService {
     private var incomingStreamTask: Task<Void, Never>?
     private var relayReadTask: Task<Void, Never>?
     private var sessionStateTask: Task<Void, Never>?
+    private var lastDiscoverySummary = ""
 
     public init(emitEvent: @escaping BridgeEventEmitter) {
         self.emitEvent = emitEvent
@@ -134,12 +140,13 @@ public final class LoomBridgeService {
                 serviceType: RelayProtocolConstants.serviceType,
                 enabledDirectTransports: [.tcp]
             ),
-            identityManager: .shared,
+            identityManager: identityManager,
             trustProvider: trustProvider
         )
         self.discovery = node.makeDiscovery(localDeviceID: localDeviceID)
         discovery.onPeersChanged = { [weak self] _ in
             Task { @MainActor in
+                self?.emitDiscoverySummaryIfNeeded()
                 await self?.emitState()
             }
         }
@@ -299,6 +306,7 @@ public final class LoomBridgeService {
         await relayHost.setPublishedWorkspace(publishedWorkspace)
         await refreshAdvertisement()
         lastError = nil
+        emitEvent(.log(level: .info, message: "Published workspace \(workspaceName) (\(workspaceId)) for iOS relay."))
         await emitState()
     }
 
@@ -309,6 +317,7 @@ public final class LoomBridgeService {
         publishedWorkspace = nil
         await relayHost.setPublishedWorkspace(nil)
         await refreshAdvertisement()
+        emitEvent(.log(level: .info, message: "Unpublished workspace \(workspaceId) from iOS relay."))
         await emitState()
     }
 
@@ -329,6 +338,7 @@ public final class LoomBridgeService {
             }
             if requiresApproval {
                 let peerIdentity = context.peerIdentity
+                emitEvent(.log(level: .info, message: "Incoming pairing request from \(peerIdentity.name). Waiting for Mac approval."))
                 if pendingApprovalPeer?.deviceID != peerIdentity.deviceID {
                     pendingApprovalPeer = peerIdentity
                     emitEvent(
@@ -509,16 +519,34 @@ public final class LoomBridgeService {
     }
 
     private func makeAdvertisement() -> LoomPeerAdvertisement {
+        let identityKeyID = currentIdentityKeyID()
+        return Self.makeRelayAdvertisement(
+            localDeviceID: localDeviceID,
+            identityKeyID: identityKeyID,
+            publishedWorkspaceId: publishedWorkspace?.workspaceId,
+            publishedWorkspaceName: publishedWorkspace?.workspaceName
+        )
+    }
+
+    static func makeRelayAdvertisement(
+        localDeviceID: UUID,
+        identityKeyID: String?,
+        publishedWorkspaceId: String?,
+        publishedWorkspaceName: String?
+    ) -> LoomPeerAdvertisement {
         var metadata: [String: String] = [
             RelayProtocolConstants.protocolMetadataKey: String(RelayProtocolConstants.protocolVersion),
             RelayProtocolConstants.roleMetadataKey: RelayProtocolConstants.hostMetadataRole,
         ]
-        if let publishedWorkspace {
-            metadata[RelayProtocolConstants.workspaceIdMetadataKey] = publishedWorkspace.workspaceId
-            metadata[RelayProtocolConstants.workspaceNameMetadataKey] = publishedWorkspace.workspaceName
+        if let publishedWorkspaceId {
+            metadata[RelayProtocolConstants.workspaceIdMetadataKey] = publishedWorkspaceId
+        }
+        if let publishedWorkspaceName {
+            metadata[RelayProtocolConstants.workspaceNameMetadataKey] = publishedWorkspaceName
         }
         return LoomPeerAdvertisement(
             deviceID: localDeviceID,
+            identityKeyID: identityKeyID,
             deviceType: .mac,
             metadata: metadata
         )
@@ -528,11 +556,42 @@ public final class LoomBridgeService {
         guard advertising else {
             return
         }
-        await node.updateAdvertisement(makeAdvertisement())
+        let advertisement = makeAdvertisement()
+        await node.updateAdvertisement(advertisement)
+        let workspaceLabel = publishedWorkspace?.workspaceName ?? "none"
+        let identitySummary = if let identityKeyID = advertisement.identityKeyID {
+            "identity key \(identityKeyID.prefix(8))..."
+        } else {
+            "identity key missing"
+        }
+        emitEvent(.log(level: .info, message: "Updated Loom advertisement. Published workspace: \(workspaceLabel). \(identitySummary)."))
+    }
+
+    private func currentIdentityKeyID() -> String? {
+        do {
+            return try identityManager.currentIdentity().keyID
+        } catch {
+            emitEvent(.log(level: .warning, message: "Failed to load Loom relay identity key: \(error.localizedDescription)"))
+            return nil
+        }
     }
 
     private func clearPendingApproval() {
         pendingApprovalPeer = nil
+    }
+
+    private func emitDiscoverySummaryIfNeeded() {
+        let discoveredPeerNames = discovery.discoveredPeers.map(\.name).sorted()
+        let summary = if discoveredPeerNames.isEmpty {
+            "No nearby Loom peers visible to this Mac."
+        } else {
+            "Nearby Loom peers: \(discoveredPeerNames.joined(separator: ", "))."
+        }
+        guard summary != lastDiscoverySummary else {
+            return
+        }
+        lastDiscoverySummary = summary
+        emitEvent(.log(level: .info, message: summary))
     }
 
     private static func loadOrCreateLocalDeviceID() -> UUID {

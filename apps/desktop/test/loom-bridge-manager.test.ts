@@ -66,6 +66,7 @@ describe("desktop loom bridge manager", () => {
       publishedWorkspaceName: "Workspace 1",
       openChannelCount: 3,
       lastError: null,
+      diagnosticLogs: [],
     });
   });
 
@@ -84,7 +85,7 @@ describe("desktop loom bridge manager", () => {
       }),
     );
 
-    expect(states).toEqual([{ lastError: "Loom helper crashed" }]);
+    expect(states).toEqual([{ lastError: null }, { lastError: "Loom helper crashed" }]);
   });
 
   test("forwards approval requests from the bridge helper", async () => {

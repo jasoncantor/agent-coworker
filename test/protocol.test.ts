@@ -963,6 +963,35 @@ describe("safeParseClientMessage", () => {
     });
   });
 
+  describe("workspace file messages", () => {
+    test("workspace_files_get parses with optional path", () => {
+      const rootMsg = expectOk(JSON.stringify({ type: "workspace_files_get", sessionId: "s1" }));
+      expect(rootMsg.type).toBe("workspace_files_get");
+      if (rootMsg.type === "workspace_files_get") {
+        expect(rootMsg.sessionId).toBe("s1");
+        expect(rootMsg.path).toBeUndefined();
+      }
+
+      const nestedMsg = expectOk(JSON.stringify({ type: "workspace_files_get", sessionId: "s1", path: "src" }));
+      expect(nestedMsg.type).toBe("workspace_files_get");
+      if (nestedMsg.type === "workspace_files_get") {
+        expect(nestedMsg.path).toBe("src");
+      }
+    });
+
+    test("workspace_file_read requires a path", () => {
+      const msg = expectOk(JSON.stringify({ type: "workspace_file_read", sessionId: "s1", path: "README.md" }));
+      expect(msg.type).toBe("workspace_file_read");
+      if (msg.type === "workspace_file_read") {
+        expect(msg.path).toBe("README.md");
+      }
+
+      expect(expectErr(JSON.stringify({ type: "workspace_file_read", sessionId: "s1" }))).toBe(
+        "workspace_file_read missing/invalid path",
+      );
+    });
+  });
+
   describe("delete_session", () => {
     test("valid delete_session message", () => {
       const msg = expectOk(

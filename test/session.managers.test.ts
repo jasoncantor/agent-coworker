@@ -1,8 +1,13 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, test } from "bun:test";
 
 import type { SessionContext } from "../src/server/session/SessionContext";
 import { HistoryManager } from "../src/server/session/HistoryManager";
 import { McpManager } from "../src/server/session/McpManager";
+import { SessionAdminManager } from "../src/server/session/SessionAdminManager";
 import { SessionMetadataManager } from "../src/server/session/SessionMetadataManager";
 
 function makeBaseContext(): SessionContext {
@@ -143,5 +148,41 @@ describe("session managers", () => {
     expect(evt.ok).toBe(false);
     expect(String(evt.message)).toContain("lookup failed");
     expect(context.state.connecting).toBe(false);
+  });
+
+  test("SessionAdminManager lists workspace files and reads file content", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-session-admin-"));
+    try {
+      await fs.mkdir(path.join(workspaceDir, "src"));
+      await fs.writeFile(path.join(workspaceDir, "README.md"), "# hello workspace", "utf-8");
+
+      const context = makeBaseContext();
+      context.state.config.workingDirectory = workspaceDir;
+      const emitted: any[] = [];
+      context.emit = (event) => emitted.push(event);
+      const manager = new SessionAdminManager(context);
+
+      await manager.getWorkspaceFiles();
+
+      const filesEvent = emitted.find((event) => event.type === "workspace_files");
+      expect(filesEvent).toBeDefined();
+      expect(filesEvent.workspacePath).toBe(workspaceDir);
+      expect(filesEvent.directory).toBe("");
+      expect(filesEvent.entries).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: "README.md", kind: "file" }),
+        expect.objectContaining({ path: "src", kind: "directory" }),
+      ]));
+
+      emitted.length = 0;
+      await manager.readWorkspaceFile("README.md");
+
+      const fileEvent = emitted.find((event) => event.type === "workspace_file_content");
+      expect(fileEvent).toBeDefined();
+      expect(fileEvent.path).toBe("README.md");
+      expect(fileEvent.content).toBe("# hello workspace");
+      expect(fileEvent.binary).toBe(false);
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
   });
 });

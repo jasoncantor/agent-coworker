@@ -5,6 +5,9 @@ import type { SubagentAgentType } from "../../shared/persistentSubagents";
 import { deletePersistedSessionSnapshot, listPersistedSessionSnapshots } from "../sessionStore";
 import type { SessionContext } from "./SessionContext";
 
+const MAX_WORKSPACE_DIRECTORY_ENTRIES = 2_000;
+const MAX_WORKSPACE_FILE_BYTES = 256 * 1024;
+
 export class SessionAdminManager {
   constructor(private readonly context: SessionContext) {}
 
@@ -40,6 +43,107 @@ export class SessionAdminManager {
       offset: safeOffset,
       limit: safeLimit,
     });
+  }
+
+  async getWorkspaceFiles(directory = "") {
+    const normalizedDirectory = this.normalizeWorkspacePath(directory);
+    const resolved = await this.resolveWorkspacePath(normalizedDirectory);
+    if (!resolved) {
+      this.context.emitError("validation_failed", "session", "Invalid workspace directory");
+      return;
+    }
+
+    try {
+      const directoryStat = await fs.stat(resolved.absolutePath);
+      if (!directoryStat.isDirectory()) {
+        this.context.emitError("validation_failed", "session", "Workspace path is not a directory");
+        return;
+      }
+
+      const dirents = await fs.readdir(resolved.absolutePath, { withFileTypes: true });
+      dirents.sort((lhs, rhs) => {
+        if (lhs.isDirectory() !== rhs.isDirectory()) {
+          return lhs.isDirectory() ? -1 : 1;
+        }
+        return lhs.name.localeCompare(rhs.name, undefined, { sensitivity: "base" });
+      });
+
+      const truncated = dirents.length > MAX_WORKSPACE_DIRECTORY_ENTRIES;
+      const visibleDirents = dirents.slice(0, MAX_WORKSPACE_DIRECTORY_ENTRIES);
+      const entries = (await Promise.all(visibleDirents.map(async (entry) => {
+        const childRelativePath = this.joinWorkspacePath(normalizedDirectory, entry.name);
+        const childResolved = await this.resolveWorkspacePath(childRelativePath);
+        if (!childResolved) {
+          return null;
+        }
+
+        const stats = await fs.stat(childResolved.absolutePath).catch(() => null);
+        if (!stats) {
+          return null;
+        }
+
+        return {
+          path: childRelativePath,
+          name: entry.name,
+          kind: stats.isDirectory() ? "directory" as const : "file" as const,
+          size: stats.isFile() ? stats.size : undefined,
+          modifiedAt: Number.isNaN(stats.mtime.getTime()) ? undefined : stats.mtime.toISOString(),
+          hidden: entry.name.startsWith("."),
+        };
+      }))).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+      this.context.emit({
+        type: "workspace_files",
+        sessionId: this.context.id,
+        workspacePath: resolved.workspaceRoot,
+        directory: normalizedDirectory,
+        entries,
+        truncated,
+      });
+    } catch (err) {
+      this.context.emitError("internal_error", "session", `Failed to list workspace files: ${String(err)}`);
+    }
+  }
+
+  async readWorkspaceFile(filePath: string) {
+    const normalizedPath = this.normalizeWorkspacePath(filePath);
+    if (!normalizedPath) {
+      this.context.emitError("validation_failed", "session", "Invalid workspace file path");
+      return;
+    }
+
+    const resolved = await this.resolveWorkspacePath(normalizedPath);
+    if (!resolved) {
+      this.context.emitError("validation_failed", "session", "Invalid workspace file path");
+      return;
+    }
+
+    try {
+      const stats = await fs.stat(resolved.absolutePath);
+      if (!stats.isFile()) {
+        this.context.emitError("validation_failed", "session", "Workspace path is not a file");
+        return;
+      }
+
+      const bytes = await fs.readFile(resolved.absolutePath);
+      const truncated = bytes.length > MAX_WORKSPACE_FILE_BYTES;
+      const previewBytes = truncated ? bytes.subarray(0, MAX_WORKSPACE_FILE_BYTES) : bytes;
+      const binary = previewBytes.includes(0);
+      const content = binary ? "" : new TextDecoder().decode(previewBytes);
+
+      this.context.emit({
+        type: "workspace_file_content",
+        sessionId: this.context.id,
+        workspacePath: resolved.workspaceRoot,
+        path: normalizedPath,
+        content,
+        truncated,
+        binary,
+        totalBytes: bytes.length,
+      });
+    } catch (err) {
+      this.context.emitError("internal_error", "session", `Failed to read workspace file: ${String(err)}`);
+    }
   }
 
   async listSessions() {
@@ -231,5 +335,47 @@ export class SessionAdminManager {
     } catch (err) {
       this.context.emitError("internal_error", "session", `Failed to upload file: ${String(err)}`);
     }
+  }
+
+  private normalizeWorkspacePath(input: string | undefined): string {
+    const trimmed = input?.trim() ?? "";
+    if (!trimmed || trimmed === ".") {
+      return "";
+    }
+
+    const normalized = path.normalize(trimmed);
+    if (normalized === "." || normalized === path.sep) {
+      return "";
+    }
+
+    return normalized.replaceAll(path.sep, "/");
+  }
+
+  private joinWorkspacePath(directory: string, name: string): string {
+    if (!directory) {
+      return name;
+    }
+    return `${directory}/${name}`;
+  }
+
+  private async resolveWorkspacePath(relativePath: string): Promise<{ workspaceRoot: string; absolutePath: string } | null> {
+    const workspaceRoot = path.resolve(this.context.state.config.workingDirectory);
+    const candidatePath = path.resolve(workspaceRoot, relativePath || ".");
+
+    const realWorkspaceRoot = await fs.realpath(workspaceRoot).catch(() => workspaceRoot);
+    const realCandidatePath = await fs.realpath(candidatePath).catch(() => candidatePath);
+    const relativeToWorkspace = path.relative(realWorkspaceRoot, realCandidatePath);
+    if (
+      relativeToWorkspace === ".."
+      || relativeToWorkspace.startsWith(`..${path.sep}`)
+      || path.isAbsolute(relativeToWorkspace)
+    ) {
+      return null;
+    }
+
+    return {
+      workspaceRoot,
+      absolutePath: candidatePath,
+    };
   }
 }

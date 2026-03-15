@@ -36,6 +36,7 @@ import {
   createDefaultIosRelayState,
   type IosRelayConfig,
   type IosRelayDiscoveredPeer,
+  type IosRelayLogEntry,
   type IosRelayPeer,
   type IosRelayState,
 } from "../app/iosRelayTypes";
@@ -190,6 +191,13 @@ const iosRelayDiscoveredPeerSchema: z.ZodType<IosRelayDiscoveredPeer> = z.object
   deviceId: nonEmptyStringSchema,
 });
 
+const iosRelayLogEntrySchema: z.ZodType<IosRelayLogEntry> = z.object({
+  id: nonEmptyStringSchema,
+  at: nonEmptyStringSchema,
+  level: z.enum(["info", "warning", "error"]),
+  message: nonEmptyStringSchema,
+});
+
 export const iosRelayStateSchema: z.ZodType<IosRelayState> = z.object({
   supported: z.preprocess((value) => (typeof value === "boolean" ? value : createDefaultIosRelayState().supported), z.boolean()),
   advertising: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()),
@@ -204,6 +212,7 @@ export const iosRelayStateSchema: z.ZodType<IosRelayState> = z.object({
     z.number().int().nonnegative(),
   ),
   lastError: nullableStringSchema,
+  diagnosticLogs: z.preprocess((value) => (Array.isArray(value) ? value : []), z.array(iosRelayLogEntrySchema)),
 });
 
 export const iosRelayConfigSchema: z.ZodType<IosRelayConfig> = z.object({

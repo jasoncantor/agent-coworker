@@ -830,6 +830,14 @@ export class AgentSession {
     this.adminManager.getMessages(offset, limit);
   }
 
+  async getWorkspaceFiles(directory?: string) {
+    await this.adminManager.getWorkspaceFiles(directory);
+  }
+
+  async readWorkspaceFile(filePath: string) {
+    await this.adminManager.readWorkspaceFile(filePath);
+  }
+
   setSessionTitle(title: string) {
     this.metadataManager.setSessionTitle(title);
   }

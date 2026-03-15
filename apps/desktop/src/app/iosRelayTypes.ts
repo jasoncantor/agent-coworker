@@ -10,6 +10,13 @@ export type IosRelayDiscoveredPeer = {
   deviceId: string;
 };
 
+export type IosRelayLogEntry = {
+  id: string;
+  at: string;
+  level: "info" | "warning" | "error";
+  message: string;
+};
+
 export type IosRelayState = {
   supported: boolean;
   advertising: boolean;
@@ -21,6 +28,7 @@ export type IosRelayState = {
   publishedWorkspaceName?: string | null;
   openChannelCount: number;
   lastError: string | null;
+  diagnosticLogs?: IosRelayLogEntry[];
 };
 
 export type IosRelayConfig = {
@@ -41,6 +49,7 @@ export function createDefaultIosRelayState(supported = false): IosRelayState {
     publishedWorkspaceName: null,
     openChannelCount: 0,
     lastError: supported ? null : "iOS Relay is only available on macOS desktop builds.",
+    diagnosticLogs: [],
   };
 }
 

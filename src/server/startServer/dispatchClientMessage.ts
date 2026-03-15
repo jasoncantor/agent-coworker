@@ -137,6 +137,10 @@ export function dispatchClientMessage({
       return void session.getWorkspaceBackupDelta(message.targetSessionId, message.checkpointId);
     case "get_messages":
       return session.getMessages(message.offset, message.limit);
+    case "workspace_files_get":
+      return void session.getWorkspaceFiles(message.path);
+    case "workspace_file_read":
+      return void session.readWorkspaceFile(message.path);
     case "set_session_title":
       return session.setSessionTitle(message.title);
     case "list_sessions":

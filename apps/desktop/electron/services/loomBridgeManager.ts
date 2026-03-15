@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { app } from "electron";
 
-import { createDefaultIosRelayState, type IosRelayState } from "../../src/app/iosRelayTypes";
+import { createDefaultIosRelayState, type IosRelayLogEntry, type IosRelayState } from "../../src/app/iosRelayTypes";
 import { findPackagedLoomBridgeBinary } from "./loomBridgeBinary";
 
 type LoomBridgeChild = ChildProcessByStdio<Writable, Readable, Readable>;
@@ -105,6 +105,8 @@ export class LoomBridgeManager {
   private resolveReady: (() => void) | null = null;
   private rejectReady: ((error: unknown) => void) | null = null;
   private state: IosRelayState = createDefaultIosRelayState(process.platform === "darwin");
+  private logEntries: IosRelayLogEntry[] = [];
+  private nextLogEntryId = 0;
   private readonly onStateChange: (state: IosRelayState) => void;
   private readonly onApprovalRequested: (approval: { peerId: string; peerName: string }) => void | Promise<void>;
 
@@ -235,6 +237,8 @@ export class LoomBridgeManager {
       this.rejectReady = reject;
     });
 
+    this.recordLog("info", `Starting iOS Relay helper from ${bridgeBinary}.`);
+
     const child = spawn(bridgeBinary, [], {
       cwd: app.isPackaged ? process.resourcesPath : app.getAppPath(),
       stdio: ["pipe", "pipe", "pipe"],
@@ -250,6 +254,7 @@ export class LoomBridgeManager {
       const message = chunk.toString().trim();
       if (message) {
         console.warn(`[desktop][ios-relay] ${message}`);
+        this.recordLog("warning", message);
       }
     });
 
@@ -259,6 +264,7 @@ export class LoomBridgeManager {
         code === 0
           ? "iOS Relay helper exited."
           : `iOS Relay helper exited unexpectedly (code=${code ?? "null"}, signal=${signal ?? "null"}).`;
+      this.recordLog(code === 0 ? "info" : "error", message);
       this.updateState({
         ...this.state,
         advertising: false,
@@ -281,6 +287,8 @@ export class LoomBridgeManager {
     if (!child?.stdin || child.stdin.destroyed) {
       throw new Error("iOS Relay helper is not running.");
     }
+
+    this.recordLog("info", `Sending relay command: ${command.type}.`);
 
     await new Promise<void>((resolve, reject) => {
       child.stdin.write(`${JSON.stringify(command)}\n`, (error) => {
@@ -308,6 +316,7 @@ export class LoomBridgeManager {
 
     const ready = bridgeReadyEventSchema.safeParse(parsed);
     if (ready.success) {
+      this.recordLog("info", "iOS Relay helper is ready.");
       this.resolveReady?.();
       this.resolveReady = null;
       this.rejectReady = null;
@@ -327,6 +336,7 @@ export class LoomBridgeManager {
         publishedWorkspaceName: state.data.publishedWorkspaceName ?? null,
         openChannelCount: state.data.openChannelCount,
         lastError: state.data.lastError ?? null,
+        diagnosticLogs: this.logEntries,
       });
       return;
     }
@@ -343,11 +353,13 @@ export class LoomBridgeManager {
     if (log.success) {
       const logger = log.data.level === "error" ? console.error : log.data.level === "warning" ? console.warn : console.info;
       logger(`[desktop][ios-relay] ${log.data.message}`);
+      this.recordLog(log.data.level, log.data.message);
       return;
     }
 
     const fatal = bridgeFatalEventSchema.safeParse(parsed);
     if (fatal.success) {
+      this.recordLog("error", fatal.data.message);
       const nextState = {
         ...this.state,
         lastError: fatal.data.message,
@@ -363,7 +375,27 @@ export class LoomBridgeManager {
   }
 
   private updateState(nextState: IosRelayState): void {
-    this.state = nextState;
+    this.state = {
+      ...nextState,
+      diagnosticLogs: nextState.diagnosticLogs ?? this.logEntries,
+    };
     this.onStateChange(this.state);
+  }
+
+  private recordLog(level: IosRelayLogEntry["level"], message: string): void {
+    this.nextLogEntryId += 1;
+    this.logEntries = [
+      ...this.logEntries,
+      {
+        id: `relay-log-${this.nextLogEntryId}`,
+        at: new Date().toISOString(),
+        level,
+        message,
+      },
+    ].slice(-80);
+    this.updateState({
+      ...this.state,
+      diagnosticLogs: this.logEntries,
+    });
   }
 }

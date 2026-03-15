@@ -1,3 +1,4 @@
+import path from "node:path";
 import { z } from "zod";
 
 import { persistentSubagentSummarySchema, sessionKindSchema, subagentAgentTypeSchema } from "../../shared/persistentSubagents";
@@ -34,6 +35,7 @@ const summaryRowSchema = z.object({
   title: nonEmptyStringSchema,
   provider: providerNameSchema,
   model: nonEmptyStringSchema,
+  working_directory: nonEmptyStringSchema,
   created_at: isoTimestampSchema,
   updated_at: isoTimestampSchema,
   message_count: nonNegativeIntegerSchema,
@@ -92,6 +94,8 @@ export function mapPersistedSessionSummaryRow(row: Record<string, unknown>): Per
     title: parsed.data.title,
     provider: parsed.data.provider,
     model: parsed.data.model,
+    workspaceName: path.basename(parsed.data.working_directory),
+    workspacePath: parsed.data.working_directory,
     createdAt: parsed.data.created_at,
     updatedAt: parsed.data.updated_at,
     messageCount: parsed.data.message_count,

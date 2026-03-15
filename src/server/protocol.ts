@@ -67,6 +67,17 @@ export type SessionConfigState = {
   };
 };
 
+export type WorkspaceFileKind = "file" | "directory";
+
+export type WorkspaceFileEntry = {
+  path: string;
+  name: string;
+  kind: WorkspaceFileKind;
+  size?: number;
+  modifiedAt?: string;
+  hidden: boolean;
+};
+
 export type ClientMessage =
   | { type: "client_hello"; client: "tui" | "cli" | string; version?: string }
   | { type: "user_message"; sessionId: string; text: string; clientMessageId?: string }
@@ -138,6 +149,8 @@ export type ClientMessage =
   | { type: "harness_context_set"; sessionId: string; context: HarnessContextPayload }
   | { type: "reset"; sessionId: string }
   | { type: "get_messages"; sessionId: string; offset?: number; limit?: number }
+  | { type: "workspace_files_get"; sessionId: string; path?: string }
+  | { type: "workspace_file_read"; sessionId: string; path: string }
   | { type: "set_session_title"; sessionId: string; title: string }
   | { type: "list_sessions"; sessionId: string }
   | { type: "delete_session"; sessionId: string; targetSessionId: string }
@@ -394,6 +407,24 @@ export type ServerEvent =
     offset: number;
     limit: number;
   }
+  | {
+    type: "workspace_files";
+    sessionId: string;
+    workspacePath: string;
+    directory: string;
+    entries: WorkspaceFileEntry[];
+    truncated: boolean;
+  }
+  | {
+    type: "workspace_file_content";
+    sessionId: string;
+    workspacePath: string;
+    path: string;
+    content: string;
+    truncated: boolean;
+    binary: boolean;
+    totalBytes: number;
+  }
   | { type: "sessions"; sessionId: string; sessions: PersistedSessionSummary[] }
   | { type: "subagent_created"; sessionId: string; subagent: PersistentSubagentSummary }
   | { type: "subagent_sessions"; sessionId: string; subagents: PersistentSubagentSummary[] }
@@ -457,6 +488,8 @@ export const CLIENT_MESSAGE_TYPES = [
   "harness_context_set",
   "reset",
   "get_messages",
+  "workspace_files_get",
+  "workspace_file_read",
   "set_session_title",
   "list_sessions",
   "delete_session",
@@ -510,6 +543,8 @@ export const SERVER_EVENT_TYPES = [
   "budget_warning",
   "budget_exceeded",
   "messages",
+  "workspace_files",
+  "workspace_file_content",
   "sessions",
   "subagent_created",
   "subagent_sessions",

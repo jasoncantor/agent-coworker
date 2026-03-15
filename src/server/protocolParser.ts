@@ -559,6 +559,16 @@ const getMessagesSchema = schemaWithType("get_messages", {
   limit: optionalNumberAtLeast("get_messages invalid limit", 1),
 });
 
+const workspaceFilesGetSchema = schemaWithType("workspace_files_get", {
+  sessionId: requiredSessionId("workspace_files_get"),
+  path: optionalString("workspace_files_get invalid path"),
+});
+
+const workspaceFileReadSchema = schemaWithType("workspace_file_read", {
+  sessionId: requiredSessionId("workspace_file_read"),
+  path: requiredNonEmptyTrimmedString("workspace_file_read missing/invalid path"),
+});
+
 const setSessionTitleSchema = schemaWithType("set_session_title", {
   sessionId: requiredSessionId("set_session_title"),
   title: requiredNonEmptyTrimmedString("set_session_title missing/invalid title"),
@@ -678,6 +688,8 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   workspaceBackupDeleteEntrySchema,
   workspaceBackupDeltaGetSchema,
   getMessagesSchema,
+  workspaceFilesGetSchema,
+  workspaceFileReadSchema,
   setSessionTitleSchema,
   deleteSessionSchema,
   subagentCreateSchema,

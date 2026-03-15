@@ -13,6 +13,7 @@ describe("sessionDb mappers", () => {
       title: "My Title",
       provider: "google",
       model: "gpt-5.2",
+      working_directory: "/tmp/project-alpha",
       created_at: "2026-02-19T00:00:00.000Z",
       updated_at: "2026-02-19T00:00:01.000Z",
       message_count: 4,
@@ -23,6 +24,8 @@ describe("sessionDb mappers", () => {
       title: "My Title",
       provider: "google",
       model: "gpt-5.2",
+      workspaceName: "project-alpha",
+      workspacePath: "/tmp/project-alpha",
       messageCount: 4,
     });
     expect(Number.isNaN(Date.parse(mapped.createdAt))).toBeFalse();

@@ -22,6 +22,10 @@ mac:
   hardenedRuntime: true
   notarize: false
   gatekeeperAssess: false
+  extendInfo:
+    NSLocalNetworkUsageDescription: Cowork discovers nearby iPhones and relay peers on your local network.
+    NSBonjourServices:
+      - _cowrelay._tcp
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   target:

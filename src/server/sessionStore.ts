@@ -190,6 +190,8 @@ export type PersistedSessionSummary = {
   title: string;
   provider: AgentConfig["provider"];
   model: string;
+  workspaceName?: string;
+  workspacePath?: string;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -676,6 +678,8 @@ export async function listPersistedSessionSnapshots(
       title: parsed.session.title,
       provider: parsed.session.provider,
       model: parsed.session.model,
+      workspaceName: path.basename(parsed.session.config.workingDirectory),
+      workspacePath: parsed.session.config.workingDirectory,
       createdAt: parsed.createdAt,
       updatedAt: parsed.updatedAt,
       messageCount: parsed.context.messages.length,
