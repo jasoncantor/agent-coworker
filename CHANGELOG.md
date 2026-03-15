@@ -2,11 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.1.22 - 2026-03-14
+## 0.1.23 - 2026-03-15
+
+### Added
+
+- **NVIDIA provider** — Added NVIDIA as a new provider with Nemotron 3 Super model support. Reasoning is forced on for NVIDIA requests with explicit token/reasoning budget fields stripped.
+- **Together AI provider** — Added Together AI as a new provider with GLM-5, Kimi-K2.5, and Qwen3.5-397B model support, including image-input capability flags and pricing metadata.
+- **SQLite-backed memory store** — Rewrote the memory system to use a SQLite database with full CRUD operations exposed in the desktop UI. Memory can be enabled/disabled globally, individual items have configurable scope, and system prompts auto-refresh when memory is modified via WebSocket.
+- **User profile prompt context** — Users can now set profile information (name, role, organization, preferences) that gets conditionally injected into the system prompt. Editable from the TUI sidebar or desktop workspace settings.
+- **Registry-backed model metadata and validation** — Centralized model registry (`src/models/registry.ts`) providing a single source of truth for model capabilities, pricing, and validation across all providers and UIs.
+- **PR autosync workflow** — Added a GitHub Actions workflow that automatically syncs PR branches when main is pushed.
 
 ### Changed
 
-- Bumped project version metadata to 0.1.22 for the next tagged release.
+- **Codex auth migrated to OpenAI Responses** — Moved Codex authentication and runtime handling onto the OpenAI Responses infrastructure. OAuth callbacks are now properly gated and deduplicated to prevent spurious auth errors from simultaneous authentication challenges.
+- **Desktop settings UI overhaul** — Reorganized settings into clearer Models & Tools groups with tabulated workspace settings, improved MCP servers page with inline list and accordion layout, added save/success/error feedback patterns, stronger auto-approve warnings, and in-page thread selector on the Usage page.
+- **Initial control session gating** — Desktop app now waits for the initial control session to be established before allowing operations, preventing race conditions on settings and memory operations at startup.
+
+### Fixed
+
+- **Missing model pricing metadata** — The runtime now gracefully handles models without local pricing metadata, preventing crashes when cost tracking is enabled. Zero-cost placeholder usage is stripped from persisted results.
+- Removed obsolete agent browser skill from the desktop build.
+- Fixed concurrent memory access issues with INSERT OR IGNORE for legacy imports and normalized `memoryRequireApproval` defaults throughout.
+- Fixed profile validation to allow clearing fields by entering empty strings.
 
 ## 0.1.21 - 2026-03-12
 
