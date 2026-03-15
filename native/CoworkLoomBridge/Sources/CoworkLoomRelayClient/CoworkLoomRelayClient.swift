@@ -3,6 +3,19 @@ import Loom
 
 import CoworkLoomRelayCore
 
+private func relayClientApplicationSupportDirectory() -> URL {
+    if let override = ProcessInfo.processInfo.environment["COWORK_LOOM_RELAY_CLIENT_APP_SUPPORT_DIR"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+       !override.isEmpty
+    {
+        return URL(fileURLWithPath: override, isDirectory: true)
+    }
+
+    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+    return base.appendingPathComponent("CoworkLoomRelayClient", isDirectory: true)
+}
+
 public struct CoworkLoomRelayClientConfiguration: Sendable, Equatable {
     public var peerID: String?
     public var deviceID: UUID
@@ -12,16 +25,31 @@ public struct CoworkLoomRelayClientConfiguration: Sendable, Equatable {
 
     public init(
         peerID: String? = nil,
-        deviceID: UUID = UUID(),
+        deviceID: UUID? = nil,
         deviceName: String = "Cowork iOS",
         serviceType: String = RelayProtocolConstants.serviceType,
         discoveryTimeout: Duration = .seconds(15)
     ) {
         self.peerID = peerID
-        self.deviceID = deviceID
+        self.deviceID = deviceID ?? Self.loadOrCreateLocalDeviceID()
         self.deviceName = deviceName
         self.serviceType = serviceType
         self.discoveryTimeout = discoveryTimeout
+    }
+
+    static func loadOrCreateLocalDeviceID(
+        storageURL: URL = relayClientApplicationSupportDirectory().appendingPathComponent("device-id.txt")
+    ) -> UUID {
+        if let contents = try? String(contentsOf: storageURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+           let existing = UUID(uuidString: contents)
+        {
+            return existing
+        }
+
+        let created = UUID()
+        try? FileManager.default.createDirectory(at: storageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? created.uuidString.lowercased().write(to: storageURL, atomically: true, encoding: .utf8)
+        return created
     }
 }
 
@@ -83,6 +111,7 @@ public final class CoworkLoomRelayClient {
     private var relayStream: LoomMultiplexedStream?
     private var readTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
+    private var connectionEpochTracker = ConnectionEpochTracker()
 
     public init(configuration: CoworkLoomRelayClientConfiguration = .init()) {
         self.configuration = configuration
@@ -130,10 +159,7 @@ public final class CoworkLoomRelayClient {
 
     public func disconnect() async {
         discovery.stopDiscovery()
-        if let session {
-            await session.cancel()
-        }
-        await handleDisconnect()
+        await handleDisconnect(cancelSession: true)
     }
 
     private func ensureRelayStream() async throws {
@@ -152,9 +178,10 @@ public final class CoworkLoomRelayClient {
             hello: makeHelloRequest()
         )
         let stream = try await session.openStream(label: RelayProtocolConstants.streamLabel)
+        let connectionEpoch = connectionEpochTracker.advance()
         self.session = session
         self.relayStream = stream
-        startConsuming(stream: stream, session: session)
+        startConsuming(stream: stream, session: session, connectionEpoch: connectionEpoch)
         try await sendEnvelope(
             .hello(
                 .init(
@@ -162,7 +189,8 @@ public final class CoworkLoomRelayClient {
                     appVersion: "1",
                     peerName: configuration.deviceName
                 )
-            )
+            ),
+            expectedConnectionEpoch: connectionEpoch
         )
     }
 
@@ -181,9 +209,15 @@ public final class CoworkLoomRelayClient {
     private func resolvePeer() -> LoomPeer? {
         let eligiblePeers = discovery.discoveredPeers.filter(isEligibleRelayHost(_:))
         if let peerID = configuration.peerID?.lowercased(), !peerID.isEmpty {
-            return eligiblePeers.first {
+            if let exactMatch = eligiblePeers.first(where: {
                 $0.id.rawValue == peerID || $0.deviceID.uuidString.lowercased() == peerID
+            }) {
+                return exactMatch
             }
+            if eligiblePeers.count == 1 {
+                return eligiblePeers.first
+            }
+            return nil
         }
         return eligiblePeers.first
     }
@@ -195,36 +229,50 @@ public final class CoworkLoomRelayClient {
             && peer.advertisement.identityKeyID != nil
     }
 
-    private func startConsuming(stream: LoomMultiplexedStream, session: LoomAuthenticatedSession) {
+    private func startConsuming(
+        stream: LoomMultiplexedStream,
+        session: LoomAuthenticatedSession,
+        connectionEpoch: ConnectionEpochTracker.Epoch
+    ) {
         readTask?.cancel()
         stateTask?.cancel()
 
         readTask = Task { [weak self] in
             guard let self else { return }
             for await payload in stream.incomingBytes {
+                guard connectionEpochTracker.isCurrent(connectionEpoch) else {
+                    return
+                }
                 do {
                     let envelope = try RelayEnvelopeCodec.decode(payload)
                     await multiplexer.handle(envelope)
                 } catch {
-                    await multiplexer.failAll(.transport("Invalid relay payload: \(error.localizedDescription)"))
-                    await handleDisconnect()
+                    await handleDisconnect(
+                        expectedConnectionEpoch: connectionEpoch,
+                        error: .transport("Invalid relay payload: \(error.localizedDescription)")
+                    )
                     return
                 }
             }
-            await handleDisconnect()
+            await handleDisconnect(expectedConnectionEpoch: connectionEpoch)
         }
 
         stateTask = Task { [weak self] in
             guard let self else { return }
             let states = await session.makeStateObserver()
             for await state in states {
+                guard connectionEpochTracker.isCurrent(connectionEpoch) else {
+                    return
+                }
                 switch state {
                 case .cancelled:
-                    await handleDisconnect()
+                    await handleDisconnect(expectedConnectionEpoch: connectionEpoch)
                     return
                 case let .failed(message):
-                    await multiplexer.failAll(.transport(message))
-                    await handleDisconnect()
+                    await handleDisconnect(
+                        expectedConnectionEpoch: connectionEpoch,
+                        error: .transport(message)
+                    )
                     return
                 default:
                     continue
@@ -233,17 +281,36 @@ public final class CoworkLoomRelayClient {
         }
     }
 
-    private func handleDisconnect() async {
+    private func handleDisconnect(
+        expectedConnectionEpoch: ConnectionEpochTracker.Epoch? = nil,
+        error: RelayError = .notConnected,
+        cancelSession: Bool = false
+    ) async {
+        if let expectedConnectionEpoch, !connectionEpochTracker.isCurrent(expectedConnectionEpoch) {
+            return
+        }
+        connectionEpochTracker.advance()
+
+        let session = self.session
         relayStream = nil
-        session = nil
+        self.session = nil
         readTask?.cancel()
         stateTask?.cancel()
         readTask = nil
         stateTask = nil
-        await multiplexer.failAll(.notConnected)
+        if cancelSession, let session {
+            await session.cancel()
+        }
+        await multiplexer.failAll(error)
     }
 
-    private func sendEnvelope(_ envelope: RelayEnvelope) async throws {
+    private func sendEnvelope(
+        _ envelope: RelayEnvelope,
+        expectedConnectionEpoch: ConnectionEpochTracker.Epoch? = nil
+    ) async throws {
+        if let expectedConnectionEpoch, !connectionEpochTracker.isCurrent(expectedConnectionEpoch) {
+            throw RelayError.notConnected
+        }
         guard let relayStream else {
             throw RelayError.notConnected
         }

@@ -17,3 +17,18 @@ func relayEnvelopeCodecRoundTrip() throws {
 
     #expect(decoded == envelope)
 }
+
+@Test
+func connectionEpochTrackerInvalidatesOlderEpochs() {
+    var tracker = ConnectionEpochTracker()
+
+    let first = tracker.advance()
+    #expect(tracker.current == first)
+    #expect(tracker.isCurrent(first))
+
+    let second = tracker.advance()
+    #expect(second != first)
+    #expect(tracker.current == second)
+    #expect(!tracker.isCurrent(first))
+    #expect(tracker.isCurrent(second))
+}

@@ -3,8 +3,25 @@ import Testing
 
 import Loom
 
+@testable import CoworkLoomRelayClient
 @testable import CoworkLoomRelayCore
 @testable import CoworkLoomRelayHost
+
+private func makeTemporaryApprovedPeerStorageURL() throws -> URL {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("cowork-loom-bridge-tests", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    return directory.appendingPathComponent("approved-peer-id.txt")
+}
+
+private func makeTemporaryClientSupportDirectory() throws -> URL {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("cowork-loom-relay-client-tests", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    return directory
+}
 
 @Test
 func bridgeStateCodableRoundTripPreservesPairingMetadata() throws {
@@ -70,21 +87,12 @@ func relayAdvertisementIncludesIdentityKeyAndPublishedWorkspaceMetadata() {
 @MainActor
 @Test
 func approvedPeerTrustProviderOnlyKeepsLatestApprovedPeer() async throws {
-    let storageURL = (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true))
-        .appendingPathComponent("CoworkLoomBridge", isDirectory: true)
-        .appendingPathComponent("approved-peer-id.txt")
-    let originalContents = try? Data(contentsOf: storageURL)
+    let storageURL = try makeTemporaryApprovedPeerStorageURL()
     defer {
-        if let originalContents {
-            try? FileManager.default.createDirectory(at: storageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? originalContents.write(to: storageURL)
-        } else {
-            try? FileManager.default.removeItem(at: storageURL)
-        }
+        try? FileManager.default.removeItem(at: storageURL.deletingLastPathComponent())
     }
 
-    let provider = ApprovedPeerTrustProvider()
+    let provider = ApprovedPeerTrustProvider(storageURL: storageURL)
     provider.setApprovedPeerID(nil)
 
     let peerA = LoomPeerIdentity(
@@ -115,4 +123,134 @@ func approvedPeerTrustProviderOnlyKeepsLatestApprovedPeer() async throws {
 
     #expect(await provider.evaluateTrust(for: peerA) == .requiresApproval)
     #expect(await provider.evaluateTrust(for: peerB) == .trusted)
+}
+
+@MainActor
+@Test
+func approvedPeerTrustProviderTrustsMatchingIdentityKeyAfterDeviceIDChanges() async throws {
+    let storageURL = try makeTemporaryApprovedPeerStorageURL()
+    defer {
+        try? FileManager.default.removeItem(at: storageURL.deletingLastPathComponent())
+    }
+
+    let provider = ApprovedPeerTrustProvider(storageURL: storageURL)
+    provider.setApprovedPeerID(nil)
+
+    let approvedPeer = LoomPeerIdentity(
+        deviceID: UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")!,
+        name: "Phone A",
+        deviceType: .iPhone,
+        iCloudUserID: nil,
+        identityKeyID: "identity-key-a",
+        identityPublicKey: nil,
+        isIdentityAuthenticated: true,
+        endpoint: "peer-a.local"
+    )
+    let reissuedPeer = LoomPeerIdentity(
+        deviceID: UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")!,
+        name: "Phone A",
+        deviceType: .iPhone,
+        iCloudUserID: nil,
+        identityKeyID: "identity-key-a",
+        identityPublicKey: nil,
+        isIdentityAuthenticated: true,
+        endpoint: "peer-a-reissued.local"
+    )
+    let otherPeer = LoomPeerIdentity(
+        deviceID: UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc")!,
+        name: "Phone B",
+        deviceType: .iPhone,
+        iCloudUserID: nil,
+        identityKeyID: "identity-key-b",
+        identityPublicKey: nil,
+        isIdentityAuthenticated: true,
+        endpoint: "peer-b.local"
+    )
+
+    try await provider.grantTrust(to: approvedPeer)
+
+    #expect(await provider.evaluateTrust(for: approvedPeer) == .trusted)
+    #expect(await provider.evaluateTrust(for: reissuedPeer) == .trusted)
+    #expect(await provider.evaluateTrust(for: otherPeer) == .requiresApproval)
+}
+
+@MainActor
+@Test
+func failedConnectPeerLeavesRequestedPeerTrustedWhileClearingConnectingState() async throws {
+    struct PersistedApprovedPeer: Decodable {
+        let deviceID: UUID
+        let identityKeyID: String?
+    }
+
+    actor EventRecorder {
+        var events: [BridgeEvent] = []
+
+        func append(_ event: BridgeEvent) {
+            events.append(event)
+        }
+
+        func all() -> [BridgeEvent] {
+            events
+        }
+    }
+
+    let storageURL = try makeTemporaryApprovedPeerStorageURL()
+    defer {
+        try? FileManager.default.removeItem(at: storageURL.deletingLastPathComponent())
+    }
+
+    let recorder = EventRecorder()
+    let service = LoomBridgeService(
+        emitEvent: { event in
+            Task {
+                await recorder.append(event)
+            }
+        },
+        trustProvider: ApprovedPeerTrustProvider(storageURL: storageURL)
+    )
+    let requestedPeerID = "33333333-3333-3333-3333-333333333333"
+
+    await service.handle(.connectPeer(peerId: requestedPeerID))
+    await Task.yield()
+    await Task.yield()
+
+    let storedPeer = try JSONDecoder().decode(PersistedApprovedPeer.self, from: Data(contentsOf: storageURL))
+    #expect(storedPeer.deviceID.uuidString.lowercased() == requestedPeerID)
+    #expect(storedPeer.identityKeyID == nil)
+
+    let emittedEvents = await recorder.all()
+    let finalState = emittedEvents.compactMap { event -> BridgeState? in
+        guard case let .state(state) = event else {
+            return nil
+        }
+        return state
+    }.last
+
+    #expect(finalState?.peer == nil)
+    #expect(finalState?.lastError == "Requested Loom peer was not found in discovery results.")
+}
+
+@Test
+func defaultConfigurationPersistsClientDeviceIDAcrossReinitialization() throws {
+    let supportDirectory = try makeTemporaryClientSupportDirectory()
+    let previousOverride = ProcessInfo.processInfo.environment["COWORK_LOOM_RELAY_CLIENT_APP_SUPPORT_DIR"]
+    setenv("COWORK_LOOM_RELAY_CLIENT_APP_SUPPORT_DIR", supportDirectory.path, 1)
+    defer {
+        if let previousOverride {
+            setenv("COWORK_LOOM_RELAY_CLIENT_APP_SUPPORT_DIR", previousOverride, 1)
+        } else {
+            unsetenv("COWORK_LOOM_RELAY_CLIENT_APP_SUPPORT_DIR")
+        }
+        try? FileManager.default.removeItem(at: supportDirectory)
+    }
+
+    let first = CoworkLoomRelayClientConfiguration()
+    let second = CoworkLoomRelayClientConfiguration()
+    let storedDeviceID = try String(
+        contentsOf: supportDirectory.appendingPathComponent("device-id.txt"),
+        encoding: .utf8
+    ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+    #expect(first.deviceID == second.deviceID)
+    #expect(storedDeviceID == first.deviceID.uuidString.lowercased())
 }

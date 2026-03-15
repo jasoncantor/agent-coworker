@@ -11,24 +11,46 @@ private func bridgeApplicationSupportDirectory() -> URL {
 
 @MainActor
 final class ApprovedPeerTrustProvider: LoomTrustProvider {
-    private var approvedDeviceIDs: Set<UUID> = []
-    private var temporarilyRejectedUntilByDeviceID: [UUID: Date] = [:]
-    private let approvedPeerStorageURL = bridgeApplicationSupportDirectory().appendingPathComponent("approved-peer-id.txt")
+    private struct ApprovedPeerRecord: Codable, Equatable {
+        let deviceID: UUID
+        let identityKeyID: String?
 
-    init() {
+        func matches(_ peer: LoomPeerIdentity) -> Bool {
+            if peer.deviceID == deviceID {
+                return true
+            }
+            guard
+                let identityKeyID,
+                !identityKeyID.isEmpty,
+                let peerIdentityKeyID = peer.identityKeyID?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            else {
+                return false
+            }
+            return peerIdentityKeyID == identityKeyID
+        }
+    }
+
+    private var approvedPeer: ApprovedPeerRecord?
+    private var temporarilyRejectedUntilByDeviceID: [UUID: Date] = [:]
+    private let approvedPeerStorageURL: URL
+
+    init(storageURL: URL = bridgeApplicationSupportDirectory().appendingPathComponent("approved-peer-id.txt")) {
+        self.approvedPeerStorageURL = storageURL
         loadApprovedPeerID()
     }
 
     func setApprovedPeerID(_ rawPeerID: String?) {
-        approvedDeviceIDs.removeAll()
         guard let rawPeerID else {
+            approvedPeer = nil
             persistApprovedPeerID()
             return
         }
         let candidate = rawPeerID.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init) ?? rawPeerID
         if let uuid = UUID(uuidString: candidate) {
-            approvedDeviceIDs.insert(uuid)
+            approvedPeer = ApprovedPeerRecord(deviceID: uuid, identityKeyID: nil)
             temporarilyRejectedUntilByDeviceID.removeValue(forKey: uuid)
+        } else {
+            approvedPeer = nil
         }
         persistApprovedPeerID()
     }
@@ -38,7 +60,7 @@ final class ApprovedPeerTrustProvider: LoomTrustProvider {
             return .denied
         }
         pruneRejectedPeers()
-        if approvedDeviceIDs.contains(peer.deviceID) {
+        if let approvedPeer, approvedPeer.matches(peer) {
             return .trusted
         }
         if let rejectedUntil = temporarilyRejectedUntilByDeviceID[peer.deviceID], rejectedUntil > Date() {
@@ -48,13 +70,18 @@ final class ApprovedPeerTrustProvider: LoomTrustProvider {
     }
 
     func grantTrust(to peer: LoomPeerIdentity) async throws {
-        approvedDeviceIDs = [peer.deviceID]
+        approvedPeer = ApprovedPeerRecord(
+            deviceID: peer.deviceID,
+            identityKeyID: peer.identityKeyID?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        )
         temporarilyRejectedUntilByDeviceID.removeValue(forKey: peer.deviceID)
         persistApprovedPeerID()
     }
 
     func revokeTrust(for deviceID: UUID) async throws {
-        approvedDeviceIDs.remove(deviceID)
+        if approvedPeer?.deviceID == deviceID {
+            approvedPeer = nil
+        }
         persistApprovedPeerID()
     }
 
@@ -63,13 +90,20 @@ final class ApprovedPeerTrustProvider: LoomTrustProvider {
     }
 
     private func loadApprovedPeerID() {
-        guard
-            let contents = try? String(contentsOf: approvedPeerStorageURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
-            let approvedPeerID = UUID(uuidString: contents)
-        else {
+        guard let contents = try? String(contentsOf: approvedPeerStorageURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), !contents.isEmpty else {
             return
         }
-        approvedDeviceIDs = [approvedPeerID]
+
+        if let data = contents.data(using: .utf8),
+           let storedPeer = try? JSONDecoder().decode(ApprovedPeerRecord.self, from: data)
+        {
+            approvedPeer = storedPeer
+            return
+        }
+
+        if let approvedPeerID = UUID(uuidString: contents) {
+            approvedPeer = ApprovedPeerRecord(deviceID: approvedPeerID, identityKeyID: nil)
+        }
     }
 
     private func persistApprovedPeerID() {
@@ -78,12 +112,18 @@ final class ApprovedPeerTrustProvider: LoomTrustProvider {
             withIntermediateDirectories: true
         )
 
-        guard let approvedPeerID = approvedDeviceIDs.first else {
+        guard let approvedPeer else {
             try? FileManager.default.removeItem(at: approvedPeerStorageURL)
             return
         }
 
-        try? approvedPeerID.uuidString.lowercased().write(to: approvedPeerStorageURL, atomically: true, encoding: .utf8)
+        guard let data = try? JSONEncoder().encode(approvedPeer),
+              let contents = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+
+        try? contents.write(to: approvedPeerStorageURL, atomically: true, encoding: .utf8)
     }
 
     private func pruneRejectedPeers() {
@@ -99,7 +139,7 @@ public typealias BridgeEventEmitter = @Sendable (BridgeEvent) -> Void
 @MainActor
 public final class LoomBridgeService {
     private let emitEvent: BridgeEventEmitter
-    private let trustProvider = ApprovedPeerTrustProvider()
+    private let trustProvider: ApprovedPeerTrustProvider
     private let identityManager = LoomIdentityManager(
         service: "com.cowork.desktop.loom.relay.host.identity.v1",
         account: "p256-signing",
@@ -129,10 +169,16 @@ public final class LoomBridgeService {
     private var incomingStreamTask: Task<Void, Never>?
     private var relayReadTask: Task<Void, Never>?
     private var sessionStateTask: Task<Void, Never>?
+    private var sessionEpochTracker = ConnectionEpochTracker()
     private var lastDiscoverySummary = ""
 
-    public init(emitEvent: @escaping BridgeEventEmitter) {
+    public convenience init(emitEvent: @escaping BridgeEventEmitter) {
+        self.init(emitEvent: emitEvent, trustProvider: ApprovedPeerTrustProvider())
+    }
+
+    init(emitEvent: @escaping BridgeEventEmitter, trustProvider: ApprovedPeerTrustProvider) {
         self.emitEvent = emitEvent
+        self.trustProvider = trustProvider
         self.localDeviceID = Self.loadOrCreateLocalDeviceID()
         self.deviceName = Self.defaultDeviceName()
         self.node = LoomNode(
@@ -275,7 +321,6 @@ public final class LoomBridgeService {
         }
 
         let previousPeer = peer
-        let previousApprovedPeerID = previousPeer?.id
         trustProvider.setApprovedPeerID(peerId)
         let knownName = discovery.discoveredPeers.first(where: { $0.id.rawValue == peerId || $0.deviceID.uuidString.lowercased() == peerId.lowercased() })?.name ?? "Unknown Peer"
         peer = BridgePeerState(id: peerId, name: knownName, state: "connecting")
@@ -295,12 +340,11 @@ public final class LoomBridgeService {
             )
             try await activateSession(
                 session,
-                peerId: discoveredPeer.id.rawValue,
+                peerId: discoveredPeer.deviceID.uuidString.lowercased(),
                 peerName: discoveredPeer.name,
                 shouldOpenOutboundStream: true
             )
         } catch {
-            trustProvider.setApprovedPeerID(previousApprovedPeerID)
             peer = previousPeer
             throw error
         }
@@ -404,23 +448,30 @@ public final class LoomBridgeService {
         shouldOpenOutboundStream: Bool
     ) async throws {
         await disconnectPeer(resetPeerIdentity: false)
+        let sessionEpoch = sessionEpochTracker.advance()
 
         clearPendingApproval()
         self.session = session
         self.peer = BridgePeerState(id: peerId, name: peerName, state: "connected")
         self.lastError = nil
-        startObservingSession(session)
+        startObservingSession(session, sessionEpoch: sessionEpoch)
 
         if shouldOpenOutboundStream {
             let stream = try await session.openStream(label: RelayProtocolConstants.streamLabel)
-            bindRelayStream(stream)
+            guard sessionEpochTracker.isCurrent(sessionEpoch) else {
+                return
+            }
+            bindRelayStream(stream, sessionEpoch: sessionEpoch)
         } else {
             incomingStreamTask = Task { [weak self] in
                 guard let self else { return }
                 let streams = session.makeIncomingStreamObserver()
                 for await stream in streams {
+                    guard sessionEpochTracker.isCurrent(sessionEpoch) else {
+                        return
+                    }
                     if stream.label == RelayProtocolConstants.streamLabel {
-                        self.bindRelayStream(stream)
+                        self.bindRelayStream(stream, sessionEpoch: sessionEpoch)
                         return
                     }
                 }
@@ -430,27 +481,39 @@ public final class LoomBridgeService {
         await emitState()
     }
 
-    private func bindRelayStream(_ stream: LoomMultiplexedStream) {
+    private func bindRelayStream(
+        _ stream: LoomMultiplexedStream,
+        sessionEpoch: ConnectionEpochTracker.Epoch
+    ) {
+        guard sessionEpochTracker.isCurrent(sessionEpoch) else {
+            return
+        }
         relayStream = stream
         relayReadTask?.cancel()
         relayReadTask = Task { [weak self] in
             guard let self else { return }
             for await payload in stream.incomingBytes {
+                guard sessionEpochTracker.isCurrent(sessionEpoch) else {
+                    return
+                }
                 do {
                     let envelope = try RelayEnvelopeCodec.decode(payload)
                     await relayHost.handle(envelope)
                 } catch {
+                    guard sessionEpochTracker.isCurrent(sessionEpoch) else {
+                        return
+                    }
                     lastError = "Invalid relay payload: \(error.localizedDescription)"
                     emitEvent(.log(level: .error, message: lastError ?? "Invalid relay payload."))
-                    await disconnectPeer(resetPeerIdentity: false)
+                    await disconnectPeer(resetPeerIdentity: false, expectedSessionEpoch: sessionEpoch)
                     return
                 }
             }
-            await disconnectPeer(resetPeerIdentity: false)
+            await disconnectPeer(resetPeerIdentity: false, expectedSessionEpoch: sessionEpoch)
         }
 
         Task { [weak self] in
-            guard let self else { return }
+            guard let self, sessionEpochTracker.isCurrent(sessionEpoch) else { return }
             try? await self.sendEnvelope(
                 .hello(
                     .init(
@@ -463,19 +526,28 @@ public final class LoomBridgeService {
         }
     }
 
-    private func startObservingSession(_ session: LoomAuthenticatedSession) {
+    private func startObservingSession(
+        _ session: LoomAuthenticatedSession,
+        sessionEpoch: ConnectionEpochTracker.Epoch
+    ) {
         sessionStateTask?.cancel()
         sessionStateTask = Task { [weak self] in
             guard let self else { return }
             let states = await session.makeStateObserver()
             for await state in states {
+                guard sessionEpochTracker.isCurrent(sessionEpoch) else {
+                    return
+                }
                 switch state {
                 case .cancelled:
-                    await disconnectPeer(resetPeerIdentity: false)
+                    await disconnectPeer(resetPeerIdentity: false, expectedSessionEpoch: sessionEpoch)
                     return
                 case let .failed(message):
+                    guard sessionEpochTracker.isCurrent(sessionEpoch) else {
+                        return
+                    }
                     lastError = message
-                    await disconnectPeer(resetPeerIdentity: false)
+                    await disconnectPeer(resetPeerIdentity: false, expectedSessionEpoch: sessionEpoch)
                     return
                 default:
                     continue
@@ -484,7 +556,15 @@ public final class LoomBridgeService {
         }
     }
 
-    private func disconnectPeer(resetPeerIdentity: Bool) async {
+    private func disconnectPeer(
+        resetPeerIdentity: Bool,
+        expectedSessionEpoch: ConnectionEpochTracker.Epoch? = nil
+    ) async {
+        if let expectedSessionEpoch, !sessionEpochTracker.isCurrent(expectedSessionEpoch) {
+            return
+        }
+        sessionEpochTracker.advance()
+
         incomingStreamTask?.cancel()
         relayReadTask?.cancel()
         sessionStateTask?.cancel()
@@ -492,11 +572,13 @@ public final class LoomBridgeService {
         relayReadTask = nil
         sessionStateTask = nil
 
+        let session = self.session
+        self.session = nil
+        relayStream = nil
+
         if let session {
             await session.cancel()
         }
-        session = nil
-        relayStream = nil
         await relayHost.handlePeerDisconnected()
 
         if resetPeerIdentity {

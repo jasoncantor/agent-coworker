@@ -50,3 +50,25 @@ public enum RelayChannelEvent: Sendable, Equatable {
     case closed(code: Int?, reason: String?)
     case error(message: String, retryable: Bool)
 }
+
+public struct ConnectionEpochTracker: Sendable {
+    public typealias Epoch = UInt64
+
+    private var currentEpoch: Epoch = 0
+
+    public init() {}
+
+    public var current: Epoch {
+        currentEpoch
+    }
+
+    @discardableResult
+    public mutating func advance() -> Epoch {
+        currentEpoch &+= 1
+        return currentEpoch
+    }
+
+    public func isCurrent(_ epoch: Epoch) -> Bool {
+        currentEpoch == epoch
+    }
+}

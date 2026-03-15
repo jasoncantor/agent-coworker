@@ -1,5 +1,8 @@
 # Lessons
 
+- For agent-coworker companion surfaces, treat the desktop app as the product baseline and make iOS match its workflows and UX language unless a real mobile constraint forces divergence; do not invent iOS-only behavior or terminology.
+- For Loom relay reconnect flows in this repo, guard session and stream observers with a connection generation token; otherwise an old session closing during a workspace or conversation switch can tear down the newly reconnected link a moment later.
+- For Loom bridge pairing in this repo, trust the paired phone's stable authenticated identity key in addition to its current device ID, and treat failed `connectPeer` attempts as transient UI-state resets rather than a reason to roll back stored trust; otherwise normal retries can regress into repeated approval loops.
 - For desktop admin pages that auto-fetch data, do not assume store-level success/error handling is enough; add a UI-level fallback so an orphaned request cannot leave the page stuck on a perpetual loading message when the correct end state is simply empty.
 - For desktop request spinners in this repo, clear the loading flag on both success events and structured control-session errors; server-side failures like `memory_list` SQLite errors may never emit the success payload that normally resets UI state.
 - When the user explicitly changes a CI request from “narrow the trigger” to “delete the workflow,” stop refining the trigger and remove the job/workflow exactly as requested.

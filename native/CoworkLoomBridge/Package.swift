@@ -53,7 +53,10 @@ let package = Package(
         ),
         .testTarget(
             name: "CoworkLoomRelayHostTests",
-            dependencies: ["CoworkLoomRelayHost"]
+            dependencies: [
+                "CoworkLoomRelayClient",
+                "CoworkLoomRelayHost",
+            ]
         ),
     ]
 )
