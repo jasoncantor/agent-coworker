@@ -36,7 +36,7 @@ import {
 } from "../../../components/ui/select";
 import { Textarea } from "../../../components/ui/textarea";
 import { confirmAction } from "../../../lib/desktopCommands";
-import { MODEL_CHOICES, modelOptionsForProvider, UI_DISABLED_PROVIDERS } from "../../../lib/modelChoices";
+import { modelChoicesFromCatalog, modelOptionsFromCatalog, UI_DISABLED_PROVIDERS } from "../../../lib/modelChoices";
 import type { ProviderName } from "../../../lib/wsProtocol";
 import { PROVIDER_NAMES } from "../../../lib/wsProtocol";
 import { cn } from "../../../lib/utils";
@@ -373,6 +373,8 @@ export function WorkspacesPage() {
   const workspaces = useAppStore((s) => s.workspaces);
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const providerStatusByName = useAppStore((s) => s.providerStatusByName);
+  const providerCatalog = useAppStore((s) => s.providerCatalog);
+  const providerDefaultModelByProvider = useAppStore((s) => s.providerDefaultModelByProvider);
 
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const removeWorkspace = useAppStore((s) => s.removeWorkspace);
@@ -392,10 +394,11 @@ export function WorkspacesPage() {
   const backupsEnabled = ws?.defaultBackupsEnabled ?? true;
   const yolo = ws?.yolo ?? false;
 
-  const curatedModels = MODEL_CHOICES[provider] ?? [];
-  const modelOptions = modelOptionsForProvider(provider, model);
+  const modelChoices = useMemo(() => modelChoicesFromCatalog(providerCatalog), [providerCatalog]);
+  const curatedModels = modelChoices[provider] ?? [];
+  const modelOptions = modelOptionsFromCatalog(providerCatalog, provider, model);
   const hasCustomModel = Boolean(model && !curatedModels.includes(model));
-  const subAgentModelOptions = modelOptionsForProvider(provider, subAgentModel);
+  const subAgentModelOptions = modelOptionsFromCatalog(providerCatalog, provider, subAgentModel);
   const hasCustomSubAgentModel = Boolean(subAgentModel && !curatedModels.includes(subAgentModel));
 
   const [activeTab, setActiveTab] = useState<"general" | "models" | "profile" | "advanced">("general");
@@ -556,10 +559,11 @@ export function WorkspacesPage() {
                       if (!ws) return;
                       const nextProvider = value as ProviderName;
                       if (UI_DISABLED_PROVIDERS.has(nextProvider)) return;
+                      const nextDefault = providerDefaultModelByProvider[nextProvider] ?? defaultModelForProvider(nextProvider);
                       void updateWorkspaceDefaults(ws.id, {
                         defaultProvider: nextProvider,
-                        defaultModel: defaultModelForProvider(nextProvider),
-                        defaultSubAgentModel: defaultModelForProvider(nextProvider),
+                        defaultModel: nextDefault,
+                        defaultSubAgentModel: nextDefault,
                       });
                     }}
                   >

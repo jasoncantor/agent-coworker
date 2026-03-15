@@ -6,7 +6,7 @@ import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
-import { MODEL_CHOICES, UI_DISABLED_PROVIDERS } from "../../../lib/modelChoices";
+import { modelChoicesFromCatalog, UI_DISABLED_PROVIDERS } from "../../../lib/modelChoices";
 import type { ProviderName, ServerEvent } from "../../../lib/wsProtocol";
 import { PROVIDER_NAMES } from "../../../lib/wsProtocol";
 import { cn } from "../../../lib/utils";
@@ -191,14 +191,16 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
   const [oauthCodesByMethod, setOauthCodesByMethod] = useState<Record<string, string>>({});
   const [expandedSectionId, setExpandedSectionId] = useState<string | null>(initialExpandedSectionId);
 
+  const modelChoices = useMemo(() => modelChoicesFromCatalog(providerCatalog), [providerCatalog]);
+
   const { modelProviders, toolProviders } = useMemo(() => {
     const fromCatalog = providerCatalog
       .map((entry) => entry.id)
       .filter((provider): provider is ProviderName => isProviderName(provider));
     const source = fromCatalog.length > 0 ? fromCatalog : [...PROVIDER_NAMES];
     const filtered = source.filter((provider) => !UI_DISABLED_PROVIDERS.has(provider));
-    
-    const isModelProvider = (p: ProviderName) => p in MODEL_CHOICES && MODEL_CHOICES[p]!.length > 0;
+
+    const isModelProvider = (p: ProviderName) => p in modelChoices && modelChoices[p]!.length > 0;
     
     const sortProviders = (providers: ProviderName[]) => [...providers].sort((a, b) => {
       const aStatus = providerStatusByName[a];
@@ -218,7 +220,7 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
     const tProviders = sortProviders(filtered.filter(p => !isModelProvider(p)));
 
     return { modelProviders: mProviders, toolProviders: tProviders };
-  }, [providerCatalog, providerStatusByName]);
+  }, [providerCatalog, providerStatusByName, modelChoices]);
 
   const catalogNameByProvider = useMemo(() => {
     const map = new Map<ProviderName, string>();
@@ -487,7 +489,7 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
     const methods = visibleAuthMethods(provider, authMethodsForProvider(provider));
     const connected = Boolean(status?.authorized || status?.verified);
     const providerDisplayName = catalogNameByProvider.get(provider) ?? displayProviderName(provider);
-    const models = (MODEL_CHOICES[provider] ?? []).slice(0, 8);
+    const models = (modelChoices[provider] ?? []).slice(0, 8);
 
     return (
       <Card key={provider} className={cn("border-border/80 bg-card/85", isExpanded && "border-primary/35")}>

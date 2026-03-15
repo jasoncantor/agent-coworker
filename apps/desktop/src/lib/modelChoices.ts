@@ -1,4 +1,4 @@
-import type { ProviderName } from "./wsProtocol";
+import type { ProviderName, ServerEvent } from "./wsProtocol";
 import { PROVIDER_NAMES } from "./wsProtocol";
 import { availableModelsForProvider } from "@cowork/providers/catalog";
 
@@ -10,6 +10,33 @@ export const MODEL_CHOICES: Record<ProviderName, readonly string[]> = Object.fro
 
 export function modelOptionsForProvider(provider: ProviderName, currentModel?: string | null): readonly string[] {
   const base = MODEL_CHOICES[provider] ?? [];
+  const normalized = typeof currentModel === "string" ? currentModel.trim() : "";
+  if (!normalized) return base;
+  if (base.includes(normalized)) return base;
+  return [normalized, ...base];
+}
+
+type ProviderCatalogEntry = Extract<ServerEvent, { type: "provider_catalog" }>["all"][number];
+
+export function modelChoicesFromCatalog(
+  catalog: readonly ProviderCatalogEntry[],
+): Record<ProviderName, readonly string[]> {
+  if (catalog.length === 0) return MODEL_CHOICES;
+  const result = {} as Record<ProviderName, readonly string[]>;
+  for (const entry of catalog) {
+    const models = Array.isArray(entry.models) ? entry.models.map((m) => m.id) : (MODEL_CHOICES[entry.id] ?? []);
+    result[entry.id] = models;
+  }
+  return result;
+}
+
+export function modelOptionsFromCatalog(
+  catalog: readonly ProviderCatalogEntry[],
+  provider: ProviderName,
+  currentModel?: string | null,
+): readonly string[] {
+  const choices = modelChoicesFromCatalog(catalog);
+  const base = choices[provider] ?? [];
   const normalized = typeof currentModel === "string" ? currentModel.trim() : "";
   if (!normalized) return base;
   if (base.includes(normalized)) return base;

@@ -37,7 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { MODEL_CHOICES, UI_DISABLED_PROVIDERS } from "../lib/modelChoices";
+import { modelChoicesFromCatalog, UI_DISABLED_PROVIDERS } from "../lib/modelChoices";
 import { readFile } from "../lib/desktopCommands";
 import type { ProviderName } from "../lib/wsProtocol";
 import { cn } from "../lib/utils";
@@ -346,7 +346,9 @@ function ThreadModelSelector({
   disabled?: boolean;
 }) {
   const setThreadModel = useAppStore((s) => s.setThreadModel);
-  const providers = (Object.keys(MODEL_CHOICES) as ProviderName[]).filter(p => !UI_DISABLED_PROVIDERS.has(p));
+  const providerCatalog = useAppStore((s) => s.providerCatalog);
+  const choices = useMemo(() => modelChoicesFromCatalog(providerCatalog), [providerCatalog]);
+  const providers = (Object.keys(choices) as ProviderName[]).filter(p => !UI_DISABLED_PROVIDERS.has(p));
   const value = `${provider}:${model}`;
 
   return (
@@ -368,12 +370,12 @@ function ThreadModelSelector({
         {providers.map(p => (
           <SelectGroup key={p}>
             <SelectLabel className="text-xs font-semibold px-2 py-1.5">{PROVIDER_LABELS[p] ?? p}</SelectLabel>
-            {MODEL_CHOICES[p].map(m => (
+            {(choices[p] ?? []).map(m => (
               <SelectItem key={`${p}:${m}`} value={`${p}:${m}`} className="text-xs pl-6">
                 {m}
               </SelectItem>
             ))}
-            {p === provider && model && !MODEL_CHOICES[p].includes(model) ? (
+            {p === provider && model && !(choices[p] ?? []).includes(model) ? (
               <SelectItem key={`${p}:${model}`} value={`${p}:${model}`} className="text-xs pl-6">
                 {model} (custom)
               </SelectItem>
