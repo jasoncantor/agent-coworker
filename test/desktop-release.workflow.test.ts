@@ -26,13 +26,13 @@ describe("desktop release workflow", () => {
       /env:[\s\S]*?WIN_CSC_LINK: \$\{\{ secrets\.WIN_CSC_LINK \}\}[\s\S]*?WIN_CSC_KEY_PASSWORD: \$\{\{ secrets\.WIN_CSC_KEY_PASSWORD \}\}/,
     );
     expect(workflow).toMatch(
-      /- name: Stage Windows desktop release assets[\s\S]*?Get-Content apps\/desktop\/package\.json -Raw \| ConvertFrom-Json[\s\S]*?apps\/desktop\/release\/\*-\$version-win-\*\.exe[\s\S]*?Copy-Item \$installer\.FullName -Destination \$stagingDir/,
+      /- name: Stage Windows desktop release assets[\s\S]*?Get-Content apps\/desktop\/package\.json -Raw \| ConvertFrom-Json[\s\S]*?apps\/desktop\/release\/\*Setup \$version\.exe[\s\S]*?Copy-Item \$installer\.FullName -Destination \$stagingDir/,
     );
     expect(workflow).toMatch(
       /- name: Stage Windows desktop release assets[\s\S]*?Copy-Item \$blockmapPath -Destination \$stagingDir[\s\S]*?Copy-Item \"apps\/desktop\/release\/latest\.yml\" -Destination \$stagingDir/,
     );
     expect(workflow).toMatch(
-      /- name: Verify Windows signing[\s\S]*?Get-Content apps\/desktop\/package\.json -Raw \| ConvertFrom-Json[\s\S]*?apps\/desktop\/release\/\*-\$version-win-\*\.exe/,
+      /- name: Verify Windows signing[\s\S]*?Get-Content apps\/desktop\/package\.json -Raw \| ConvertFrom-Json[\s\S]*?apps\/desktop\/release\/\*Setup \$version\.exe/,
     );
     expect(workflow).toContain("Windows signing secrets configured; publishing signed installer plus updater metadata.");
     expect(workflow).toContain("WIN_CSC_LINK/WIN_CSC_KEY_PASSWORD not configured; publishing unsigned installer plus updater metadata.");
