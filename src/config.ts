@@ -16,9 +16,14 @@ import {
   resolveRuntimeName as resolveRuntimeNameFromValue,
 } from "./types";
 import type { AgentConfig, CommandTemplateConfig, ProviderName, RuntimeName } from "./types";
-import { resolveAuthHomeDir } from "./utils/authHome";
-import { assertSupportedModel, defaultSupportedModel, getSupportedModel } from "./models/registry";
-import { normalizeChildRoutingConfig } from "./models/childModelRouting";
+import { resolveCoworkHomedir } from "./utils/coworkHome";
+import {
+  assertSupportedModel,
+  defaultSupportedModel,
+  getSupportedModel,
+  isDynamicModelProvider,
+  type SupportedModel,
+} from "./models/registry";
 
 export { defaultModelForProvider } from "./providers";
 
@@ -117,11 +122,31 @@ function resolveSupportedConfiguredModel(provider: ProviderName, modelId: string
   }
   const supported = getSupportedModel(provider, modelId);
   if (supported) return supported;
+  if (isDynamicModelProvider(provider)) {
+    const fallback = defaultSupportedModel(provider);
+    return {
+      ...fallback,
+      id: modelId,
+      displayName: modelId,
+    } satisfies SupportedModel;
+  }
   const fallback = defaultSupportedModel(provider);
   console.warn(
     `[config] Ignoring unsupported ${source} "${modelId}" for provider ${provider}; using "${fallback.id}".`
   );
   return fallback;
+}
+
+function resolveSupportedConfiguredSubAgentModel(provider: ProviderName, subAgentModelId: string, fallbackModelId: string): string {
+  const supported = getSupportedModel(provider, subAgentModelId);
+  if (supported) return supported.id;
+  if (isDynamicModelProvider(provider)) {
+    return subAgentModelId.trim() || fallbackModelId;
+  }
+  console.warn(
+    `[config] Ignoring unsupported sub-agent model "${subAgentModelId}" for provider ${provider}; using "${fallbackModelId}".`
+  );
+  return fallbackModelId;
 }
 
 async function loadJsonSafe(filePath: string): Promise<Record<string, unknown>> {
@@ -325,6 +350,11 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
   const runtime = normalizeRuntimeNameForProvider(provider, rawRuntime);
 
   const workingDirectory = env.AGENT_WORKING_DIR || cwd;
+  const openaiProxyBaseUrl =
+    asNonEmptyString(env.OPENAI_PROXY_BASE_URL) ||
+    asNonEmptyString(projectConfig.openaiProxyBaseUrl) ||
+    asNonEmptyString(userConfig.openaiProxyBaseUrl) ||
+    asNonEmptyString(builtInDefaults.openaiProxyBaseUrl);
 
   const model =
     asNonEmptyString(env.AGENT_MODEL) ||
@@ -555,6 +585,7 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     observability,
     harness,
     command,
+    ...(openaiProxyBaseUrl ? { openaiProxyBaseUrl } : {}),
     ...(normalizedProviderOptions ? { providerOptions: normalizedProviderOptions } : {}),
     ...(normalizedModelSettings ? { modelSettings: normalizedModelSettings } : {}),
   };
@@ -562,7 +593,7 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
 
 export function getModel(config: AgentConfig, id?: string) {
   const modelId = id || config.model;
-  if (config.provider !== "openai-proxy") {
+  if (!isDynamicModelProvider(config.provider)) {
     assertSupportedModel(config.provider, modelId, id ? "model override" : "model");
   }
   const savedKey = getSavedProviderApiKey(config, config.provider);

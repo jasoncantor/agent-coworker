@@ -3,9 +3,12 @@ import path from "node:path";
 
 import type { AgentConfig } from "./types";
 import { discoverSkills } from "./skills";
-import { assertSupportedModel, defaultSupportedModel, type SupportedModel } from "./models/registry";
-import { getChildAgentModelInfo, listChildAgentModelsWithInfo } from "./models/childAgentModelInfo";
-import { parseChildModelRef } from "./models/childModelRouting";
+import {
+  assertSupportedModel,
+  defaultSupportedModel,
+  isDynamicModelProvider,
+  type SupportedModel,
+} from "./models/registry";
 import { MemoryStore } from "./memoryStore";
 import { AGENT_ROLE_DEFINITIONS } from "./server/agents/roles";
 import type { AgentRole } from "./shared/agents";
@@ -18,8 +21,20 @@ function resolvePromptModel(config: AgentConfig, modelId: string, source: string
   return { ...defaultSupportedModel("openai-proxy"), id: trimmed || defaultSupportedModel("openai-proxy").id, displayName: trimmed || "OpenAI-API Proxy" };
 }
 
+function resolvePromptModel(config: AgentConfig): SupportedModel {
+  if (!isDynamicModelProvider(config.provider)) {
+    return assertSupportedModel(config.provider, config.model, "model");
+  }
+  const supported = defaultSupportedModel(config.provider);
+  return {
+    ...supported,
+    id: config.model,
+    displayName: config.model,
+  };
+}
+
 async function resolveSystemTemplatePath(config: AgentConfig): Promise<string> {
-  const supportedModel = resolvePromptModel(config, config.model, "model");
+  const supportedModel = resolvePromptModel(config);
   const modelSystemPath = path.join(config.builtInDir, "prompts", supportedModel.promptTemplate);
   try {
     await fs.access(modelSystemPath);
@@ -263,7 +278,7 @@ export interface SystemPromptResult {
  * Use this when you need the skill metadata (e.g. for dynamic tool descriptions).
  */
 export async function loadSystemPromptWithSkills(config: AgentConfig): Promise<SystemPromptResult> {
-  const supportedModel = resolvePromptModel(config, config.model, "model");
+  const supportedModel = resolvePromptModel(config);
   const systemPath = await resolveSystemTemplatePath(config);
   let prompt = await fs.readFile(systemPath, "utf-8");
 

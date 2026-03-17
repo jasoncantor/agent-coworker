@@ -17,6 +17,7 @@ import codexCliGpt54 from "../../config/models/codex-cli/gpt-5.4.json";
 import codexCliGpt54Mini from "../../config/models/codex-cli/gpt-5.4-mini.json";
 import googleGemini3FlashPreview from "../../config/models/google/gemini-3-flash-preview.json";
 import googleGemini3ProPreview from "../../config/models/google/gemini-3-pro-preview.json";
+import openaiProxyClaudeSonnet45 from "../../config/models/openai-proxy/claude-sonnet-4-5.json";
 import openaiGpt5Mini from "../../config/models/openai/gpt-5-mini.json";
 import openaiGpt51 from "../../config/models/openai/gpt-5.1.json";
 import openaiGpt52Codex from "../../config/models/openai/gpt-5.2-codex.json";
@@ -40,8 +41,11 @@ import togetherQwenQwen35397bA17b from "../../config/models/together/qwen-qwen3.
 import togetherZaiOrgGlm5 from "../../config/models/together/zai-org-glm-5.json";
 import type { ProviderName } from "../types";
 
+export const DYNAMIC_MODEL_PROVIDERS = ["openai-proxy"] as const;
+
 const providerNameSchema = z.enum([
   "google",
+  "openai-proxy",
   "openai",
   "anthropic",
   "baseten",
@@ -85,6 +89,7 @@ const RAW_MODEL_REGISTRY_ENTRIES = [
   codexCliGpt54Mini,
   googleGemini3FlashPreview,
   googleGemini3ProPreview,
+  openaiProxyClaudeSonnet45,
   openaiGpt5Mini,
   openaiGpt51,
   openaiGpt52Codex,
@@ -113,6 +118,7 @@ const RAW_MODEL_REGISTRY_ENTRIES = [
 function buildRegistry(entries: SupportedModel[]) {
   const byProvider: Record<ProviderName, SupportedModel[]> = {
     google: [],
+    "openai-proxy": [],
     openai: [],
     anthropic: [],
     baseten: [],
@@ -197,4 +203,8 @@ export function assertSupportedModel(provider: ProviderName, modelId: string, so
 
   const supportedIds = listSupportedModelIds(provider).join(", ");
   throw new Error(`Unsupported ${source} "${modelId}" for provider ${provider}. Supported models: ${supportedIds}`);
+}
+
+export function isDynamicModelProvider(provider: ProviderName): boolean {
+  return (DYNAMIC_MODEL_PROVIDERS as readonly string[]).includes(provider);
 }

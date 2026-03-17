@@ -17,6 +17,21 @@ describe("src/providers/index.ts", () => {
       expect(headers.authorization).toBe("Bearer openai-key");
     });
 
+    test("creates a runnable OpenAI-API proxy model with forced cache header", async () => {
+      const config = makeConfig({
+        provider: "openai-proxy",
+        model: "claude-sonnet-4-5",
+        subAgentModel: "claude-sonnet-4-5",
+        openaiProxyBaseUrl: "https://proxy.internal/v1",
+      });
+      const model = getModelForProvider(config, "claude-sonnet-4-5", "proxy-key") as any;
+      const headers = await model.config.headers();
+      expect(model.modelId).toBe("claude-sonnet-4-5");
+      expect(model.provider).toBe("openai-proxy.completions");
+      expect(headers.authorization).toBe("Bearer proxy-key");
+      expect(headers.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS).toBe("1");
+    });
+
     test("creates a runnable Google model with saved key", async () => {
       const config = makeConfig({ provider: "google" });
       const model = getModelForProvider(config, "gemini-3-flash-preview", "google-key") as any;
@@ -130,6 +145,7 @@ describe("src/providers/index.ts", () => {
     test("returns catalog defaults for all providers", () => {
       expect(defaultModelForProvider("google")).toBe(PROVIDERS.google.defaultModel);
       expect(defaultModelForProvider("openai")).toBe(PROVIDERS.openai.defaultModel);
+      expect(defaultModelForProvider("openai-proxy")).toBe(PROVIDERS["openai-proxy"].defaultModel);
       expect(defaultModelForProvider("anthropic")).toBe(PROVIDERS.anthropic.defaultModel);
       expect(defaultModelForProvider("baseten")).toBe(PROVIDERS.baseten.defaultModel);
       expect(defaultModelForProvider("together")).toBe(PROVIDERS.together.defaultModel);
@@ -148,6 +164,10 @@ describe("src/providers/index.ts", () => {
 
     test("returns key candidates for openai", () => {
       expect(getProviderKeyCandidates("openai")).toBe(PROVIDERS.openai.keyCandidates);
+    });
+
+    test("returns key candidates for openai-proxy", () => {
+      expect(getProviderKeyCandidates("openai-proxy")).toBe(PROVIDERS["openai-proxy"].keyCandidates);
     });
 
     test("returns key candidates for anthropic", () => {

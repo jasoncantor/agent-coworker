@@ -1,5 +1,5 @@
 import { getObservabilityHealth } from "../../observability/runtime";
-import { normalizeChildRoutingConfig } from "../../models/childModelRouting";
+import { assertSupportedModel, isDynamicModelProvider } from "../../models/registry";
 import {
   mergeEditableOpenAiCompatibleProviderOptions,
   pickEditableOpenAiCompatibleProviderOptions,
@@ -202,33 +202,26 @@ export class SessionMetadataManager {
       return;
     }
 
-    let normalizedChildRouting:
-      | ReturnType<typeof normalizeChildRoutingConfig>
-      | undefined;
-    if (
-      patch.preferredChildModel !== undefined
-      || patch.childModelRoutingMode !== undefined
-      || patch.preferredChildModelRef !== undefined
-      || patch.allowedChildModelRefs !== undefined
-    ) {
-      try {
-        normalizedChildRouting = normalizeChildRoutingConfig({
-          provider: this.context.state.config.provider,
-          model: this.context.state.config.model,
-          childModelRoutingMode: patch.childModelRoutingMode ?? this.context.state.config.childModelRoutingMode,
-          preferredChildModel: patch.preferredChildModel ?? this.context.state.config.preferredChildModel,
-          preferredChildModelRef:
-            patch.preferredChildModelRef !== undefined
-              ? patch.preferredChildModelRef
-              : patch.preferredChildModel !== undefined
-                ? undefined
-                : this.context.state.config.preferredChildModelRef,
-          allowedChildModelRefs: patch.allowedChildModelRefs ?? this.context.state.config.allowedChildModelRefs,
-          source: "session config",
-        });
-      } catch (err) {
-        this.context.emitError("validation_failed", "session", err instanceof Error ? err.message : String(err));
-        return;
+    let normalizedSubAgentModel: string | undefined;
+    if (patch.subAgentModel !== undefined) {
+      if (isDynamicModelProvider(this.context.state.config.provider)) {
+        const trimmed = patch.subAgentModel.trim();
+        if (!trimmed) {
+          this.context.emitError("validation_failed", "session", "Sub-agent model must be non-empty.");
+          return;
+        }
+        normalizedSubAgentModel = trimmed;
+      } else {
+        try {
+          normalizedSubAgentModel = assertSupportedModel(
+            this.context.state.config.provider,
+            patch.subAgentModel,
+            "sub-agent model",
+          ).id;
+        } catch (err) {
+          this.context.emitError("validation_failed", "session", err instanceof Error ? err.message : String(err));
+          return;
+        }
       }
     }
 

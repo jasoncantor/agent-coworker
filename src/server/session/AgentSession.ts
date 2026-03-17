@@ -6,7 +6,7 @@ import { SessionCostTracker } from "../../session/costTracker";
 import type { MCPRegistryServer } from "../../mcp/configRegistry";
 import { getProviderCatalog } from "../../providers/connectionCatalog";
 import { getProviderStatuses } from "../../providerStatus";
-import { defaultSupportedModel, getSupportedModel } from "../../models/registry";
+import { defaultSupportedModel, getSupportedModel, isDynamicModelProvider } from "../../models/registry";
 import { MemoryStore, type MemoryScope } from "../../memoryStore";
 import type {
   AgentConfig,
@@ -499,14 +499,15 @@ export class AgentSession {
     getWorkspaceBackupDeltaImpl?: SessionDependencies["getWorkspaceBackupDeltaImpl"];
   }): AgentSession {
     const { persisted } = opts;
-    const supportedPersistedModel = getSupportedModel(persisted.provider, persisted.model);
+    const dynamicProvider = isDynamicModelProvider(persisted.provider);
+    const supportedPersistedModel = dynamicProvider ? null : getSupportedModel(persisted.provider, persisted.model);
     const resumedModel = supportedPersistedModel ?? defaultSupportedModel(persisted.provider);
-    const migratedLegacyModel = supportedPersistedModel === null;
+    const migratedLegacyModel = !dynamicProvider && supportedPersistedModel === null;
     const clearedContinuationState = migratedLegacyModel && persisted.providerState !== null;
     const config: AgentConfig = {
       ...opts.baseConfig,
       provider: persisted.provider,
-      model: resumedModel.id,
+      model: dynamicProvider ? persisted.model : resumedModel.id,
       workingDirectory: persisted.workingDirectory,
       enableMcp: persisted.enableMcp,
       outputDirectory: persisted.outputDirectory,
@@ -521,7 +522,7 @@ export class AgentSession {
       createdAt: persisted.createdAt,
       updatedAt: persisted.updatedAt,
       provider: persisted.provider,
-      model: resumedModel.id,
+      model: dynamicProvider ? persisted.model : resumedModel.id,
       sessionKind: persisted.sessionKind,
       ...(persisted.parentSessionId ? { parentSessionId: persisted.parentSessionId } : {}),
       ...(persisted.role ? { role: persisted.role } : {}),

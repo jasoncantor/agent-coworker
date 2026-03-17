@@ -13,8 +13,7 @@ import { supportsOpenAiContinuation } from "../../shared/openaiContinuation";
 import { defaultRuntimeNameForProvider, isProviderName } from "../../types";
 import type { AgentConfig, ServerErrorCode, ServerErrorSource } from "../../types";
 import type { ServerEvent } from "../protocol";
-import { assertSupportedModel } from "../../models/registry";
-import { normalizeChildRoutingConfig } from "../../models/childModelRouting";
+import { assertSupportedModel, isDynamicModelProvider } from "../../models/registry";
 
 export class ProviderAuthManager {
   constructor(
@@ -72,13 +71,13 @@ export class ProviderAuthManager {
 
     const currentConfig = this.opts.getConfig();
     const nextProvider = providerRaw ?? currentConfig.provider;
-    try {
-      if (nextProvider !== "openai-proxy") {
+    if (!isDynamicModelProvider(nextProvider)) {
+      try {
         assertSupportedModel(nextProvider, modelId, "model");
+      } catch (error) {
+        this.opts.emitError("validation_failed", "provider", error instanceof Error ? error.message : String(error));
+        return;
       }
-    } catch (error) {
-      this.opts.emitError("validation_failed", "provider", error instanceof Error ? error.message : String(error));
-      return;
     }
     const normalizedChildRouting = normalizeChildRoutingConfig({
       provider: nextProvider,

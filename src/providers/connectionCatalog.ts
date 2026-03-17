@@ -3,13 +3,7 @@ import { PROVIDER_NAMES, type ProviderName } from "../types";
 import { defaultSupportedModel, listSupportedModels, type SupportedModel } from "../models/registry";
 import { readCodexAuthMaterial } from "./codex-auth";
 import { getOpenCodeDisplayName } from "./opencodeShared";
-import {
-  discoverOpenAiProxyModels,
-  resolveOpenAiProxyApiKey,
-  resolveOpenAiProxyBaseUrl,
-  type OpenAiCompatibleModelEntry,
-} from "./openaiProxyShared";
-import { resolveAuthHomeDir } from "../utils/authHome";
+import { discoverOpenAiProxyModels, resolveOpenAiProxyBaseUrl } from "./openaiProxyShared";
 
 export type ProviderCatalogModelEntry = Pick<
   SupportedModel,
@@ -32,6 +26,7 @@ export type ProviderCatalogPayload = {
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   google: "Google",
   openai: "OpenAI",
+  "openai-proxy": "OpenAI-API Proxy",
   anthropic: "Anthropic",
   baseten: "Baseten",
   together: "Together AI",
@@ -70,8 +65,9 @@ export async function getProviderCatalog(opts: {
   paths?: AiCoworkerPaths;
   readStore?: typeof readConnectionStore;
   readCodexAuthMaterialImpl?: typeof readCodexAuthMaterial;
-  fetchImpl?: typeof fetch;
-  currentSelection?: { provider: ProviderName; model: string };
+  activeProvider?: ProviderName;
+  activeModel?: string;
+  openaiProxyBaseUrl?: string;
 } = {}): Promise<ProviderCatalogPayload> {
   const paths = opts.paths ?? getAiCoworkerPaths({ homedir: opts.homedir ?? resolveAuthHomeDir() });
   const readStore = opts.readStore ?? readConnectionStore;
@@ -79,30 +75,44 @@ export async function getProviderCatalog(opts: {
   const store = await readStore(paths);
   const all = listProviderCatalogEntries();
 
-  const proxyBaseUrl = resolveOpenAiProxyBaseUrl();
-  const proxyApiKey = resolveOpenAiProxyApiKey({
-    savedKey: store.services["openai-proxy"]?.mode === "api_key" ? store.services["openai-proxy"]?.apiKey : undefined,
-  });
-  const proxyDiscovered = proxyBaseUrl
-    ? await discoverOpenAiProxyModels({ baseUrl: proxyBaseUrl, apiKey: proxyApiKey, fetchImpl: opts.fetchImpl }).catch(() => [])
-    : [];
-  const proxyCatalog = all.find((entry) => entry.id === "openai-proxy");
-  if (proxyCatalog && proxyDiscovered.length > 0) {
-    proxyCatalog.models = proxyDiscovered.map(mapDiscoveredModel);
-    proxyCatalog.defaultModel = proxyDiscovered[0]?.id ?? proxyCatalog.defaultModel;
-  }
+  const openAiProxyIndex = all.findIndex((entry) => entry.id === "openai-proxy");
+  if (openAiProxyIndex >= 0) {
+    const proxyEntry = all[openAiProxyIndex];
+    const savedKey = store.services["openai-proxy"]?.mode === "api_key"
+      ? store.services["openai-proxy"].apiKey
+      : undefined;
+    const baseUrl = resolveOpenAiProxyBaseUrl({
+      baseUrl: opts.openaiProxyBaseUrl,
+      env: {},
+    });
+    const discoveredModels = await discoverOpenAiProxyModels({
+      baseUrl,
+      apiKey: savedKey,
+    });
 
-  const currentProxyModel = opts.currentSelection?.provider === "openai-proxy" ? opts.currentSelection.model.trim() : "";
-  if (proxyCatalog && currentProxyModel && !proxyCatalog.models.some((model) => model.id === currentProxyModel)) {
-    proxyCatalog.models = [
-      ...proxyCatalog.models,
-      {
-        id: currentProxyModel,
-        displayName: currentProxyModel,
-        knowledgeCutoff: "Unknown",
-        supportsImageInput: false,
-      },
-    ];
+    const mergedModels = discoveredModels.length > 0
+      ? discoveredModels
+      : proxyEntry.models;
+
+    const activeProxyModel = opts.activeProvider === "openai-proxy" ? opts.activeModel?.trim() : undefined;
+    const hasActiveModel = Boolean(activeProxyModel && mergedModels.some((model) => model.id === activeProxyModel));
+    const models = activeProxyModel && !hasActiveModel
+      ? [
+          {
+            id: activeProxyModel,
+            displayName: activeProxyModel,
+            knowledgeCutoff: "Unknown",
+            supportsImageInput: false,
+          },
+          ...mergedModels,
+        ]
+      : mergedModels;
+
+    all[openAiProxyIndex] = {
+      ...proxyEntry,
+      models,
+      defaultModel: models[0]?.id ?? proxyEntry.defaultModel,
+    };
   }
 
   const defaults: Record<string, string> = {};

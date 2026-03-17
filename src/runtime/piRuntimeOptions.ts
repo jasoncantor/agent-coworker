@@ -91,7 +91,11 @@ export function buildPiStreamOptions(
 
   const providerSection = providerSectionForPi(params.config.provider, params.providerOptions);
 
-  if (params.config.provider === "openai" || params.config.provider === "codex-cli") {
+  if (
+    params.config.provider === "openai" ||
+    params.config.provider === "codex-cli" ||
+    params.config.provider === "openai-proxy"
+  ) {
     const reasoningEffort = asNonEmptyString(providerSection.reasoningEffort);
     if (reasoningEffort) options.reasoningEffort = reasoningEffort;
     const reasoningSummary = asNonEmptyString(providerSection.reasoningSummary);

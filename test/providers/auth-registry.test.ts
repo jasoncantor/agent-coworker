@@ -19,6 +19,7 @@ describe("providers/authRegistry", () => {
   test("lists auth methods for all providers", () => {
     const methods = listProviderAuthMethods();
     expect(methods.openai?.some((m) => m.id === "api_key")).toBe(true);
+    expect(methods["openai-proxy"]?.some((m) => m.id === "api_key")).toBe(true);
     expect(methods.google?.some((m) => m.id === "exa_api_key")).toBe(true);
     expect(methods.baseten?.some((m) => m.id === "api_key")).toBe(true);
     expect(methods.together?.some((m) => m.id === "api_key")).toBe(true);

@@ -1,8 +1,8 @@
 import type { AgentConfig } from "../types";
 import { createOpenAiProxyModelAdapter } from "./modelAdapter";
 
-export const openaiProxyProvider = {
+export const openAiProxyProvider = {
   keyCandidates: ["openai-proxy"] as const,
-  createModel: ({ modelId, savedKey }: { config: AgentConfig; modelId: string; savedKey?: string }) =>
-    createOpenAiProxyModelAdapter(modelId, savedKey),
+  createModel: ({ config, modelId, savedKey }: { config: AgentConfig; modelId: string; savedKey?: string }) =>
+    createOpenAiProxyModelAdapter(config, modelId, savedKey),
 };

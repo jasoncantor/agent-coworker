@@ -356,6 +356,7 @@ const FeedRow = memo(function FeedRow(props: {
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   google: "Google",
   openai: "OpenAI",
+  "openai-proxy": "OpenAI-API Proxy",
   anthropic: "Anthropic",
   baseten: "Baseten",
   together: "Together AI",

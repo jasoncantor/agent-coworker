@@ -1,102 +1,176 @@
-export const OPENAI_PROXY_DISABLED_BETA_HEADER = "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS";
-export const OPENAI_PROXY_DISABLED_BETA_HEADER_VALUE = "1";
+import type { AgentConfig } from "../types";
 
-function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
-  for (const value of values) {
-    const trimmed = value?.trim();
-    if (trimmed) return trimmed;
-  }
-  return undefined;
+type MaybeEnv = Record<string, string | undefined> | NodeJS.ProcessEnv;
+
+export type OpenAiProxyDiscoveredModel = {
+  id: string;
+  displayName: string;
+  supportsImageInput: boolean;
+  knowledgeCutoff: "Unknown";
+};
+
+const DEFAULT_DISCOVERY_TIMEOUT_MS = 7_500;
+
+function asNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export function resolveOpenAiProxyBaseUrl(opts: {
-  env?: NodeJS.ProcessEnv;
-} = {}): string | undefined {
-  const env = opts.env ?? process.env;
-  return firstNonEmpty(env.OPENAI_PROXY_BASE_URL);
+function normalizeBaseUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (!url.protocol.startsWith("http")) return null;
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+function titleCaseSegment(value: string): string {
+  if (!value) return value;
+  return value
+    .split(/[-_/]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+function displayNameForModelId(modelId: string): string {
+  const compact = modelId.trim();
+  if (!compact) return modelId;
+  const vendorSplit = compact.split("/");
+  const base = vendorSplit[vendorSplit.length - 1] ?? compact;
+  return titleCaseSegment(base);
+}
+
+function supportsImageByMetadata(rawModel: Record<string, unknown>): boolean {
+  const modalities = Array.isArray(rawModel.modalities) ? rawModel.modalities : [];
+  const hasImageModality = modalities.some((entry) => typeof entry === "string" && entry.toLowerCase().includes("image"));
+  if (hasImageModality) return true;
+
+  const inputModalities = Array.isArray(rawModel.input_modalities) ? rawModel.input_modalities : [];
+  const hasImageInput = inputModalities.some((entry) => typeof entry === "string" && entry.toLowerCase().includes("image"));
+  if (hasImageInput) return true;
+
+  const id = asNonEmptyString(rawModel.id)?.toLowerCase() ?? "";
+  return id.includes("vision") || id.includes("multimodal");
+}
+
+function parseDiscoveredModels(raw: unknown): OpenAiProxyDiscoveredModel[] {
+  if (typeof raw !== "object" || raw === null) return [];
+  const record = raw as Record<string, unknown>;
+  const data = Array.isArray(record.data) ? record.data : [];
+  const models = data
+    .map((entry) => (typeof entry === "object" && entry !== null ? entry as Record<string, unknown> : null))
+    .filter((entry): entry is Record<string, unknown> => entry !== null)
+    .map((entry) => ({
+      id: asNonEmptyString(entry.id) ?? "",
+      supportsImageInput: supportsImageByMetadata(entry),
+    }))
+    .filter((entry) => entry.id.length > 0);
+
+  if (models.length === 0) return [];
+
+  const uniqueById = new Map<string, { id: string; supportsImageInput: boolean }>();
+  for (const model of models) {
+    const existing = uniqueById.get(model.id);
+    if (!existing) {
+      uniqueById.set(model.id, model);
+      continue;
+    }
+    if (!existing.supportsImageInput && model.supportsImageInput) {
+      uniqueById.set(model.id, model);
+    }
+  }
+
+  const deduped = [...uniqueById.values()];
+  const claudeModels = deduped.filter((entry) => {
+    const lower = entry.id.toLowerCase();
+    return lower.includes("claude") || lower.includes("anthropic");
+  });
+  const preferred = claudeModels.length > 0 ? claudeModels : deduped;
+
+  return preferred
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((entry) => ({
+      id: entry.id,
+      displayName: displayNameForModelId(entry.id),
+      supportsImageInput: entry.supportsImageInput,
+      knowledgeCutoff: "Unknown" as const,
+    }));
 }
 
 export function resolveOpenAiProxyApiKey(opts: {
   savedKey?: string;
-  env?: NodeJS.ProcessEnv;
+  env?: MaybeEnv;
 } = {}): string | undefined {
-  const env = opts.env ?? process.env;
-  return firstNonEmpty(opts.savedKey, env.OPENAI_PROXY_API_KEY);
+  const savedKey = opts.savedKey?.trim();
+  if (savedKey) return savedKey;
+  const envValue = (opts.env ?? process.env).OPENAI_PROXY_API_KEY?.trim();
+  return envValue ? envValue : undefined;
 }
 
-type OpenAiCompatibleModelEntry = {
-  id: string;
-  displayName: string;
-  knowledgeCutoff: string;
-  supportsImageInput: boolean;
-};
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
+export function resolveOpenAiProxyBaseUrl(opts: {
+  baseUrl?: string;
+  config?: AgentConfig;
+  env?: MaybeEnv;
+} = {}): string | undefined {
+  if (opts.baseUrl) {
+    const normalized = normalizeBaseUrl(opts.baseUrl);
+    if (normalized) return normalized;
+  }
+  const configValue = opts.config?.openaiProxyBaseUrl;
+  if (configValue) {
+    const normalized = normalizeBaseUrl(configValue);
+    if (normalized) return normalized;
+  }
+  const envValue = (opts.env ?? process.env).OPENAI_PROXY_BASE_URL;
+  if (!envValue) return undefined;
+  return normalizeBaseUrl(envValue) ?? undefined;
 }
 
-function asNonEmptyString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function detectClaudeModel(modelId: string): boolean {
-  return /claude|anthropic/i.test(modelId);
-}
-
-function detectImageSupport(model: Record<string, unknown>): boolean {
-  const modalities = Array.isArray(model.modalities) ? model.modalities : [];
-  if (modalities.some((entry) => typeof entry === "string" && entry.toLowerCase().includes("image"))) return true;
-
-  const inputModalities = Array.isArray(model.input_modalities) ? model.input_modalities : [];
-  if (inputModalities.some((entry) => typeof entry === "string" && entry.toLowerCase().includes("image"))) return true;
-
-  const capabilities = asRecord(model.capabilities);
-  if (capabilities?.vision === true || capabilities?.image === true) return true;
-  return false;
-}
-
-function toModelEntry(raw: unknown): OpenAiCompatibleModelEntry | null {
-  const model = asRecord(raw);
-  if (!model) return null;
-  const id = asNonEmptyString(model.id);
-  if (!id) return null;
-
+export function openAiProxyForcedHeaders(): Record<string, string> {
   return {
-    id,
-    displayName: id,
-    knowledgeCutoff: "Unknown",
-    supportsImageInput: detectImageSupport(model),
+    CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
   };
 }
 
 export async function discoverOpenAiProxyModels(opts: {
-  baseUrl: string;
+  baseUrl?: string;
   apiKey?: string;
   fetchImpl?: typeof fetch;
-}): Promise<OpenAiCompatibleModelEntry[]> {
-  const base = opts.baseUrl.replace(/\/+$/, "");
-  const url = `${base}/models`;
+  timeoutMs?: number;
+} = {}): Promise<OpenAiProxyDiscoveredModel[]> {
+  const baseUrl = opts.baseUrl;
+  if (!baseUrl) return [];
+
   const fetchImpl = opts.fetchImpl ?? fetch;
-  const headers: Record<string, string> = {
-    [OPENAI_PROXY_DISABLED_BETA_HEADER]: OPENAI_PROXY_DISABLED_BETA_HEADER_VALUE,
-  };
-  if (opts.apiKey) {
-    headers.authorization = `Bearer ${opts.apiKey}`;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_DISCOVERY_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const headers: Record<string, string> = {
+      ...openAiProxyForcedHeaders(),
+    };
+    const apiKey = opts.apiKey?.trim();
+    if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+
+    const response = await fetchImpl(`${baseUrl}/models`, {
+      method: "GET",
+      headers,
+      signal: controller.signal,
+    });
+    if (!response.ok) return [];
+
+    const body = await response.json().catch(() => null);
+    return parseDiscoveredModels(body);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
   }
-
-  const response = await fetchImpl(url, { headers });
-  if (!response.ok) throw new Error(`Model discovery failed (${response.status}).`);
-  const payload = await response.json() as Record<string, unknown>;
-  const data = Array.isArray(payload.data) ? payload.data : [];
-
-  const discovered = data
-    .map(toModelEntry)
-    .filter((entry): entry is OpenAiCompatibleModelEntry => Boolean(entry))
-    .filter((entry) => detectClaudeModel(entry.id));
-
-  discovered.sort((a, b) => a.id.localeCompare(b.id));
-  return discovered;
 }
-
-export type { OpenAiCompatibleModelEntry };

@@ -85,6 +85,26 @@ function formatCreditsSummary(credits: any): string {
   return credits.hasCredits === true ? "Credits available" : "No credits available";
 }
 
+function isProviderName(value: string): value is ProviderName {
+  return (PROVIDER_NAMES as readonly string[]).includes(value);
+}
+
+function displayProviderName(provider: ProviderName): string {
+  const names: Partial<Record<ProviderName, string>> = {
+    google: "Google",
+    openai: "OpenAI",
+    "openai-proxy": "OpenAI-API Proxy",
+    anthropic: "Anthropic",
+    baseten: "Baseten",
+    together: "Together AI",
+    nvidia: "NVIDIA",
+    "opencode-go": "OpenCode Go",
+    "opencode-zen": "OpenCode Zen",
+    "codex-cli": "Codex CLI",
+  };
+  return names[provider] ?? provider;
+}
+
 function siblingOpenCodeProvider(provider: ProviderName): ProviderName | null {
   if (provider === "opencode-go") return "opencode-zen";
   if (provider === "opencode-zen") return "opencode-go";

@@ -49,6 +49,7 @@ const PROVIDER_AUTH_METHODS: Record<ProviderName, ProviderAuthMethod[]> = {
     { id: "exa_api_key", type: "api", label: "Exa API key (web search)" },
   ],
   openai: [{ id: "api_key", type: "api", label: "API key" }],
+  "openai-proxy": [{ id: "api_key", type: "api", label: "API key" }],
   anthropic: [{ id: "api_key", type: "api", label: "API key" }],
   baseten: [{ id: "api_key", type: "api", label: "API key" }],
   together: [{ id: "api_key", type: "api", label: "API key" }],

@@ -11,11 +11,11 @@ import {
   readCodexAuthMaterial,
   refreshCodexAuthMaterialCoalesced,
 } from "./codex-auth";
+import { resolveCoworkHomedir } from "../utils/coworkHome";
 import {
-  OPENAI_PROXY_DISABLED_BETA_HEADER,
-  OPENAI_PROXY_DISABLED_BETA_HEADER_VALUE,
+  openAiProxyForcedHeaders,
+  resolveOpenAiProxyApiKey,
 } from "./openaiProxyShared";
-import { resolveAuthHomeDir } from "../utils/authHome";
 
 type HeaderMap = Record<string, string>;
 type HeaderResolver = () => Promise<HeaderMap>;
@@ -128,6 +128,26 @@ export function createNvidiaModelAdapter(modelId: string, savedKey?: string): Pr
   return createModelAdapter(modelId, "nvidia.completions", async () => {
     const key = firstNonEmpty(savedKey, envKey("NVIDIA_API_KEY"));
     const headers: HeaderMap = {};
+    if (key) {
+      headers.authorization = `Bearer ${key}`;
+    }
+    return headers;
+  });
+}
+
+export function createOpenAiProxyModelAdapter(
+  _config: AgentConfig,
+  modelId: string,
+  savedKey?: string,
+): ProviderModelAdapter {
+  return createModelAdapter(modelId, "openai-proxy.completions", async () => {
+    const key = resolveOpenAiProxyApiKey({
+      savedKey,
+      env: process.env,
+    });
+    const headers: HeaderMap = {
+      ...openAiProxyForcedHeaders(),
+    };
     if (key) {
       headers.authorization = `Bearer ${key}`;
     }

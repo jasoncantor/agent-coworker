@@ -12,7 +12,7 @@ All logic for the application should be done in the harness itself, consider the
 - `src/server/`: WebSocket server, protocol, and session state
 - `src/tui/`: thin TUI wrapper (launches the main TUI from `apps/TUI/`)
 - `src/cli/`: CLI REPL and argument parsing
-- `src/providers/`: model/provider integrations (OpenAI/Google/Anthropic and `*-cli`)
+- `src/providers/`: model/provider integrations (OpenAI/OpenAI-API Proxy/Google/Anthropic and `*-cli`)
 - `src/tools/`: built-in tools (`bash`, `read`, `write`, `webSearch`, etc.)
 - `apps/TUI/`: main TUI built with OpenTUI + Solid.js
 - `apps/desktop/`: Electron desktop application
