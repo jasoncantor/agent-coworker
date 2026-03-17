@@ -30,7 +30,7 @@ Cowork takes the opposite approach:
 - Persistent session history in `~/.cowork/sessions.db`, with resume support across restarts.
 - Session backup and checkpoint APIs for restoring a workspace to its original or checkpointed state.
 - Layered skills and MCP configuration for project, user, global, and built-in capabilities.
-- Provider catalog, auth, and status flows for Google, OpenAI, Anthropic, and `codex-cli`.
+- Provider catalog, auth, and status flows for Google, OpenAI, OpenAI-API Proxy, Anthropic, and `codex-cli`.
 - Harness and observability hooks for repeatable runs, traces, and artifact capture.
 
 ## Quickstart
@@ -53,6 +53,7 @@ Live AI turns require at least one configured provider. Starting the server, lau
 | --- | --- |
 | Google | `GOOGLE_GENERATIVE_AI_API_KEY` |
 | OpenAI | `OPENAI_API_KEY` |
+| OpenAI-API Proxy | `OPENAI_PROXY_BASE_URL` + optional `OPENAI_PROXY_API_KEY` |
 | Anthropic | `ANTHROPIC_API_KEY` |
 | Codex CLI | Built-in OAuth or API key flow via Cowork |
 

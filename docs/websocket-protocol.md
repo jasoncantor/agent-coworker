@@ -213,7 +213,7 @@ Types referenced across multiple messages.
 ### ProviderName
 
 ```
-"google" | "openai" | "anthropic" | "opencode-go" | "opencode-zen" | "codex-cli"
+"google" | "openai" | "openai-proxy" | "anthropic" | "opencode-go" | "opencode-zen" | "codex-cli"
 ```
 
 ### PublicConfig
@@ -240,6 +240,16 @@ Returned in `server_hello` and `config_updated`:
   "defaultModel": "glm-5"
 }
 ```
+
+`openai-proxy` catalog behavior is endpoint-driven when a proxy base URL is configured:
+- The server fetches `<OPENAI_PROXY_BASE_URL>/models` and uses discovered models in `provider_catalog`.
+- Claude/Anthropic IDs are preferred when present in discovery results.
+- If discovery fails or returns no usable models, static fallback metadata is used.
+- The currently active session model is preserved in the catalog even when discovery does not include it yet.
+
+Provider-specific request behavior for `openai-proxy`:
+- Auth is API-key based (`provider_auth_set_api_key`) with optional env fallback via `OPENAI_PROXY_API_KEY`.
+- Every outbound request includes `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1`.
 
 ### ProviderAuthMethod
 
@@ -2125,11 +2135,12 @@ Provider catalog metadata. Sent on connection and after model changes.
   "sessionId": "...",
   "all": [
     { "id": "openai", "name": "OpenAI", "models": ["gpt-5.4", "gpt-5.2", "gpt-5.2-codex"], "defaultModel": "gpt-5.4" },
+    { "id": "openai-proxy", "name": "OpenAI-API Proxy", "models": ["claude-sonnet-4-5"], "defaultModel": "claude-sonnet-4-5" },
     { "id": "opencode-go", "name": "OpenCode Go", "models": ["glm-5", "kimi-k2.5"], "defaultModel": "glm-5" },
     { "id": "opencode-zen", "name": "OpenCode Zen", "models": ["glm-5", "kimi-k2.5", "nemotron-3-super-free", "mimo-v2-flash-free", "big-pickle", "minimax-m2.5-free", "minimax-m2.5"], "defaultModel": "glm-5" }
   ],
-  "default": { "openai": "gpt-5.4", "opencode-go": "glm-5", "opencode-zen": "glm-5", "google": "gemini-3.1-pro-preview-customtools" },
-  "connected": ["openai", "opencode-go", "opencode-zen"]
+  "default": { "openai": "gpt-5.4", "openai-proxy": "claude-sonnet-4-5", "opencode-go": "glm-5", "opencode-zen": "glm-5", "google": "gemini-3.1-pro-preview-customtools" },
+  "connected": ["openai", "openai-proxy", "opencode-go", "opencode-zen"]
 }
 ```
 
@@ -2140,6 +2151,15 @@ Provider catalog metadata. Sent on connection and after model changes.
 | `all` | `ProviderCatalogEntry[]` | All available providers with their models |
 | `default` | `Record<string, string>` | Default model per provider (includes current session's selection) |
 | `connected` | `string[]` | Provider IDs that have active auth |
+
+For `openai-proxy`, `all[*].models` may change across sessions/workspaces based on live `/models` discovery at the configured endpoint.
+
+Live proxy verification (opt-in, non-protocol):
+- `RUN_LIVE_API_TESTS=1`
+- `OPENAI_PROXY_TEST_BASE_URL`
+- `OPENAI_PROXY_TEST_API_KEY`
+- `OPENAI_PROXY_TEST_MODEL`
+- See `test/providers/openai-proxy-cache.integration.test.ts` for cache telemetry verification semantics.
 
 ---
 
@@ -2153,6 +2173,7 @@ Auth method registry for all providers.
   "sessionId": "...",
   "methods": {
     "openai": [{ "id": "api_key", "type": "api", "label": "API key" }],
+    "openai-proxy": [{ "id": "api_key", "type": "api", "label": "API key" }],
     "opencode-go": [{ "id": "api_key", "type": "api", "label": "API key" }],
     "opencode-zen": [{ "id": "api_key", "type": "api", "label": "API key" }],
     "codex-cli": [

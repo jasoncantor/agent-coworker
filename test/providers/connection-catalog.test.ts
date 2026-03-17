@@ -7,9 +7,12 @@ import { getProviderCatalog, listProviderCatalogEntries } from "../../src/provid
 import { getAiCoworkerPaths } from "../../src/connect";
 import { PROVIDER_NAMES } from "../../src/types";
 
+const readNoCodexAuth = async () => null;
+
 describe("providers/connectionCatalog", () => {
   test("catalog entries stay aligned with provider names and default-model map", async () => {
     const payload = await getProviderCatalog({
+      readCodexAuthMaterialImpl: readNoCodexAuth,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -28,6 +31,7 @@ describe("providers/connectionCatalog", () => {
 
   test("lists OpenCode providers in the provider catalog with the expected model sets", async () => {
     const payload = await getProviderCatalog({
+      readCodexAuthMaterialImpl: readNoCodexAuth,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -107,8 +111,130 @@ describe("providers/connectionCatalog", () => {
     });
   });
 
+  test("lists OpenAI-API Proxy in the provider catalog and preserves active model selections", async () => {
+    const payload = await getProviderCatalog({
+      readCodexAuthMaterialImpl: readNoCodexAuth,
+      readStore: async () => ({
+        version: 1,
+        updatedAt: "2026-02-17T00:00:00.000Z",
+        services: {},
+      }),
+      activeProvider: "openai-proxy",
+      activeModel: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    });
+
+    expect(payload.default["openai-proxy"]).toBe("anthropic.claude-3-5-sonnet-20241022-v2:0");
+    expect(payload.all).toContainEqual({
+      id: "openai-proxy",
+      name: "OpenAI-API Proxy",
+      models: [
+        {
+          id: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+          displayName: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+          knowledgeCutoff: "Unknown",
+          supportsImageInput: false,
+        },
+        {
+          id: "claude-sonnet-4-5",
+          displayName: "Claude Sonnet 4.5 (Proxy)",
+          knowledgeCutoff: "Unknown",
+          supportsImageInput: false,
+        },
+      ],
+      defaultModel: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    });
+  });
+
+  test("uses dynamic /models discovery for openai-proxy when a base URL is configured", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const requestUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      expect(requestUrl).toBe("https://proxy.internal/v1/models");
+      const headers = new Headers(init?.headers);
+      expect(headers.get("authorization")).toBe("Bearer proxy-key");
+      expect(headers.get("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")).toBe("1");
+      return new Response(JSON.stringify({
+        data: [
+          { id: "gpt-4o-mini" },
+          { id: "anthropic.claude-3-5-sonnet-20241022-v2:0", input_modalities: ["text", "image"] },
+        ],
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const payload = await getProviderCatalog({
+        readCodexAuthMaterialImpl: readNoCodexAuth,
+        readStore: async () => ({
+          version: 1,
+          updatedAt: "2026-02-17T00:00:00.000Z",
+          services: {
+            "openai-proxy": {
+              service: "openai-proxy",
+              mode: "api_key",
+              apiKey: "proxy-key",
+              updatedAt: "2026-02-17T00:00:00.000Z",
+            },
+          },
+        }),
+        openaiProxyBaseUrl: "https://proxy.internal/v1",
+      });
+
+      expect(payload.default["openai-proxy"]).toBe("anthropic.claude-3-5-sonnet-20241022-v2:0");
+      expect(payload.all).toContainEqual({
+        id: "openai-proxy",
+        name: "OpenAI-API Proxy",
+        models: [
+          {
+            id: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            displayName: "Anthropic.claude 3 5 Sonnet 20241022 V2:0",
+            knowledgeCutoff: "Unknown",
+            supportsImageInput: true,
+          },
+        ],
+        defaultModel: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("falls back to static openai-proxy catalog metadata when /models discovery fails", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response("upstream error", { status: 502 })) as typeof fetch;
+
+    try {
+      const payload = await getProviderCatalog({
+        readCodexAuthMaterialImpl: readNoCodexAuth,
+        readStore: async () => ({
+          version: 1,
+          updatedAt: "2026-02-17T00:00:00.000Z",
+          services: {},
+        }),
+        openaiProxyBaseUrl: "https://proxy.internal/v1",
+      });
+
+      expect(payload.default["openai-proxy"]).toBe("claude-sonnet-4-5");
+      expect(payload.all).toContainEqual({
+        id: "openai-proxy",
+        name: "OpenAI-API Proxy",
+        models: [
+          {
+            id: "claude-sonnet-4-5",
+            displayName: "Claude Sonnet 4.5 (Proxy)",
+            knowledgeCutoff: "Unknown",
+            supportsImageInput: false,
+          },
+        ],
+        defaultModel: "claude-sonnet-4-5",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("lists Baseten in the provider catalog with the expected model set", async () => {
     const payload = await getProviderCatalog({
+      readCodexAuthMaterialImpl: readNoCodexAuth,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -146,6 +272,7 @@ describe("providers/connectionCatalog", () => {
 
   test("lists Together AI in the provider catalog with the expected model set", async () => {
     const payload = await getProviderCatalog({
+      readCodexAuthMaterialImpl: readNoCodexAuth,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -183,6 +310,7 @@ describe("providers/connectionCatalog", () => {
 
   test("lists NVIDIA in the provider catalog with the expected model set", async () => {
     const payload = await getProviderCatalog({
+      readCodexAuthMaterialImpl: readNoCodexAuth,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",
@@ -208,6 +336,7 @@ describe("providers/connectionCatalog", () => {
 
   test("connected providers exclude oauth_pending entries", async () => {
     const payload = await getProviderCatalog({
+      readCodexAuthMaterialImpl: readNoCodexAuth,
       readStore: async () => ({
         version: 1,
         updatedAt: "2026-02-17T00:00:00.000Z",

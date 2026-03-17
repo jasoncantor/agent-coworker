@@ -3,11 +3,28 @@ import path from "node:path";
 
 import type { AgentConfig } from "./types";
 import { discoverSkills } from "./skills";
-import { assertSupportedModel, type SupportedModel } from "./models/registry";
+import {
+  assertSupportedModel,
+  defaultSupportedModel,
+  isDynamicModelProvider,
+  type SupportedModel,
+} from "./models/registry";
 import { MemoryStore } from "./memoryStore";
 
+function resolvePromptModel(config: AgentConfig): SupportedModel {
+  if (!isDynamicModelProvider(config.provider)) {
+    return assertSupportedModel(config.provider, config.model, "model");
+  }
+  const supported = defaultSupportedModel(config.provider);
+  return {
+    ...supported,
+    id: config.model,
+    displayName: config.model,
+  };
+}
+
 async function resolveSystemTemplatePath(config: AgentConfig): Promise<string> {
-  const supportedModel = assertSupportedModel(config.provider, config.model, "model");
+  const supportedModel = resolvePromptModel(config);
   const modelSystemPath = path.join(config.builtInDir, "prompts", supportedModel.promptTemplate);
   try {
     await fs.access(modelSystemPath);
@@ -152,7 +169,7 @@ export interface SystemPromptResult {
  * Use this when you need the skill metadata (e.g. for dynamic tool descriptions).
  */
 export async function loadSystemPromptWithSkills(config: AgentConfig): Promise<SystemPromptResult> {
-  const supportedModel = assertSupportedModel(config.provider, config.model, "model");
+  const supportedModel = resolvePromptModel(config);
   const systemPath = await resolveSystemTemplatePath(config);
   let prompt = await fs.readFile(systemPath, "utf-8");
 

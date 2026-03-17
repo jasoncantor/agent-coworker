@@ -16,6 +16,7 @@ describe("Cross-provider model creation", () => {
     { name: "together", providerPrefix: "together.completions" },
     { name: "nvidia", providerPrefix: "nvidia.completions" },
     { name: "openai", providerPrefix: "openai.responses" },
+    { name: "openai-proxy", providerPrefix: "openai-proxy.completions" },
     { name: "google", providerPrefix: "google.generative-ai" },
     { name: "opencode-go", providerPrefix: "opencode-go.completions" },
     { name: "opencode-zen", providerPrefix: "opencode-zen.completions" },
@@ -69,6 +70,10 @@ import { reasoningModeForProvider } from "../../src/server/modelStream";
 describe("Session reasoning kind mapping", () => {
   test("openai provider maps to 'summary' reasoning kind", () => {
     expect(reasoningModeForProvider("openai")).toBe("summary");
+  });
+
+  test("openai-proxy provider maps to 'reasoning' kind", () => {
+    expect(reasoningModeForProvider("openai-proxy")).toBe("reasoning");
   });
 
   test("anthropic provider maps to 'reasoning' kind", () => {

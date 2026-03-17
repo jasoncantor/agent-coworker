@@ -848,4 +848,87 @@ describe("pi runtime regressions", () => {
     expect(result.content).toEqual([{ type: "text", text: toolResultOutput.value }]);
   });
 
+  test("openai-proxy runtime model resolution requires a configured proxy base URL", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-openai-proxy-missing-url-"));
+    const defaultProxyModelId = defaultSupportedModel("openai-proxy").id;
+    const config = makeConfig(homeDir, {
+      provider: "openai-proxy",
+      model: defaultProxyModelId,
+      subAgentModel: defaultProxyModelId,
+    });
+
+    await expect(piRuntimeInternal.resolvePiModel(makeParams(config))).rejects.toThrow(
+      "Missing OPENAI_PROXY_BASE_URL (or openaiProxyBaseUrl config) for provider openai-proxy."
+    );
+  });
+
+  test("openai-proxy runtime model resolution injects forced cache header and env API key fallback", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-openai-proxy-env-key-"));
+    const config = makeConfig(homeDir, {
+      provider: "openai-proxy",
+      model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      subAgentModel: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      openaiProxyBaseUrl: "https://proxy.internal/v1/",
+    });
+
+    const resolved = await withEnv("OPENAI_PROXY_API_KEY", "env-proxy-key", async () => (
+      await piRuntimeInternal.resolvePiModel(makeParams(config))
+    ));
+
+    expect(resolved.apiKey).toBe("env-proxy-key");
+    expect(resolved.headers).toEqual({
+      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+    });
+    expect(resolved.model).toMatchObject({
+      id: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      name: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      api: "openai-completions",
+      provider: "openai-proxy",
+      baseUrl: "https://proxy.internal/v1",
+      reasoning: true,
+      contextWindow: 262_144,
+      maxTokens: 65_536,
+    });
+    expect(resolved.model.input).toEqual(["text"]);
+  });
+
+  test("openai-proxy runtime model resolution prefers saved API key over env fallback", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-openai-proxy-saved-key-"));
+    const paths = getAiCoworkerPaths({ homedir: homeDir });
+    await fs.mkdir(path.dirname(paths.connectionsFile), { recursive: true });
+    await fs.writeFile(
+      paths.connectionsFile,
+      JSON.stringify({
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        services: {
+          "openai-proxy": {
+            service: "openai-proxy",
+            mode: "api_key",
+            apiKey: "saved-proxy-key",
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    const config = makeConfig(homeDir, {
+      provider: "openai-proxy",
+      model: "claude-sonnet-4-5",
+      subAgentModel: "claude-sonnet-4-5",
+      openaiProxyBaseUrl: "https://proxy.internal/v1",
+      userAgentDir: path.join(homeDir, ".agent"),
+    });
+
+    const resolved = await withEnv("OPENAI_PROXY_API_KEY", "env-proxy-key", async () => (
+      await piRuntimeInternal.resolvePiModel(makeParams(config))
+    ));
+
+    expect(resolved.apiKey).toBe("saved-proxy-key");
+    expect(resolved.headers).toEqual({
+      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+    });
+  });
+
 });

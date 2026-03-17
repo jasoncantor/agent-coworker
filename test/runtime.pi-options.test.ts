@@ -57,6 +57,27 @@ describe("pi runtime provider option mapping", () => {
     expect(mapped.temperature).toBe(0.2);
   });
 
+  test("maps openai-proxy reasoning options", () => {
+    const params = makeParams(makeConfig({
+      provider: "openai-proxy",
+      model: "claude-sonnet-4-5",
+      subAgentModel: "claude-sonnet-4-5",
+      providerOptions: {
+        "openai-proxy": {
+          reasoningEffort: "medium",
+          reasoningSummary: "concise",
+          textVerbosity: "low",
+          temperature: 0.3,
+        },
+      },
+    }));
+    const mapped = __internal.buildPiStreamOptions(params);
+    expect(mapped.reasoningEffort).toBe("medium");
+    expect(mapped.reasoningSummary).toBe("concise");
+    expect(mapped.textVerbosity).toBe("low");
+    expect(mapped.temperature).toBe(0.3);
+  });
+
   test("maps anthropic thinking options", () => {
     const params = makeParams(makeConfig({
       provider: "anthropic",

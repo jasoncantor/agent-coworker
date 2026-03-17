@@ -1,5 +1,5 @@
 import type { AgentConfig, ProviderName } from "../types";
-import { assertSupportedModel } from "../models/registry";
+import { assertSupportedModel, isDynamicModelProvider } from "../models/registry";
 
 import { anthropicProvider } from "./anthropic";
 import { basetenProvider } from "./baseten";
@@ -9,6 +9,7 @@ import { googleProvider } from "./google";
 import { nvidiaProvider } from "./nvidia";
 import { opencodeGoProvider } from "./opencode-go";
 import { opencodeZenProvider } from "./opencode-zen";
+import { openAiProxyProvider } from "./openai-proxy";
 import { openaiProvider } from "./openai";
 import { togetherProvider } from "./together";
 export { DEFAULT_PROVIDER_OPTIONS } from "./providerOptions";
@@ -50,6 +51,7 @@ const PROVIDER_RUNTIMES: Record<ProviderName, ProviderRuntimeDefinition> = {
   "opencode-zen": opencodeZenProvider,
   "codex-cli": codexCliProvider,
   google: googleProvider,
+  "openai-proxy": openAiProxyProvider,
   openai: openaiProvider,
 };
 
@@ -62,12 +64,15 @@ export const PROVIDERS: Record<ProviderName, ProviderDefinition> = {
   "opencode-zen": { ...PROVIDER_RUNTIMES["opencode-zen"], ...PROVIDER_MODEL_CATALOG["opencode-zen"] },
   "codex-cli": { ...PROVIDER_RUNTIMES["codex-cli"], ...PROVIDER_MODEL_CATALOG["codex-cli"] },
   google: { ...PROVIDER_RUNTIMES.google, ...PROVIDER_MODEL_CATALOG.google },
+  "openai-proxy": { ...PROVIDER_RUNTIMES["openai-proxy"], ...PROVIDER_MODEL_CATALOG["openai-proxy"] },
   openai: { ...PROVIDER_RUNTIMES.openai, ...PROVIDER_MODEL_CATALOG.openai },
 };
 
 export function getModelForProvider(config: AgentConfig, modelId: string, savedKey?: string) {
-  const supported = assertSupportedModel(config.provider, modelId);
-  return PROVIDERS[config.provider].createModel({ config, modelId: supported.id, savedKey });
+  const resolvedModelId = isDynamicModelProvider(config.provider)
+    ? modelId.trim()
+    : assertSupportedModel(config.provider, modelId).id;
+  return PROVIDERS[config.provider].createModel({ config, modelId: resolvedModelId, savedKey });
 }
 
 export function getProviderKeyCandidates(provider: ProviderName): readonly ProviderName[] {

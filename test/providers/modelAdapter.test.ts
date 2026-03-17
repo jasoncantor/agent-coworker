@@ -9,6 +9,7 @@ import {
   createGoogleModelAdapter,
   createNvidiaModelAdapter,
   createOpenAiModelAdapter,
+  createOpenAiProxyModelAdapter,
   createTogetherModelAdapter,
 } from "../../src/providers/modelAdapter";
 import { makeConfig, makeTmpDirs, withEnv, writeJson } from "./helpers";
@@ -99,6 +100,18 @@ describe("provider model adapters", () => {
       const adapter = createNvidiaModelAdapter("nvidia/nemotron-3-super-120b-a12b");
       const headers = await adapter.config.headers();
       expect(headers.authorization).toBe("Bearer nvkey");
+    });
+  });
+
+  test("OpenAI-API proxy adapter wires forced cache header and Bearer authorization", async () => {
+    await withEnv("OPENAI_PROXY_API_KEY", "proxy-key", async () => {
+      const adapter = createOpenAiProxyModelAdapter(
+        makeConfig({ provider: "openai-proxy", openaiProxyBaseUrl: "https://proxy.internal/v1" }),
+        "claude-sonnet-4-5",
+      );
+      const headers = await adapter.config.headers();
+      expect(headers.authorization).toBe("Bearer proxy-key");
+      expect(headers.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS).toBe("1");
     });
   });
 

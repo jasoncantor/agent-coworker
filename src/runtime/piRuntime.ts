@@ -19,6 +19,11 @@ import { getSavedProviderApiKey } from "../config";
 import { getBasetenModelSpec, resolveBasetenApiKey } from "../providers/basetenShared";
 import { getNvidiaModelSpec, resolveNvidiaApiKey } from "../providers/nvidiaShared";
 import {
+  openAiProxyForcedHeaders,
+  resolveOpenAiProxyApiKey,
+  resolveOpenAiProxyBaseUrl,
+} from "../providers/openaiProxyShared";
+import {
   getOpenCodeModelPricing,
   getOpenCodeModelSpec,
   getOpenCodeProviderConfig,
@@ -294,6 +299,20 @@ function getNvidiaPiModel(modelId: string): PiModel | null {
   };
 }
 
+function getOpenAiProxyPiModel(modelId: string, baseUrl: string): PiModel {
+  return {
+    id: modelId,
+    name: modelId,
+    api: "openai-completions",
+    provider: "openai-proxy",
+    baseUrl,
+    reasoning: true,
+    input: ["text"],
+    contextWindow: 262_144,
+    maxTokens: 65_536,
+  };
+}
+
 function isNvidiaChatCompletionsUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -494,6 +513,21 @@ export async function resolvePiModel(params: RuntimeRunTurnParams): Promise<Reso
       apiKey: resolveNvidiaApiKey({
         savedKey: getSavedProviderApiKey(params.config, "nvidia"),
       }),
+    };
+  }
+
+  if (provider === "openai-proxy") {
+    const baseUrl = resolveOpenAiProxyBaseUrl({ config: params.config });
+    if (!baseUrl) {
+      throw new Error("Missing OPENAI_PROXY_BASE_URL (or openaiProxyBaseUrl config) for provider openai-proxy.");
+    }
+    const model = getOpenAiProxyPiModel(modelId, baseUrl);
+    return {
+      model,
+      apiKey: resolveOpenAiProxyApiKey({
+        savedKey: getSavedProviderApiKey(params.config, "openai-proxy"),
+      }),
+      headers: openAiProxyForcedHeaders(),
     };
   }
 

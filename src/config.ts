@@ -16,7 +16,13 @@ import {
 } from "./types";
 import type { AgentConfig, CommandTemplateConfig, ProviderName, RuntimeName } from "./types";
 import { resolveCoworkHomedir } from "./utils/coworkHome";
-import { assertSupportedModel, defaultSupportedModel, getSupportedModel } from "./models/registry";
+import {
+  assertSupportedModel,
+  defaultSupportedModel,
+  getSupportedModel,
+  isDynamicModelProvider,
+  type SupportedModel,
+} from "./models/registry";
 
 export { defaultModelForProvider } from "./providers";
 
@@ -105,6 +111,14 @@ function mergeProviderOptionDefaults(
 function resolveSupportedConfiguredModel(provider: ProviderName, modelId: string, source: string) {
   const supported = getSupportedModel(provider, modelId);
   if (supported) return supported;
+  if (isDynamicModelProvider(provider)) {
+    const fallback = defaultSupportedModel(provider);
+    return {
+      ...fallback,
+      id: modelId,
+      displayName: modelId,
+    } satisfies SupportedModel;
+  }
   const fallback = defaultSupportedModel(provider);
   console.warn(
     `[config] Ignoring unsupported ${source} "${modelId}" for provider ${provider}; using "${fallback.id}".`
@@ -115,6 +129,9 @@ function resolveSupportedConfiguredModel(provider: ProviderName, modelId: string
 function resolveSupportedConfiguredSubAgentModel(provider: ProviderName, subAgentModelId: string, fallbackModelId: string): string {
   const supported = getSupportedModel(provider, subAgentModelId);
   if (supported) return supported.id;
+  if (isDynamicModelProvider(provider)) {
+    return subAgentModelId.trim() || fallbackModelId;
+  }
   console.warn(
     `[config] Ignoring unsupported sub-agent model "${subAgentModelId}" for provider ${provider}; using "${fallbackModelId}".`
   );
@@ -323,6 +340,11 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
   const runtime = normalizeRuntimeNameForProvider(provider, rawRuntime);
 
   const workingDirectory = env.AGENT_WORKING_DIR || cwd;
+  const openaiProxyBaseUrl =
+    asNonEmptyString(env.OPENAI_PROXY_BASE_URL) ||
+    asNonEmptyString(projectConfig.openaiProxyBaseUrl) ||
+    asNonEmptyString(userConfig.openaiProxyBaseUrl) ||
+    asNonEmptyString(builtInDefaults.openaiProxyBaseUrl);
 
   const model =
     asNonEmptyString(env.AGENT_MODEL) ||
@@ -518,6 +540,7 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     observability,
     harness,
     command,
+    ...(openaiProxyBaseUrl ? { openaiProxyBaseUrl } : {}),
     ...(normalizedProviderOptions ? { providerOptions: normalizedProviderOptions } : {}),
     ...(normalizedModelSettings ? { modelSettings: normalizedModelSettings } : {}),
   };
@@ -525,7 +548,9 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
 
 export function getModel(config: AgentConfig, id?: string) {
   const modelId = id || config.model;
-  assertSupportedModel(config.provider, modelId, id ? "model override" : "model");
+  if (!isDynamicModelProvider(config.provider)) {
+    assertSupportedModel(config.provider, modelId, id ? "model override" : "model");
+  }
   const savedKey = getSavedProviderApiKey(config, config.provider);
   return getModelForProvider(config, modelId, savedKey);
 }

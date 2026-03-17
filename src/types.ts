@@ -3,6 +3,7 @@ import { z } from "zod";
 export const PROVIDER_NAMES = [
   "google",
   "openai",
+  "openai-proxy",
   "anthropic",
   "baseten",
   "together",
@@ -128,6 +129,11 @@ export interface AgentConfig {
    * Optional provider-specific options forwarded to runtime model calls.
    */
   providerOptions?: Record<string, any>;
+
+  /**
+   * Optional base URL for OpenAI-compatible internal proxy endpoints.
+   */
+  openaiProxyBaseUrl?: string;
 
   /**
    * Optional runtime controls for model calls.

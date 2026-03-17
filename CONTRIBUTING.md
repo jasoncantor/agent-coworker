@@ -10,6 +10,7 @@ This guide covers everything you need to start contributing to the project.
 - At least one AI provider credential:
   - **Google** (`GOOGLE_GENERATIVE_AI_API_KEY`) -- default provider
   - **OpenAI** (`OPENAI_API_KEY`)
+  - **OpenAI-API Proxy** (`OPENAI_PROXY_BASE_URL` + optional `OPENAI_PROXY_API_KEY`)
   - **Anthropic** (`ANTHROPIC_API_KEY`)
   - Optional: Codex CLI OAuth if you want an OpenAI-backed CLI login flow
 
@@ -45,7 +46,7 @@ Key modules:
 | `src/agent.ts` | Core agent loop. `createRunTurn()` factory returns `runTurn()` which calls the Vercel AI SDK `generateText()`. |
 | `src/server/` | WebSocket server, session management, protocol types, model streaming. |
 | `src/tools/` | Tool factories. Each tool is a file exporting a `create*Tool(ctx)` function. |
-| `src/providers/` | Provider registry (`google`, `openai`, `anthropic`, `codex-cli`). Each exports `defaultModel`, `keyCandidates`, `createModel()`. |
+| `src/providers/` | Provider registry (`google`, `openai`, `openai-proxy`, `anthropic`, `baseten`, `together`, `nvidia`, `opencode-go`, `opencode-zen`, `codex-cli`). Each exports `defaultModel`, `keyCandidates`, `createModel()`. |
 | `src/config.ts` | Config loading with three-tier merge and env var overrides. |
 | `src/mcp/` | MCP server config registry, OAuth provider, auth store. |
 | `src/skills/` | Skill discovery and trigger extraction. |
@@ -98,8 +99,10 @@ Configuration uses a **three-tier hierarchy** (each layer overrides the previous
 
 | Variable | Purpose |
 |---|---|
-| `AGENT_PROVIDER` | Provider name (`google`, `openai`, `anthropic`, `codex-cli`) |
+| `AGENT_PROVIDER` | Provider name (`google`, `openai`, `openai-proxy`, `anthropic`, `codex-cli`) |
 | `AGENT_MODEL` | Model ID override |
+| `OPENAI_PROXY_BASE_URL` | OpenAI-compatible proxy base URL (required for `openai-proxy`) |
+| `OPENAI_PROXY_API_KEY` | Optional proxy API key fallback when a saved key is not present |
 | `AGENT_WORKING_DIR` | Working directory for the agent |
 | `AGENT_OUTPUT_DIR` | Output directory for generated files |
 | `AGENT_UPLOADS_DIR` | Directory for uploaded files |
@@ -109,6 +112,22 @@ Configuration uses a **three-tier hierarchy** (each layer overrides the previous
 | `AGENT_MODEL_MAX_RETRIES` | Max retries for model calls |
 
 The `.cowork/` directory is used for MCP server configs and auth credentials (see MCP section below).
+
+### OpenAI-API Proxy Provider (`openai-proxy`)
+
+- `openai-proxy` is a first-class provider ID in core/server protocol flows (not UI-only).
+- It targets an OpenAI-compatible proxy endpoint (for example LiteLLM in front of Bedrock Claude).
+- Required config/env:
+  - `OPENAI_PROXY_BASE_URL`: proxy base URL (for example `https://proxy.example.com/v1`)
+  - `OPENAI_PROXY_API_KEY`: optional env fallback when a saved provider key is not present
+- Model list is dynamic:
+  - Cowork fetches `<OPENAI_PROXY_BASE_URL>/models` for provider catalog population.
+  - Claude/Anthropic model IDs are preferred when present.
+  - If discovery fails/returns no usable models, Cowork falls back to static provider metadata.
+  - The active configured model string is preserved even when not present in discovery results.
+- All outbound `openai-proxy` requests always include:
+  - `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1`
+  - This is provider-specific and required for cache behavior in some LiteLLM + Bedrock setups.
 
 ## Adding a New Tool
 
@@ -223,6 +242,18 @@ Key testing patterns:
 - **Dependency injection factories** -- `createRunTurn()`, `createTools()`, and tool factories accept injectable dependencies so you can mock AI SDK calls without patching modules.
 - **No network calls** -- Tests should not make real API calls. Use the DI factories to inject fake model responses.
 - **Test files follow `*.test.ts` naming** -- Place them in `test/` alongside related test files.
+
+Opt-in live proxy cache verification:
+
+```bash
+RUN_LIVE_API_TESTS=1 \
+OPENAI_PROXY_TEST_BASE_URL="https://proxy.example.com/v1" \
+OPENAI_PROXY_TEST_API_KEY="..." \
+OPENAI_PROXY_TEST_MODEL="anthropic.claude-3-5-sonnet-20241022-v2:0" \
+bun test test/providers/openai-proxy-cache.integration.test.ts
+```
+
+This test sends the same long prompt twice through the proxy and only reports a cache pass when the second response has stronger explicit cache-hit telemetry (for example `cachedPromptTokens`, `cacheRead`, or equivalent fields). If telemetry is missing, it reports **inconclusive** instead of claiming cache success.
 
 ## Commits & PRs
 

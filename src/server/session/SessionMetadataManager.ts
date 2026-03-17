@@ -1,5 +1,5 @@
 import { getObservabilityHealth } from "../../observability/runtime";
-import { assertSupportedModel } from "../../models/registry";
+import { assertSupportedModel, isDynamicModelProvider } from "../../models/registry";
 import {
   mergeEditableOpenAiCompatibleProviderOptions,
   pickEditableOpenAiCompatibleProviderOptions,
@@ -207,15 +207,24 @@ export class SessionMetadataManager {
 
     let normalizedSubAgentModel: string | undefined;
     if (patch.subAgentModel !== undefined) {
-      try {
-        normalizedSubAgentModel = assertSupportedModel(
-          this.context.state.config.provider,
-          patch.subAgentModel,
-          "sub-agent model",
-        ).id;
-      } catch (err) {
-        this.context.emitError("validation_failed", "session", err instanceof Error ? err.message : String(err));
-        return;
+      if (isDynamicModelProvider(this.context.state.config.provider)) {
+        const trimmed = patch.subAgentModel.trim();
+        if (!trimmed) {
+          this.context.emitError("validation_failed", "session", "Sub-agent model must be non-empty.");
+          return;
+        }
+        normalizedSubAgentModel = trimmed;
+      } else {
+        try {
+          normalizedSubAgentModel = assertSupportedModel(
+            this.context.state.config.provider,
+            patch.subAgentModel,
+            "sub-agent model",
+          ).id;
+        } catch (err) {
+          this.context.emitError("validation_failed", "session", err instanceof Error ? err.message : String(err));
+          return;
+        }
       }
     }
 

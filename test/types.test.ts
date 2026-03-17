@@ -5,13 +5,14 @@ import { isProviderName, PROVIDER_NAMES, resolveProviderName } from "../src/type
 // PROVIDER_NAMES
 // ---------------------------------------------------------------------------
 describe("PROVIDER_NAMES", () => {
-  test("contains exactly 9 providers", () => {
-    expect(PROVIDER_NAMES).toHaveLength(9);
+  test("contains exactly 10 providers", () => {
+    expect(PROVIDER_NAMES).toHaveLength(10);
   });
 
   test("contains expected provider names", () => {
     expect(PROVIDER_NAMES).toContain("google");
     expect(PROVIDER_NAMES).toContain("openai");
+    expect(PROVIDER_NAMES).toContain("openai-proxy");
     expect(PROVIDER_NAMES).toContain("anthropic");
     expect(PROVIDER_NAMES).toContain("baseten");
     expect(PROVIDER_NAMES).toContain("together");
@@ -26,6 +27,7 @@ describe("resolveProviderName", () => {
   test("returns exact provider names", () => {
     expect(resolveProviderName("google")).toBe("google");
     expect(resolveProviderName("openai")).toBe("openai");
+    expect(resolveProviderName("openai-proxy")).toBe("openai-proxy");
     expect(resolveProviderName("anthropic")).toBe("anthropic");
     expect(resolveProviderName("baseten")).toBe("baseten");
     expect(resolveProviderName("together")).toBe("together");
@@ -53,6 +55,10 @@ describe("isProviderName", () => {
 
     test("openai", () => {
       expect(isProviderName("openai")).toBe(true);
+    });
+
+    test("openai-proxy", () => {
+      expect(isProviderName("openai-proxy")).toBe(true);
     });
 
     test("anthropic", () => {

@@ -3,6 +3,7 @@ import type { getAiCoworkerPaths } from "../../connect";
 import type { getProviderCatalog } from "../../providers/connectionCatalog";
 import type { getProviderStatuses } from "../../providerStatus";
 import type { ServerErrorCode, ServerErrorSource } from "../../types";
+import type { AgentConfig } from "../../types";
 import type { ServerEvent } from "../protocol";
 
 export class ProviderCatalogManager {
@@ -11,7 +12,7 @@ export class ProviderCatalogManager {
   constructor(
     private readonly opts: {
       sessionId: string;
-      getConfig: () => { provider: string; model: string };
+      getConfig: () => { provider: AgentConfig["provider"]; model: string; openaiProxyBaseUrl?: string };
       getCoworkPaths: () => ReturnType<typeof getAiCoworkerPaths>;
       getProviderCatalog: typeof getProviderCatalog;
       getProviderStatuses: typeof getProviderStatuses;
@@ -29,8 +30,13 @@ export class ProviderCatalogManager {
 
   async emitProviderCatalog() {
     try {
-      const payload = await this.opts.getProviderCatalog({ paths: this.opts.getCoworkPaths() });
       const cfg = this.opts.getConfig();
+      const payload = await this.opts.getProviderCatalog({
+        paths: this.opts.getCoworkPaths(),
+        activeProvider: cfg.provider,
+        activeModel: cfg.model,
+        openaiProxyBaseUrl: cfg.openaiProxyBaseUrl,
+      });
       const defaults = { ...payload.default, [cfg.provider]: cfg.model };
       this.opts.emit({
         type: "provider_catalog",
