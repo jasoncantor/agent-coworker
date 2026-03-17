@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.25 - 2026-03-17
+
+### Added
+
+- Added full agent-control websocket and desktop messaging plumbing, including a new control-plane layer for steering and follow-up coordination across runtime and desktop flows.
+- Added web search source visibility in the protocol and desktop state so tool results now retain richer provenance metadata (`source` events and related context).
+- Added GPT-5.4 Mini model support in both OpenAI and Codex CLI model registries, including provider metadata and pricing updates.
+- Added desktop-first onboarding flow so first-run desktop setup guidance appears automatically for new workspaces.
+
+### Changed
+
+- Enabled steering from the desktop chat composer while an active turn is in progress, with pending-steer state surfaced in the UI.
+- Improved reconnect behavior so pending steers and active search prompts are preserved and replayed consistently after reconnect events.
+- Updated runtime/session usage tracking so turn usage is preserved during steered continuation errors.
+
+### Fixed
+
+- Fixed steering reconnect/cancel edge cases, including continuation replay ordering and composer state cleanup after accept/clear operations.
+- Fixed protocol state drift on reconnect by preserving pending steer intent and search prompt context in thread event reduction.
+- Fixed desktop thread-state regression paths introduced during steering/onboarding work by tightening state updates and websocket reducer mapping.
+
 ## 0.1.23 - 2026-03-15
 
 ### Added
