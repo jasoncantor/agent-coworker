@@ -16,11 +16,12 @@ export function createBeforeQuitHandler(deps: ShutdownDeps): (event: QuitEvent) 
   let shutdownFinished = false;
 
   return (event: QuitEvent) => {
-    deps.unregisterIpc();
-    deps.unregisterAppearanceListener?.();
-    deps.stopUpdater?.();
+    if (shutdownFinished) {
+      return;
+    }
 
-    if (shutdownFinished || shutdownStarted) {
+    if (shutdownStarted) {
+      event.preventDefault();
       return;
     }
 
@@ -33,6 +34,9 @@ export function createBeforeQuitHandler(deps: ShutdownDeps): (event: QuitEvent) 
         deps.onError?.(error);
       })
       .finally(() => {
+        deps.unregisterIpc();
+        deps.unregisterAppearanceListener?.();
+        deps.stopUpdater?.();
         shutdownFinished = true;
         deps.quit();
       });
