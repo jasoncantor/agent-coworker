@@ -8,6 +8,11 @@ import {
   type DisconnectProviderResult,
   type OauthStdioMode,
 } from "../connect";
+import {
+  discoverAwsBedrockProxyModelsDetailed,
+  formatAwsBedrockProxyDiscoveryFailure,
+  resolveAwsBedrockProxyBaseUrl,
+} from "./awsBedrockProxyShared";
 import { PROVIDER_NAMES, type ProviderName } from "../types";
 import { resolveAuthHomeDir } from "../utils/authHome";
 
@@ -49,7 +54,7 @@ const PROVIDER_AUTH_METHODS: Record<ProviderName, ProviderAuthMethod[]> = {
     { id: "exa_api_key", type: "api", label: "Exa API key (web search)" },
   ],
   openai: [{ id: "api_key", type: "api", label: "API key" }],
-  "openai-proxy": [{ id: "api_key", type: "api", label: "API key" }],
+  "aws-bedrock-proxy": [{ id: "api_key", type: "api", label: "API key" }],
   anthropic: [{ id: "api_key", type: "api", label: "API key" }],
   baseten: [{ id: "api_key", type: "api", label: "API key" }],
   together: [{ id: "api_key", type: "api", label: "API key" }],
@@ -111,6 +116,10 @@ export async function setProviderApiKey(opts: {
   cwd?: string;
   paths?: AiCoworkerPaths;
   connect: ConnectProviderHandler;
+  awsBedrockProxyBaseUrl?: string;
+  openaiProxyBaseUrl?: string;
+  fetchImpl?: typeof fetch;
+  env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
 }): Promise<ConnectProviderResult> {
   const paths = opts.paths ?? getAiCoworkerPaths({ homedir: resolveAuthHomeDir() });
   const method = resolveProviderAuthMethod(opts.provider, opts.methodId);
@@ -145,6 +154,29 @@ export async function setProviderApiKey(opts: {
         ok: false,
         provider: opts.provider,
         message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  if (opts.provider === "aws-bedrock-proxy" && method.id === "api_key") {
+    const baseUrl = resolveAwsBedrockProxyBaseUrl({
+      baseUrl: opts.awsBedrockProxyBaseUrl ?? opts.openaiProxyBaseUrl,
+      env: opts.env ?? process.env,
+    });
+    const validation = await discoverAwsBedrockProxyModelsDetailed({
+      baseUrl,
+      apiKey,
+      fetchImpl: opts.fetchImpl,
+    });
+    if (!validation.ok) {
+      const detail = formatAwsBedrockProxyDiscoveryFailure(validation);
+      const guidance = validation.code === "unauthorized"
+        ? " Use your LiteLLM proxy token, not an upstream OpenAI/Anthropic key like sk-..."
+        : "";
+      return {
+        ok: false,
+        provider: opts.provider,
+        message: `${detail}${guidance}`,
       };
     }
   }

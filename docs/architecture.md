@@ -261,6 +261,22 @@ Configuration merges across three tiers (each overrides the previous):
 └─────────────────────────────────────────┘
 ```
 
+`aws-bedrock-proxy` prompt caching can be configured in project or user config without changing websocket protocol fields:
+
+```json
+{
+  "provider": "aws-bedrock-proxy",
+  "providerOptions": {
+    "aws-bedrock-proxy": {
+      "promptCaching": {
+        "enabled": true,
+        "ttl": "5m"
+      }
+    }
+  }
+}
+```
+
 ## Extension Points
 
 ### Adding a New Tool

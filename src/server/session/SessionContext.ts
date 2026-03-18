@@ -64,6 +64,16 @@ export type PersistedProjectConfigPatch = Partial<
   providerOptions?: OpenAiCompatibleProviderOptionsByProvider;
 };
 
+export type PersistedUserConfigPatch = {
+  awsBedrockProxyBaseUrl?: string | null;
+  openaiProxyBaseUrl?: string | null;
+};
+
+export type PersistedUserConfigState = {
+  awsBedrockProxyBaseUrl?: string;
+  openaiProxyBaseUrl?: string;
+};
+
 export type SessionInfoState = Omit<Extract<ServerEvent, { type: "session_info" }>, "type" | "sessionId">;
 
 export type HydratedSessionState = {
@@ -132,6 +142,8 @@ export type SessionDependencies = {
   runTurnImpl: typeof runTurn;
   persistModelSelectionImpl?: (selection: PersistedModelSelection) => Promise<void> | void;
   persistProjectConfigPatchImpl?: (patch: PersistedProjectConfigPatch) => Promise<void> | void;
+  readUserConfigImpl?: () => Promise<PersistedUserConfigState> | PersistedUserConfigState;
+  persistUserConfigPatchImpl?: (patch: PersistedUserConfigPatch) => Promise<PersistedUserConfigState>;
   generateSessionTitleImpl: typeof generateSessionTitle;
   sessionDb: SessionDb | null;
   writePersistedSessionSnapshotImpl: typeof writePersistedSessionSnapshot;

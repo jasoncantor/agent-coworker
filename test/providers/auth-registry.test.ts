@@ -19,7 +19,7 @@ describe("providers/authRegistry", () => {
   test("lists auth methods for all providers", () => {
     const methods = listProviderAuthMethods();
     expect(methods.openai?.some((m) => m.id === "api_key")).toBe(true);
-    expect(methods["openai-proxy"]?.some((m) => m.id === "api_key")).toBe(true);
+    expect(methods["aws-bedrock-proxy"]?.some((m) => m.id === "api_key")).toBe(true);
     expect(methods.google?.some((m) => m.id === "exa_api_key")).toBe(true);
     expect(methods.baseten?.some((m) => m.id === "api_key")).toBe(true);
     expect(methods.together?.some((m) => m.id === "api_key")).toBe(true);
@@ -160,6 +160,93 @@ describe("providers/authRegistry", () => {
 
     const store = await readConnectionStore(paths);
     expect(store.toolApiKeys?.exa).toBe("exa-secret-key");
+  });
+
+  test("setProviderApiKey requires a configured base URL for aws-bedrock-proxy", async () => {
+    const connect = mock(async (opts: any) => ({
+      ok: true as const,
+      provider: opts.provider,
+      mode: "api_key" as const,
+      storageFile: "/tmp/connections.json",
+      message: "saved",
+      maskedApiKey: "prox...oken",
+    }));
+
+    const result = await setProviderApiKey({
+      provider: "aws-bedrock-proxy",
+      methodId: "api_key",
+      apiKey: "proxy-token",
+      connect,
+      env: {},
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toContain("Set the global AWS Bedrock Proxy URL");
+    }
+    expect(connect).toHaveBeenCalledTimes(0);
+  });
+
+  test("setProviderApiKey rejects unauthorized aws-bedrock-proxy token", async () => {
+    const connect = mock(async (opts: any) => ({
+      ok: true as const,
+      provider: opts.provider,
+      mode: "api_key" as const,
+      storageFile: "/tmp/connections.json",
+      message: "saved",
+      maskedApiKey: "prox...oken",
+    }));
+
+    const result = await setProviderApiKey({
+      provider: "aws-bedrock-proxy",
+      methodId: "api_key",
+      apiKey: "sk-upstream-key",
+      connect,
+      awsBedrockProxyBaseUrl: "https://proxy.internal/v1",
+      fetchImpl: async () => new Response(JSON.stringify({
+        error: {
+          message: "Invalid proxy server token passed.",
+        },
+      }), { status: 401 }),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toContain("Proxy token rejected");
+      expect(result.message).toContain("LiteLLM proxy token");
+    }
+    expect(connect).toHaveBeenCalledTimes(0);
+  });
+
+  test("setProviderApiKey validates aws-bedrock-proxy token before persisting", async () => {
+    const connect = mock(async (opts: any) => ({
+      ok: true as const,
+      provider: opts.provider,
+      mode: "api_key" as const,
+      storageFile: "/tmp/connections.json",
+      message: "saved",
+      maskedApiKey: "prox...oken",
+    }));
+
+    const result = await setProviderApiKey({
+      provider: "aws-bedrock-proxy",
+      methodId: "api_key",
+      apiKey: "proxy-token",
+      connect,
+      awsBedrockProxyBaseUrl: "https://proxy.internal/v1",
+      fetchImpl: async (_input, init) => {
+        const headers = new Headers(init?.headers);
+        expect(headers.get("authorization")).toBe("Bearer proxy-token");
+        return new Response(JSON.stringify({
+          data: [
+            { id: "anthropic.claude-3-5-sonnet-20241022-v2:0" },
+          ],
+        }), { status: 200 });
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(connect).toHaveBeenCalledTimes(1);
   });
 
   test("callbackProviderAuth calls connect handler for oauth method", async () => {

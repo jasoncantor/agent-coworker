@@ -3,7 +3,7 @@ import { z } from "zod";
 export const PROVIDER_NAMES = [
   "google",
   "openai",
-  "openai-proxy",
+  "aws-bedrock-proxy",
   "anthropic",
   "baseten",
   "together",
@@ -16,6 +16,9 @@ export const PROVIDER_NAMES = [
 
 export type ProviderName = (typeof PROVIDER_NAMES)[number];
 const providerNameSchema = z.enum(PROVIDER_NAMES);
+const LEGACY_PROVIDER_ALIASES: Record<string, ProviderName> = {
+  "openai-proxy": "aws-bedrock-proxy",
+};
 
 export const CHILD_MODEL_ROUTING_MODES = [
   "same-provider",
@@ -36,18 +39,18 @@ export function isProviderName(v: unknown): v is ProviderName {
 }
 
 export function resolveProviderName(v: unknown): ProviderName | null {
+  if (typeof v === "string") {
+    const alias = LEGACY_PROVIDER_ALIASES[v.trim()];
+    if (alias) return alias;
+  }
   const parsed = providerNameSchema.safeParse(v);
   return parsed.success ? parsed.data : null;
 }
 
-export function isChildModelRoutingMode(v: unknown): v is ChildModelRoutingMode {
-  return childModelRoutingModeSchema.safeParse(v).success;
-}
-
-export function resolveChildModelRoutingMode(v: unknown): ChildModelRoutingMode | null {
-  const parsed = childModelRoutingModeSchema.safeParse(v);
-  return parsed.success ? parsed.data : null;
-}
+export const providerNameWithAliasesSchema: z.ZodType<ProviderName> = z.preprocess(
+  (value) => resolveProviderName(value),
+  providerNameSchema,
+);
 
 export const RUNTIME_NAMES = [
   "pi",
@@ -153,6 +156,10 @@ export interface AgentConfig {
 
   /**
    * Optional base URL for OpenAI-compatible internal proxy endpoints.
+   */
+  awsBedrockProxyBaseUrl?: string;
+  /**
+   * @deprecated Legacy alias accepted while migrating from openai-proxy.
    */
   openaiProxyBaseUrl?: string;
 

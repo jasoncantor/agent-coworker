@@ -12,7 +12,12 @@ export class ProviderCatalogManager {
   constructor(
     private readonly opts: {
       sessionId: string;
-      getConfig: () => { provider: AgentConfig["provider"]; model: string; openaiProxyBaseUrl?: string };
+      getConfig: () => {
+        provider: AgentConfig["provider"];
+        model: string;
+        awsBedrockProxyBaseUrl?: string;
+        openaiProxyBaseUrl?: string;
+      };
       getCoworkPaths: () => ReturnType<typeof getAiCoworkerPaths>;
       getProviderCatalog: typeof getProviderCatalog;
       getProviderStatuses: typeof getProviderStatuses;
@@ -35,6 +40,7 @@ export class ProviderCatalogManager {
         paths: this.opts.getCoworkPaths(),
         activeProvider: cfg.provider,
         activeModel: cfg.model,
+        awsBedrockProxyBaseUrl: cfg.awsBedrockProxyBaseUrl,
         openaiProxyBaseUrl: cfg.openaiProxyBaseUrl,
       });
       const defaults = { ...payload.default, [cfg.provider]: cfg.model };

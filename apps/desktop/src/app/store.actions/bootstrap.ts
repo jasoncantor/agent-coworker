@@ -18,8 +18,7 @@ import {
   renamePath,
   trashPath,
 } from "../../lib/desktopCommands";
-import type { ProviderName } from "../../lib/wsProtocol";
-import type { ChildModelRoutingMode } from "../../lib/wsProtocol";
+import { resolveProviderName, type ProviderName } from "../../lib/wsProtocol";
 
 import {
   type AppStoreActions,
@@ -73,7 +72,7 @@ const optionalStringSchema = z.preprocess(
 );
 
 const normalizedProviderSchema = z.preprocess(
-  (value) => (isProviderName(value) ? value : "google"),
+  (value) => resolveProviderName(value) ?? "google",
   z.custom<ProviderName>((value): value is ProviderName => isProviderName(value))
 );
 

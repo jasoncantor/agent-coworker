@@ -50,7 +50,7 @@ function displayProviderName(provider: ProviderName): string {
   const names: Partial<Record<ProviderName, string>> = {
     google: "Google",
     openai: "OpenAI",
-    "openai-proxy": "OpenAI-API Proxy",
+    "aws-bedrock-proxy": "AWS Bedrock Proxy",
     anthropic: "Anthropic",
     baseten: "Baseten",
     together: "Together AI",

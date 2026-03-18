@@ -9,6 +9,7 @@ const TITLE_MODEL_BY_PROVIDER = {
   google: "gemini-3-flash-preview",
   nvidia: "nvidia/nemotron-3-super-120b-a12b",
   openai: "gpt-5-mini",
+  "aws-bedrock-proxy": "claude-sonnet-4-5",
   together: "moonshotai/Kimi-K2.5",
   "opencode-go": "glm-5",
   "opencode-zen": "glm-5",

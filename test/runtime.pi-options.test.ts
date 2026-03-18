@@ -57,13 +57,13 @@ describe("pi runtime provider option mapping", () => {
     expect(mapped.temperature).toBe(0.2);
   });
 
-  test("maps openai-proxy reasoning options", () => {
+  test("maps aws-bedrock-proxy reasoning options", () => {
     const params = makeParams(makeConfig({
-      provider: "openai-proxy",
+      provider: "aws-bedrock-proxy",
       model: "claude-sonnet-4-5",
       subAgentModel: "claude-sonnet-4-5",
       providerOptions: {
-        "openai-proxy": {
+        "aws-bedrock-proxy": {
           reasoningEffort: "medium",
           reasoningSummary: "concise",
           textVerbosity: "low",
@@ -76,6 +76,25 @@ describe("pi runtime provider option mapping", () => {
     expect(mapped.reasoningSummary).toBe("concise");
     expect(mapped.textVerbosity).toBe("low");
     expect(mapped.temperature).toBe(0.3);
+  });
+
+  test("maps aws-bedrock-proxy prompt caching options", () => {
+    const params = makeParams(makeConfig({
+      provider: "aws-bedrock-proxy",
+      model: "claude-sonnet-4-5",
+      subAgentModel: "claude-sonnet-4-5",
+      providerOptions: {
+        "aws-bedrock-proxy": {
+          promptCaching: {
+            enabled: false,
+            ttl: "1h",
+          },
+        },
+      },
+    }));
+    const mapped = __internal.buildPiStreamOptions(params);
+    expect(mapped.openAiProxyPromptCachingEnabled).toBe(false);
+    expect(mapped.openAiProxyPromptCachingTtl).toBe("1h");
   });
 
   test("maps anthropic thinking options", () => {

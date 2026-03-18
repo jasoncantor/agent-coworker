@@ -13,9 +13,9 @@ import {
 } from "./codex-auth";
 import { resolveCoworkHomedir } from "../utils/coworkHome";
 import {
-  openAiProxyForcedHeaders,
-  resolveOpenAiProxyApiKey,
-} from "./openaiProxyShared";
+  awsBedrockProxyForcedHeaders,
+  resolveAwsBedrockProxyApiKey,
+} from "./awsBedrockProxyShared";
 
 type HeaderMap = Record<string, string>;
 type HeaderResolver = () => Promise<HeaderMap>;
@@ -140,13 +140,13 @@ export function createOpenAiProxyModelAdapter(
   modelId: string,
   savedKey?: string,
 ): ProviderModelAdapter {
-  return createModelAdapter(modelId, "openai-proxy.completions", async () => {
-    const key = resolveOpenAiProxyApiKey({
+  return createModelAdapter(modelId, "aws-bedrock-proxy.completions", async () => {
+    const key = resolveAwsBedrockProxyApiKey({
       savedKey,
       env: process.env,
     });
     const headers: HeaderMap = {
-      ...openAiProxyForcedHeaders(),
+      ...awsBedrockProxyForcedHeaders(),
     };
     if (key) {
       headers.authorization = `Bearer ${key}`;

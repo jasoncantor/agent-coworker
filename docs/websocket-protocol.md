@@ -6,7 +6,7 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
 
 - URL: `ws://127.0.0.1:{port}/ws`
 - Session resume: `?resumeSessionId=<sessionId>`
-- Current protocol version: `7.19`
+- Current protocol version: `7.16`
 
 ## Table of Contents
 
@@ -26,8 +26,8 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
   - [SessionUsageSnapshot](#sessionusagesnapshot) | [BudgetStatus](#budgetstatus)
 - [Client -> Server Messages](#client---server-messages)
   - Handshake: [client_hello](#client_hello)
-  - Conversation: [user_message](#user_message) | [steer_message](#steer_message) | [ask_response](#ask_response) | [approval_response](#approval_response) | [cancel](#cancel) | [reset](#reset)
-  - Model & Provider: [set_model](#set_model) | [refresh_provider_status](#refresh_provider_status) | [provider_catalog_get](#provider_catalog_get) | [provider_auth_methods_get](#provider_auth_methods_get) | [provider_auth_authorize](#provider_auth_authorize) | [provider_auth_logout](#provider_auth_logout) | [provider_auth_callback](#provider_auth_callback) | [provider_auth_set_api_key](#provider_auth_set_api_key) | [provider_auth_copy_api_key](#provider_auth_copy_api_key)
+  - Conversation: [user_message](#user_message) | [ask_response](#ask_response) | [approval_response](#approval_response) | [cancel](#cancel) | [reset](#reset)
+  - Model & Provider: [set_model](#set_model) | [refresh_provider_status](#refresh_provider_status) | [provider_catalog_get](#provider_catalog_get) | [provider_auth_methods_get](#provider_auth_methods_get) | [user_config_get](#user_config_get) | [user_config_set](#user_config_set) | [provider_auth_authorize](#provider_auth_authorize) | [provider_auth_logout](#provider_auth_logout) | [provider_auth_callback](#provider_auth_callback) | [provider_auth_set_api_key](#provider_auth_set_api_key) | [provider_auth_copy_api_key](#provider_auth_copy_api_key)
   - Tools & Commands: [list_tools](#list_tools) | [list_commands](#list_commands) | [execute_command](#execute_command)
   - Skills: [list_skills](#list_skills) | [read_skill](#read_skill) | [disable_skill](#disable_skill) | [enable_skill](#enable_skill) | [delete_skill](#delete_skill)
   - MCP: [set_enable_mcp](#set_enable_mcp) | [mcp_servers_get](#mcp_servers_get) | [mcp_server_upsert](#mcp_server_upsert) | [mcp_server_delete](#mcp_server_delete) | [mcp_server_validate](#mcp_server_validate) | [mcp_server_auth_authorize](#mcp_server_auth_authorize) | [mcp_server_auth_callback](#mcp_server_auth_callback) | [mcp_server_auth_set_api_key](#mcp_server_auth_set_api_key) | [mcp_servers_migrate_legacy](#mcp_servers_migrate_legacy)
@@ -39,7 +39,7 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
   - Handshake & Lifecycle: [server_hello](#server_hello) | [session_settings](#session_settings) | [session_info](#session_info) | [session_busy](#session_busy) | [session_config](#session_config)
   - Conversation: [steer_accepted](#steer_accepted) | [user_message](#user_message-1) | [model_stream_chunk](#model_stream_chunk) | [model_stream_raw](#model_stream_raw) | [assistant_message](#assistant_message) | [reasoning](#reasoning) | [log](#log) | [todos](#todos) | [reset_done](#reset_done)
   - Prompts: [ask](#ask) | [approval](#approval)
-  - Provider: [provider_catalog](#provider_catalog) | [provider_auth_methods](#provider_auth_methods) | [provider_auth_challenge](#provider_auth_challenge) | [provider_auth_result](#provider_auth_result) | [provider_status](#provider_status) | [config_updated](#config_updated)
+  - Provider: [provider_catalog](#provider_catalog) | [provider_auth_methods](#provider_auth_methods) | [user_config](#user_config) | [user_config_result](#user_config_result) | [provider_auth_challenge](#provider_auth_challenge) | [provider_auth_result](#provider_auth_result) | [provider_status](#provider_status) | [config_updated](#config_updated)
   - Tools & Skills: [tools](#tools) | [commands](#commands) | [skills_list](#skills_list) | [skill_content](#skill_content)
   - MCP: [mcp_servers](#mcp_servers) | [mcp_server_validation](#mcp_server_validation) | [mcp_server_auth_challenge](#mcp_server_auth_challenge) | [mcp_server_auth_result](#mcp_server_auth_result)
   - Session Data: [messages](#messages) | [sessions](#sessions) | [agent_spawned](#agent_spawned) | [agent_list](#agent_list) | [agent_wait_result](#agent_wait_result) | [session_deleted](#session_deleted) | [file_uploaded](#file_uploaded) | [turn_usage](#turn_usage) | [session_usage](#session_usage) | [budget_warning](#budget_warning) | [budget_exceeded](#budget_exceeded)
@@ -49,27 +49,10 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
 
 ## Protocol v7 Notes
 
-Changes in `7.19`:
-
-- New client message: `steer_message`, which targets the active turn by `expectedTurnId` and buffers steering until the next safe model-step boundary.
-- New server event: `steer_accepted`, emitted when a steer is accepted for the current active turn.
-- Resumed `server_hello` now includes `turnId` when the session is still busy so reconnecting clients can steer safely without waiting for a fresh `session_busy`.
-
-Changes in `7.18`:
-
-- `agent_wait` now completes with an explicit `agent_wait_result` event so websocket clients can distinguish timeout from terminal child completion without inferring it from `agent_status`.
-- `server_hello` now includes the documented child-session metadata already exposed via `session_info`, including mode, depth, requested/effective model and reasoning fields, execution state, and the latest assistant preview when available.
-
-Changes in `7.17`:
-
-- Child-agent routing now supports canonical `provider:modelId` refs for explicit cross-provider child targets.
-- `set_config` / `session_config` now expose `childModelRoutingMode`, `preferredChildModelRef`, and `allowedChildModelRefs` for workspace-scoped child routing policy.
-
 Changes in `7.16`:
 
-- Child-agent websocket control is now fully normalized around `agent_*` messages and `agent_spawned` / `agent_list` / `agent_status` events.
-- Child sessions now report `sessionKind: "agent"` plus role, mode, depth, effective model, and effective reasoning metadata in `server_hello` and `session_info`.
-- `preferredChildModel` remains as the legacy same-provider suggestion field; `preferredChildModelRef` is the canonical child target reference field.
+- Added global user-config messages/events: `user_config_get`, `user_config_set`, `user_config`, `user_config_result`.
+- `user_config_set.config.awsBedrockProxyBaseUrl` supports setting or clearing (`null`) the global AWS Bedrock Proxy base URL in `~/.agent/config.json`.
 
 Changes in `7.15`:
 
@@ -235,7 +218,7 @@ Types referenced across multiple messages.
 ### ProviderName
 
 ```
-"google" | "openai" | "openai-proxy" | "anthropic" | "opencode-go" | "opencode-zen" | "codex-cli"
+"google" | "openai" | "aws-bedrock-proxy" | "anthropic" | "opencode-go" | "opencode-zen" | "codex-cli"
 ```
 
 ### PublicConfig
@@ -263,14 +246,16 @@ Returned in `server_hello` and `config_updated`:
 }
 ```
 
-`openai-proxy` catalog behavior is endpoint-driven when a proxy base URL is configured:
-- The server fetches `<OPENAI_PROXY_BASE_URL>/models` and uses discovered models in `provider_catalog`.
+`aws-bedrock-proxy` catalog behavior is endpoint-driven when a proxy base URL is configured:
+- The server fetches `<AWS_BEDROCK_PROXY_BASE_URL>/models` and uses discovered models in `provider_catalog`.
 - Claude/Anthropic IDs are preferred when present in discovery results.
 - If discovery fails or returns no usable models, static fallback metadata is used.
 - The currently active session model is preserved in the catalog even when discovery does not include it yet.
 
-Provider-specific request behavior for `openai-proxy`:
-- Auth is API-key based (`provider_auth_set_api_key`) with optional env fallback via `OPENAI_PROXY_API_KEY`.
+Provider-specific request behavior for `aws-bedrock-proxy`:
+- Auth is API-key based (`provider_auth_set_api_key`) with optional env fallback via `AWS_BEDROCK_PROXY_API_KEY`.
+- `provider_auth_set_api_key` is validated against `<AWS_BEDROCK_PROXY_BASE_URL>/models` before the token is persisted.
+- A configured global proxy base URL is required for successful token saves.
 - Every outbound request includes `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: 1`.
 
 ### ProviderAuthMethod
@@ -959,6 +944,42 @@ Request supported auth methods for all providers.
 
 ---
 
+### user_config_get
+
+Read the global user-config subset managed by the harness.
+
+```json
+{ "type": "user_config_get", "sessionId": "..." }
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `type` | `"user_config_get"` | Yes |
+| `sessionId` | `string` | Yes |
+
+**Response:** `user_config`
+
+---
+
+### user_config_set
+
+Write global user-config values in `~/.agent/config.json`.
+
+```json
+{ "type": "user_config_set", "sessionId": "...", "config": { "awsBedrockProxyBaseUrl": "https://proxy.example.com/v1" } }
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | `"user_config_set"` | Yes | — |
+| `sessionId` | `string` | Yes | Non-empty session ID |
+| `config` | `object` | Yes | Currently supports only `awsBedrockProxyBaseUrl` |
+| `config.awsBedrockProxyBaseUrl` | `string \| null` | No | Valid `http(s)` URL to set, or `null` to clear |
+
+**Response:** `user_config_result`, then `user_config` on success.
+
+---
+
 ### provider_auth_authorize
 
 Start a provider auth challenge flow.
@@ -1034,6 +1055,9 @@ Set a provider API key.
 | `apiKey` | `string` | Yes | Non-empty API key value |
 
 **Response:** `provider_auth_result`, then `provider_status` and `provider_catalog` on success.
+
+For `aws-bedrock-proxy`, saves are strict: the submitted token must successfully call
+`<AWS_BEDROCK_PROXY_BASE_URL>/models` (or legacy `OPENAI_PROXY_BASE_URL`) before persistence.
 
 ---
 
@@ -2282,12 +2306,12 @@ Provider catalog metadata. Sent on connection and after model changes.
   "sessionId": "...",
   "all": [
     { "id": "openai", "name": "OpenAI", "models": ["gpt-5.4", "gpt-5.2", "gpt-5.2-codex"], "defaultModel": "gpt-5.4" },
-    { "id": "openai-proxy", "name": "OpenAI-API Proxy", "models": ["claude-sonnet-4-5"], "defaultModel": "claude-sonnet-4-5" },
+    { "id": "aws-bedrock-proxy", "name": "AWS Bedrock Proxy", "models": ["claude-sonnet-4-5"], "defaultModel": "claude-sonnet-4-5" },
     { "id": "opencode-go", "name": "OpenCode Go", "models": ["glm-5", "kimi-k2.5"], "defaultModel": "glm-5" },
     { "id": "opencode-zen", "name": "OpenCode Zen", "models": ["glm-5", "kimi-k2.5", "nemotron-3-super-free", "mimo-v2-flash-free", "big-pickle", "minimax-m2.5-free", "minimax-m2.5"], "defaultModel": "glm-5" }
   ],
-  "default": { "openai": "gpt-5.4", "openai-proxy": "claude-sonnet-4-5", "opencode-go": "glm-5", "opencode-zen": "glm-5", "google": "gemini-3.1-pro-preview-customtools" },
-  "connected": ["openai", "openai-proxy", "opencode-go", "opencode-zen"]
+  "default": { "openai": "gpt-5.4", "aws-bedrock-proxy": "claude-sonnet-4-5", "opencode-go": "glm-5", "opencode-zen": "glm-5", "google": "gemini-3.1-pro-preview-customtools" },
+  "connected": ["openai", "aws-bedrock-proxy", "opencode-go", "opencode-zen"]
 }
 ```
 
@@ -2299,14 +2323,14 @@ Provider catalog metadata. Sent on connection and after model changes.
 | `default` | `Record<string, string>` | Default model per provider (includes current session's selection) |
 | `connected` | `string[]` | Provider IDs that have active auth |
 
-For `openai-proxy`, `all[*].models` may change across sessions/workspaces based on live `/models` discovery at the configured endpoint.
+For `aws-bedrock-proxy`, `all[*].models` may change across sessions/workspaces based on live `/models` discovery at the configured endpoint.
 
 Live proxy verification (opt-in, non-protocol):
 - `RUN_LIVE_API_TESTS=1`
 - `OPENAI_PROXY_TEST_BASE_URL`
 - `OPENAI_PROXY_TEST_API_KEY`
 - `OPENAI_PROXY_TEST_MODEL`
-- See `test/providers/openai-proxy-cache.integration.test.ts` for cache telemetry verification semantics.
+- See `test/providers/aws-bedrock-proxy-cache.integration.test.ts` for cache telemetry verification semantics.
 
 ---
 
@@ -2320,7 +2344,7 @@ Auth method registry for all providers.
   "sessionId": "...",
   "methods": {
     "openai": [{ "id": "api_key", "type": "api", "label": "API key" }],
-    "openai-proxy": [{ "id": "api_key", "type": "api", "label": "API key" }],
+    "aws-bedrock-proxy": [{ "id": "api_key", "type": "api", "label": "API key" }],
     "opencode-go": [{ "id": "api_key", "type": "api", "label": "API key" }],
     "opencode-zen": [{ "id": "api_key", "type": "api", "label": "API key" }],
     "openai-proxy": [{ "id": "api_key", "type": "api", "label": "API key" }],
@@ -2337,6 +2361,54 @@ Auth method registry for all providers.
 | `type` | `"provider_auth_methods"` | — |
 | `sessionId` | `string` | Session identifier |
 | `methods` | `Record<string, ProviderAuthMethod[]>` | Auth methods keyed by provider name |
+
+---
+
+### user_config
+
+Current global user-config subset.
+
+```json
+{
+  "type": "user_config",
+  "sessionId": "...",
+  "config": {
+    "awsBedrockProxyBaseUrl": "https://proxy.example.com/v1"
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"user_config"` | — |
+| `sessionId` | `string` | Session identifier |
+| `config.awsBedrockProxyBaseUrl` | `string` | Optional normalized global AWS Bedrock Proxy URL |
+
+---
+
+### user_config_result
+
+Result for `user_config_set`.
+
+```json
+{
+  "type": "user_config_result",
+  "sessionId": "...",
+  "ok": true,
+  "message": "Saved globally to ~/.agent/config.json. Restart running workspaces to apply.",
+  "config": {
+    "awsBedrockProxyBaseUrl": "https://proxy.example.com/v1"
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"user_config_result"` | — |
+| `sessionId` | `string` | Session identifier |
+| `ok` | `boolean` | Whether persistence succeeded |
+| `message` | `string` | Human-readable result message |
+| `config.awsBedrockProxyBaseUrl` | `string` | Optional updated normalized value |
 
 ---
 

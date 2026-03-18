@@ -36,7 +36,15 @@ const editableOpenAiProviderOptionsByProviderSchema = z.object({
   openai: openAiCompatibleProviderOptionsSchema.optional(),
   "codex-cli": openAiCompatibleProviderOptionsSchema.optional(),
 }).passthrough();
-const childModelRoutingModeSchema = z.enum(CHILD_MODEL_ROUTING_MODES);
+const userConfigStateSchema = z.object({
+  awsBedrockProxyBaseUrl: z.string().optional(),
+  openaiProxyBaseUrl: z.string().optional(),
+}).passthrough().transform((config) => {
+  const awsBedrockProxyBaseUrl = config.awsBedrockProxyBaseUrl ?? config.openaiProxyBaseUrl;
+  return {
+    ...(awsBedrockProxyBaseUrl ? { awsBedrockProxyBaseUrl } : {}),
+  };
+});
 
 export type ServerEventParseErrorReason = "invalid_json" | "invalid_envelope" | "unknown_type" | "invalid_event";
 
@@ -211,6 +219,18 @@ const serverEventSchema = z.discriminatedUnion("type", [
     type: z.literal("provider_auth_methods"),
     sessionId: nonEmptyTrimmedStringSchema,
     methods: recordUnknownSchema,
+  }).passthrough(),
+  z.object({
+    type: z.literal("user_config"),
+    sessionId: nonEmptyTrimmedStringSchema,
+    config: userConfigStateSchema,
+  }).passthrough(),
+  z.object({
+    type: z.literal("user_config_result"),
+    sessionId: nonEmptyTrimmedStringSchema,
+    ok: z.boolean(),
+    message: z.string(),
+    config: userConfigStateSchema.optional(),
   }).passthrough(),
   z.object({
     type: z.literal("provider_auth_challenge"),
@@ -503,6 +523,8 @@ const KNOWN_SERVER_EVENT_TYPES = new Set<string>([
   "mcp_server_auth_result",
   "provider_catalog",
   "provider_auth_methods",
+  "user_config",
+  "user_config_result",
   "provider_auth_challenge",
   "provider_auth_result",
   "provider_status",

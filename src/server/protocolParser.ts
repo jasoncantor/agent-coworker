@@ -2,13 +2,14 @@ import { z } from "zod";
 
 import { parseMCPServerConfig, parseMCPServersDocument } from "../mcp/configRegistry";
 import { resolveProviderAuthMethod } from "../providers/authRegistry";
+import { resolveAwsBedrockProxyBaseUrl } from "../providers/awsBedrockProxyShared";
 import {
   OPENAI_REASONING_EFFORT_VALUES,
   OPENAI_REASONING_SUMMARY_VALUES,
   OPENAI_TEXT_VERBOSITY_VALUES,
 } from "../shared/openaiCompatibleOptions";
-import { AGENT_ROLE_VALUES, agentReasoningEffortSchema } from "../shared/agents";
-import { CHILD_MODEL_ROUTING_MODES, isProviderName } from "../types";
+import { SUBAGENT_AGENT_TYPE_VALUES } from "../shared/persistentSubagents";
+import { resolveProviderName } from "../types";
 
 import type { ClientMessage } from "./protocol";
 
@@ -151,7 +152,8 @@ function validateProviderAuthTarget(
   value: { provider: unknown; methodId: unknown },
   messagePrefix: "provider_auth_authorize" | "provider_auth_callback" | "provider_auth_set_api_key",
 ): boolean {
-  if (!isProviderName(value.provider)) {
+  const provider = resolveProviderName(value.provider);
+  if (!provider) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["provider"],
@@ -170,7 +172,7 @@ function validateProviderAuthTarget(
     return false;
   }
 
-  if (!resolveProviderAuthMethod(value.provider, parsedMethodId.data)) {
+  if (!resolveProviderAuthMethod(provider, parsedMethodId.data)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["methodId"],
@@ -261,6 +263,7 @@ const sessionOnlyTypes = [
   "refresh_provider_status",
   "provider_catalog_get",
   "provider_auth_methods_get",
+  "user_config_get",
   "mcp_servers_get",
   "harness_context_get",
   "session_backup_get",
@@ -330,7 +333,7 @@ const setModelSchema = schemaWithType("set_model", {
   model: requiredNonEmptyTrimmedString("set_model missing/invalid model"),
   provider: z.unknown().optional(),
 }).superRefine((value, ctx) => {
-  if (value.provider !== undefined && !isProviderName(value.provider)) {
+  if (value.provider !== undefined && !resolveProviderName(value.provider)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["provider"],
@@ -354,7 +357,7 @@ const providerAuthLogoutSchema = schemaWithType("provider_auth_logout", {
   sessionId: requiredSessionId("provider_auth_logout"),
   provider: z.unknown(),
 }).superRefine((value, ctx) => {
-  if (!isProviderName(value.provider)) {
+  if (!resolveProviderName(value.provider)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["provider"],
@@ -408,7 +411,7 @@ const providerAuthCopyApiKeySchema = schemaWithType("provider_auth_copy_api_key"
   provider: z.unknown(),
   sourceProvider: z.unknown(),
 }).superRefine((value, ctx) => {
-  if (!isProviderName(value.provider)) {
+  if (!resolveProviderName(value.provider)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["provider"],
@@ -416,7 +419,7 @@ const providerAuthCopyApiKeySchema = schemaWithType("provider_auth_copy_api_key"
     });
   }
 
-  if (!isProviderName(value.sourceProvider)) {
+  if (!resolveProviderName(value.sourceProvider)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["sourceProvider"],
@@ -428,6 +431,69 @@ const providerAuthCopyApiKeySchema = schemaWithType("provider_auth_copy_api_key"
 const setEnableMcpSchema = schemaWithType("set_enable_mcp", {
   sessionId: requiredSessionId("set_enable_mcp"),
   enableMcp: requiredBoolean("set_enable_mcp missing/invalid enableMcp"),
+});
+
+const userConfigSetPayloadSchema = z.object({
+  awsBedrockProxyBaseUrl: z.string().nullable().optional(),
+  openaiProxyBaseUrl: z.string().nullable().optional(),
+}).strict();
+
+const userConfigSetSchema = schemaWithType("user_config_set", {
+  sessionId: requiredSessionId("user_config_set"),
+  config: z.unknown().optional(),
+}).superRefine((value, ctx) => {
+  if (!recordSchema.safeParse(value.config).success) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["config"],
+      message: "user_config_set missing/invalid config",
+    });
+    return;
+  }
+
+  const parsedConfig = userConfigSetPayloadSchema.safeParse(value.config);
+  if (!parsedConfig.success) {
+    const issue = parsedConfig.error.issues[0];
+    const path = issue?.path.map((part) => String(part));
+    const [field] = path ?? [];
+    if (issue?.code === "unrecognized_keys") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["config"],
+        message: "user_config_set config only supports awsBedrockProxyBaseUrl (legacy openaiProxyBaseUrl also accepted)",
+      });
+      return;
+    }
+    if (field === "awsBedrockProxyBaseUrl" || field === "openaiProxyBaseUrl") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["config"],
+        message: "user_config_set config.awsBedrockProxyBaseUrl must be string or null",
+      });
+      return;
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["config"],
+      message: "user_config_set missing/invalid config",
+    });
+    return;
+  }
+
+  const rawBaseUrl =
+    parsedConfig.data.awsBedrockProxyBaseUrl !== undefined
+      ? parsedConfig.data.awsBedrockProxyBaseUrl
+      : parsedConfig.data.openaiProxyBaseUrl;
+  if (typeof rawBaseUrl === "string" && rawBaseUrl.trim().length > 0) {
+    const normalized = resolveAwsBedrockProxyBaseUrl({ baseUrl: rawBaseUrl, env: {} });
+    if (!normalized) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["config"],
+        message: "user_config_set config.awsBedrockProxyBaseUrl must be a valid http(s) URL",
+      });
+    }
+  }
 });
 
 const memoryListSchema = schemaWithType("memory_list", {
@@ -701,6 +767,7 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   providerAuthCallbackSchema,
   providerAuthSetApiKeySchema,
   providerAuthCopyApiKeySchema,
+  userConfigSetSchema,
   setEnableMcpSchema,
   memoryListSchema,
   memoryUpsertSchema,
@@ -738,20 +805,22 @@ function normalizeClientMessage(parsed: ParsedClientMessage): ClientMessage {
       const sessionId = parsed.sessionId as string;
       const model = parsed.model as string;
       const { provider } = parsed;
-      if (provider !== undefined && !isProviderName(provider)) {
+      const normalizedProvider = provider === undefined ? undefined : resolveProviderName(provider) ?? undefined;
+      if (provider !== undefined && !normalizedProvider) {
         throw new Error(`set_model invalid provider: ${String(provider)}`);
       }
       return {
         type: "set_model",
         sessionId,
         model,
-        ...(provider !== undefined ? { provider } : {}),
+        ...(normalizedProvider !== undefined ? { provider: normalizedProvider } : {}),
       };
     }
     case "provider_auth_authorize": {
       const sessionId = parsed.sessionId as string;
       const methodId = parsed.methodId as string;
-      if (!isProviderName(parsed.provider)) {
+      const provider = resolveProviderName(parsed.provider);
+      if (!provider) {
         throw new Error("provider_auth_authorize missing/invalid provider");
       }
       if (!nonEmptyTrimmedStringSchema.safeParse(methodId).success) {
@@ -760,25 +829,27 @@ function normalizeClientMessage(parsed: ParsedClientMessage): ClientMessage {
       return {
         type: "provider_auth_authorize",
         sessionId,
-        provider: parsed.provider,
+        provider,
         methodId,
       };
     }
     case "provider_auth_logout": {
       const sessionId = parsed.sessionId as string;
-      if (!isProviderName(parsed.provider)) {
+      const provider = resolveProviderName(parsed.provider);
+      if (!provider) {
         throw new Error("provider_auth_logout missing/invalid provider");
       }
       return {
         type: "provider_auth_logout",
         sessionId,
-        provider: parsed.provider,
+        provider,
       };
     }
     case "provider_auth_callback": {
       const sessionId = parsed.sessionId as string;
       const methodId = parsed.methodId as string;
-      if (!isProviderName(parsed.provider)) {
+      const provider = resolveProviderName(parsed.provider);
+      if (!provider) {
         throw new Error("provider_auth_callback missing/invalid provider");
       }
       if (!nonEmptyTrimmedStringSchema.safeParse(methodId).success) {
@@ -790,7 +861,7 @@ function normalizeClientMessage(parsed: ParsedClientMessage): ClientMessage {
       return {
         type: "provider_auth_callback",
         sessionId,
-        provider: parsed.provider,
+        provider,
         methodId,
         ...(parsed.code !== undefined ? { code: parsed.code } : {}),
       };
@@ -799,7 +870,8 @@ function normalizeClientMessage(parsed: ParsedClientMessage): ClientMessage {
       const sessionId = parsed.sessionId as string;
       const methodId = parsed.methodId as string;
       const apiKey = parsed.apiKey as string;
-      if (!isProviderName(parsed.provider)) {
+      const provider = resolveProviderName(parsed.provider);
+      if (!provider) {
         throw new Error("provider_auth_set_api_key missing/invalid provider");
       }
       if (!nonEmptyTrimmedStringSchema.safeParse(methodId).success) {
@@ -811,24 +883,26 @@ function normalizeClientMessage(parsed: ParsedClientMessage): ClientMessage {
       return {
         type: "provider_auth_set_api_key",
         sessionId,
-        provider: parsed.provider,
+        provider,
         methodId,
         apiKey,
       };
     }
     case "provider_auth_copy_api_key": {
       const sessionId = parsed.sessionId as string;
-      if (!isProviderName(parsed.provider)) {
+      const provider = resolveProviderName(parsed.provider);
+      if (!provider) {
         throw new Error("provider_auth_copy_api_key missing/invalid provider");
       }
-      if (!isProviderName(parsed.sourceProvider)) {
+      const sourceProvider = resolveProviderName(parsed.sourceProvider);
+      if (!sourceProvider) {
         throw new Error("provider_auth_copy_api_key missing/invalid sourceProvider");
       }
       return {
         type: "provider_auth_copy_api_key",
         sessionId,
-        provider: parsed.provider,
-        sourceProvider: parsed.sourceProvider,
+        provider,
+        sourceProvider,
       };
     }
     case "mcp_server_upsert": {
@@ -866,6 +940,22 @@ function normalizeClientMessage(parsed: ParsedClientMessage): ClientMessage {
         type: "set_config",
         sessionId,
         config: parsedConfig.data,
+      };
+    }
+    case "user_config_set": {
+      const sessionId = parsed.sessionId as string;
+      const parsedConfig = userConfigSetPayloadSchema.safeParse(parsed.config);
+      if (!parsedConfig.success) {
+        throw new Error("user_config_set missing/invalid config");
+      }
+      const awsBedrockProxyBaseUrl =
+        parsedConfig.data.awsBedrockProxyBaseUrl !== undefined
+          ? parsedConfig.data.awsBedrockProxyBaseUrl
+          : parsedConfig.data.openaiProxyBaseUrl;
+      return {
+        type: "user_config_set",
+        sessionId,
+        config: { ...(awsBedrockProxyBaseUrl !== undefined ? { awsBedrockProxyBaseUrl } : {}) },
       };
     }
     default:

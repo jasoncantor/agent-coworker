@@ -19,7 +19,7 @@ import {
   type SessionKind,
 } from "../shared/agents";
 import { openAiContinuationStateSchema, type OpenAiContinuationState } from "../shared/openaiContinuation";
-import { PROVIDER_NAMES } from "../types";
+import { providerNameWithAliasesSchema } from "../types";
 import type { AgentConfig, HarnessContextState, ModelMessage, TodoItem } from "../types";
 import type { SessionTitleSource } from "./sessionTitleService";
 
@@ -268,7 +268,7 @@ export type PersistedSessionSummary = {
 };
 
 const sessionTitleSourceSchema = z.enum(["default", "model", "heuristic", "manual"]);
-const providerNameSchema = z.enum(PROVIDER_NAMES);
+const providerNameSchema = providerNameWithAliasesSchema;
 const isoTimestampSchema = z.string().datetime({ offset: true });
 const errorWithCodeSchema = z.object({ code: z.string() }).passthrough();
 const modelMessageSchema = z.custom<ModelMessage>(

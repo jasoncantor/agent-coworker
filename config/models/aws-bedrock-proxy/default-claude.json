@@ -1,6 +1,6 @@
 {
   "id": "anthropic.claude-3-5-sonnet",
-  "provider": "openai-proxy",
+  "provider": "aws-bedrock-proxy",
   "displayName": "Claude (Proxy)",
   "knowledgeCutoff": "Unknown",
   "supportsImageInput": false,

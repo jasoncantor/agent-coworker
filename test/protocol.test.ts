@@ -372,6 +372,21 @@ describe("safeParseClientMessage", () => {
       );
       expect(err).toContain("set_model invalid provider");
     });
+
+    test("set_model accepts legacy provider alias and normalizes to canonical id", () => {
+      const msg = expectOk(
+        JSON.stringify({
+          type: "set_model",
+          sessionId: "s1",
+          provider: "openai-proxy",
+          model: "claude-sonnet-4-5",
+        }),
+      );
+      expect(msg.type).toBe("set_model");
+      if (msg.type === "set_model") {
+        expect(msg.provider).toBe("aws-bedrock-proxy");
+      }
+    });
   });
 
   describe("connect_provider hard break", () => {
@@ -416,6 +431,80 @@ describe("safeParseClientMessage", () => {
       expect(msg.type).toBe("provider_auth_methods_get");
       const err = expectErr(JSON.stringify({ type: "provider_auth_methods_get" }));
       expect(err).toBe("provider_auth_methods_get missing sessionId");
+    });
+
+    test("user_config_get validation", () => {
+      const msg = expectOk(JSON.stringify({ type: "user_config_get", sessionId: "s1" }));
+      expect(msg.type).toBe("user_config_get");
+      const err = expectErr(JSON.stringify({ type: "user_config_get" }));
+      expect(err).toBe("user_config_get missing sessionId");
+    });
+
+    test("user_config_set validation", () => {
+      const msg = expectOk(JSON.stringify({
+        type: "user_config_set",
+        sessionId: "s1",
+        config: {
+          awsBedrockProxyBaseUrl: "https://proxy.example.com/v1/",
+        },
+      }));
+      expect(msg.type).toBe("user_config_set");
+      if (msg.type === "user_config_set") {
+        expect(msg.config.awsBedrockProxyBaseUrl).toBe("https://proxy.example.com/v1/");
+      }
+
+      const clearMsg = expectOk(JSON.stringify({
+        type: "user_config_set",
+        sessionId: "s1",
+        config: {
+          awsBedrockProxyBaseUrl: null,
+        },
+      }));
+      expect(clearMsg.type).toBe("user_config_set");
+      if (clearMsg.type === "user_config_set") {
+        expect(clearMsg.config.awsBedrockProxyBaseUrl).toBeNull();
+      }
+
+      const legacyMsg = expectOk(JSON.stringify({
+        type: "user_config_set",
+        sessionId: "s1",
+        config: {
+          openaiProxyBaseUrl: "https://legacy.proxy.example/v1/",
+        },
+      }));
+      expect(legacyMsg.type).toBe("user_config_set");
+      if (legacyMsg.type === "user_config_set") {
+        expect(legacyMsg.config.awsBedrockProxyBaseUrl).toBe("https://legacy.proxy.example/v1/");
+      }
+
+      expect(expectErr(JSON.stringify({
+        type: "user_config_set",
+        sessionId: "s1",
+      }))).toBe("user_config_set missing/invalid config");
+
+      expect(expectErr(JSON.stringify({
+        type: "user_config_set",
+        sessionId: "s1",
+        config: {
+          unsupported: true,
+        },
+      }))).toBe("user_config_set config only supports awsBedrockProxyBaseUrl (legacy openaiProxyBaseUrl also accepted)");
+
+      expect(expectErr(JSON.stringify({
+        type: "user_config_set",
+        sessionId: "s1",
+        config: {
+          awsBedrockProxyBaseUrl: 42,
+        },
+      }))).toBe("user_config_set config.awsBedrockProxyBaseUrl must be string or null");
+
+      expect(expectErr(JSON.stringify({
+        type: "user_config_set",
+        sessionId: "s1",
+        config: {
+          awsBedrockProxyBaseUrl: "not-a-url",
+        },
+      }))).toBe("user_config_set config.awsBedrockProxyBaseUrl must be a valid http(s) URL");
     });
 
     test("provider_auth_authorize validation", () => {
@@ -483,6 +572,18 @@ describe("safeParseClientMessage", () => {
         methodId: "api_key",
         apiKey: "",
       }))).toBe("provider_auth_set_api_key missing/invalid apiKey");
+
+      const legacyProviderMsg = expectOk(JSON.stringify({
+        type: "provider_auth_set_api_key",
+        sessionId: "s1",
+        provider: "openai-proxy",
+        methodId: "api_key",
+        apiKey: "legacy-key",
+      }));
+      expect(legacyProviderMsg.type).toBe("provider_auth_set_api_key");
+      if (legacyProviderMsg.type === "provider_auth_set_api_key") {
+        expect(legacyProviderMsg.provider).toBe("aws-bedrock-proxy");
+      }
     });
 
     test("provider_auth_copy_api_key validation", () => {
@@ -1926,6 +2027,8 @@ describe("safeParseClientMessage", () => {
       expect(CLIENT_MESSAGE_TYPES.includes("steer_message")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("provider_catalog_get")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("provider_auth_methods_get")).toBe(true);
+      expect(CLIENT_MESSAGE_TYPES.includes("user_config_get")).toBe(true);
+      expect(CLIENT_MESSAGE_TYPES.includes("user_config_set")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("provider_auth_authorize")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("provider_auth_logout")).toBe(true);
       expect(CLIENT_MESSAGE_TYPES.includes("provider_auth_callback")).toBe(true);
@@ -1948,6 +2051,8 @@ describe("safeParseClientMessage", () => {
       expect(SERVER_EVENT_TYPES.includes("commands")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("provider_catalog")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("provider_auth_methods")).toBe(true);
+      expect(SERVER_EVENT_TYPES.includes("user_config")).toBe(true);
+      expect(SERVER_EVENT_TYPES.includes("user_config_result")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("provider_auth_challenge")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("provider_auth_result")).toBe(true);
       expect(SERVER_EVENT_TYPES.includes("mcp_servers")).toBe(true);

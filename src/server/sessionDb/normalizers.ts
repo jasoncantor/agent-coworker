@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-import { PROVIDER_NAMES } from "../../types";
+import { providerNameWithAliasesSchema } from "../../types";
 
 export const nonEmptyStringSchema = z.string().trim().min(1);
 export const isoTimestampSchema = z.string().datetime({ offset: true });
-export const providerNameSchema = z.enum(PROVIDER_NAMES);
+export const providerNameSchema = providerNameWithAliasesSchema;
 export const sessionTitleSourceSchema = z.enum(["default", "model", "heuristic", "manual"]);
 export const sqliteBooleanIntSchema = z.union([z.literal(0), z.literal(1)]);
 export const nonNegativeIntegerSchema = z.number().int().min(0);

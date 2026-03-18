@@ -114,9 +114,9 @@ describe("provider model adapters", () => {
   });
 
   test("OpenAI-API proxy adapter wires forced cache header and Bearer authorization", async () => {
-    await withEnv("OPENAI_PROXY_API_KEY", "proxy-key", async () => {
+    await withEnv("AWS_BEDROCK_PROXY_API_KEY", "proxy-key", async () => {
       const adapter = createOpenAiProxyModelAdapter(
-        makeConfig({ provider: "openai-proxy", openaiProxyBaseUrl: "https://proxy.internal/v1" }),
+        makeConfig({ provider: "aws-bedrock-proxy", awsBedrockProxyBaseUrl: "https://proxy.internal/v1" }),
         "claude-sonnet-4-5",
       );
       const headers = await adapter.config.headers();

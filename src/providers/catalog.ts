@@ -50,9 +50,9 @@ export const PROVIDER_MODEL_CATALOG = {
     defaultModel: defaultModelIdForProvider("google"),
     availableModels: listSupportedModelIds("google"),
   },
-  "openai-proxy": {
-    defaultModel: defaultModelIdForProvider("openai-proxy"),
-    availableModels: listSupportedModelIds("openai-proxy"),
+  "aws-bedrock-proxy": {
+    defaultModel: defaultModelIdForProvider("aws-bedrock-proxy"),
+    availableModels: listSupportedModelIds("aws-bedrock-proxy"),
   },
   openai: {
     defaultModel: defaultModelIdForProvider("openai"),
@@ -82,7 +82,7 @@ export const PROVIDER_MODEL_CHOICES: Record<ProviderName, readonly string[]> = {
   "openai-proxy": PROVIDER_MODEL_CATALOG["openai-proxy"].availableModels,
   "codex-cli": PROVIDER_MODEL_CATALOG["codex-cli"].availableModels,
   google: PROVIDER_MODEL_CATALOG.google.availableModels,
-  "openai-proxy": PROVIDER_MODEL_CATALOG["openai-proxy"].availableModels,
+  "aws-bedrock-proxy": PROVIDER_MODEL_CATALOG["aws-bedrock-proxy"].availableModels,
   openai: PROVIDER_MODEL_CATALOG.openai.availableModels,
 };
 

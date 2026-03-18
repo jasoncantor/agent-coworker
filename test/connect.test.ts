@@ -452,6 +452,30 @@ describe("connection store parsing", () => {
     expect(() => parseConnectionStoreJson(raw, "/tmp/connections.json")).toThrow("Invalid connection store schema");
   });
 
+  test("normalizes legacy openai-proxy service keys to aws-bedrock-proxy", () => {
+    const now = new Date().toISOString();
+    const raw = JSON.stringify({
+      ...baseStore,
+      services: {
+        "openai-proxy": {
+          service: "openai-proxy",
+          mode: "api_key",
+          apiKey: "legacy-proxy-key",
+          updatedAt: now,
+        },
+      },
+    });
+
+    const parsed = parseConnectionStoreJson(raw, "/tmp/connections.json");
+    expect(parsed.services["aws-bedrock-proxy"]).toEqual({
+      service: "aws-bedrock-proxy",
+      mode: "api_key",
+      apiKey: "legacy-proxy-key",
+      updatedAt: now,
+    });
+    expect((parsed.services as Record<string, unknown>)["openai-proxy"]).toBeUndefined();
+  });
+
   test("enforces string tool API keys", () => {
     const raw = JSON.stringify({
       ...baseStore,

@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { openAiProxyForcedHeaders } from "../../src/providers/openaiProxyShared";
+import { awsBedrockProxyForcedHeaders } from "../../src/providers/awsBedrockProxyShared";
 
 const runLiveApiTests = process.env.RUN_LIVE_API_TESTS === "1";
-const proxyBaseUrl = process.env.OPENAI_PROXY_TEST_BASE_URL?.trim();
-const proxyApiKey = process.env.OPENAI_PROXY_TEST_API_KEY?.trim();
-const proxyModel = process.env.OPENAI_PROXY_TEST_MODEL?.trim();
+const proxyBaseUrl = process.env.AWS_BEDROCK_PROXY_TEST_BASE_URL?.trim() || process.env.OPENAI_PROXY_TEST_BASE_URL?.trim();
+const proxyApiKey = process.env.AWS_BEDROCK_PROXY_TEST_API_KEY?.trim() || process.env.OPENAI_PROXY_TEST_API_KEY?.trim();
+const proxyModel = process.env.AWS_BEDROCK_PROXY_TEST_MODEL?.trim() || process.env.OPENAI_PROXY_TEST_MODEL?.trim();
 
 type CacheTelemetry = {
   score: number | null;
@@ -14,12 +14,12 @@ type CacheTelemetry = {
 
 function shouldRunLiveCacheTest(): boolean {
   if (!runLiveApiTests) {
-    console.warn("[openai-proxy live cache] skipping: set RUN_LIVE_API_TESTS=1 to enable.");
+    console.warn("[aws-bedrock-proxy live cache] skipping: set RUN_LIVE_API_TESTS=1 to enable.");
     return false;
   }
   if (!proxyBaseUrl || !proxyApiKey || !proxyModel) {
     console.warn(
-      "[openai-proxy live cache] skipping: set OPENAI_PROXY_TEST_BASE_URL, OPENAI_PROXY_TEST_API_KEY, and OPENAI_PROXY_TEST_MODEL."
+      "[aws-bedrock-proxy live cache] skipping: set AWS_BEDROCK_PROXY_TEST_BASE_URL, AWS_BEDROCK_PROXY_TEST_API_KEY, and AWS_BEDROCK_PROXY_TEST_MODEL (or legacy OPENAI_PROXY_TEST_*)."
     );
     return false;
   }
@@ -126,7 +126,7 @@ async function invokeProxyChatCompletions(opts: {
   const headers = {
     "content-type": "application/json",
     authorization: `Bearer ${opts.apiKey}`,
-    ...openAiProxyForcedHeaders(),
+    ...awsBedrockProxyForcedHeaders(),
   };
   const request = new Request(url, {
     method: "POST",
@@ -151,7 +151,7 @@ async function invokeProxyChatCompletions(opts: {
   const rawText = await response.text();
   const payload = rawText.trim().length > 0 ? JSON.parse(rawText) : {};
   if (!response.ok) {
-    throw new Error(`[openai-proxy live cache] ${response.status} ${response.statusText}: ${rawText}`);
+    throw new Error(`[aws-bedrock-proxy live cache] ${response.status} ${response.statusText}: ${rawText}`);
   }
   return {
     payload,
@@ -159,7 +159,7 @@ async function invokeProxyChatCompletions(opts: {
   };
 }
 
-describe("openai-proxy live cache verification", () => {
+describe("aws-bedrock-proxy live cache verification", () => {
   test("reports cache-hit progression on repeated prompts when telemetry is available", async () => {
     if (!shouldRunLiveCacheTest()) return;
 
@@ -185,7 +185,7 @@ describe("openai-proxy live cache verification", () => {
 
     if (first.telemetry.score === null || second.telemetry.score === null) {
       console.warn(
-        `[openai-proxy live cache] inconclusive: cache telemetry missing. first=${JSON.stringify(first.telemetry.signals)} second=${JSON.stringify(second.telemetry.signals)}`
+        `[aws-bedrock-proxy live cache] inconclusive: cache telemetry missing. first=${JSON.stringify(first.telemetry.signals)} second=${JSON.stringify(second.telemetry.signals)}`
       );
       return;
     }

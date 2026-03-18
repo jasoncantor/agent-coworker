@@ -356,7 +356,7 @@ const FeedRow = memo(function FeedRow(props: {
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   google: "Google",
   openai: "OpenAI",
-  "openai-proxy": "OpenAI-API Proxy",
+  "aws-bedrock-proxy": "AWS Bedrock Proxy",
   anthropic: "Anthropic",
   baseten: "Baseten",
   together: "Together AI",
@@ -426,6 +426,13 @@ function ThreadModelSelector({
 
 export function ChatView() {
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
+  const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
+  const workspaces = useAppStore((s) => s.workspaces);
+  const selectedWorkspaceRuntime = useAppStore((s) => {
+    const workspaceId = s.selectedWorkspaceId ?? s.workspaces[0]?.id ?? null;
+    if (!workspaceId) return null;
+    return s.workspaceRuntimeById[workspaceId] ?? null;
+  });
   const thread = useAppStore((s) => {
     if (!s.selectedThreadId) return null;
     return s.threads.find((t) => t.id === s.selectedThreadId) ?? null;
@@ -447,7 +454,15 @@ export function ChatView() {
   const cancelThread = useAppStore((s) => s.cancelThread);
   const clearThreadUsageHardCap = useAppStore((s) => s.clearThreadUsageHardCap);
   const reconnectThread = useAppStore((s) => s.reconnectThread);
+  const restartWorkspaceServer = useAppStore((s) => s.restartWorkspaceServer);
   const newThread = useAppStore((s) => s.newThread);
+
+  const selectedWorkspace = useMemo(
+    () => workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? workspaces[0] ?? null,
+    [workspaces, selectedWorkspaceId],
+  );
+  const selectedWorkspaceServerError = selectedWorkspaceRuntime?.error?.trim() ?? "";
+  const selectedWorkspaceStarting = selectedWorkspaceRuntime?.starting === true;
 
   const feedRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -582,6 +597,25 @@ export function ChatView() {
           />
           <h2 className="text-3xl font-semibold tracking-tight">Let&apos;s build</h2>
           <p className="max-w-xl text-muted-foreground">Pick a workspace and start a new thread.</p>
+          {selectedWorkspace && selectedWorkspaceServerError ? (
+            <Card className="w-full max-w-2xl border-destructive/40 bg-destructive/10 text-left">
+              <CardContent className="space-y-2 p-3">
+                <div className="text-sm font-semibold text-destructive">Workspace server unavailable</div>
+                <div className="text-sm text-muted-foreground">
+                  {selectedWorkspace.name} failed to start. Fix this before creating a new thread.
+                </div>
+                <div className="break-words text-xs text-destructive">{selectedWorkspaceServerError}</div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={selectedWorkspaceStarting}
+                  onClick={() => void restartWorkspaceServer(selectedWorkspace.id)}
+                >
+                  {selectedWorkspaceStarting ? "Retrying..." : "Restart workspace server"}
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
           <Button type="button" onClick={() => void newThread()}>New thread</Button>
         </div>
       </div>

@@ -11,6 +11,7 @@ extraResources:
     to: dist
   - from: resources/binaries
     to: binaries
+afterPack: scripts/sanitize-packaged-macos-app.cjs
 afterSign: scripts/notarize.cjs
 publish:
   provider: github
