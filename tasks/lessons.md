@@ -133,3 +133,4 @@
 - When debugging native web search UX, inspect `~/.cowork/sessions.db` raw `session_model_stream_chunks` instead of backup tarballs; each distinct `web_search_call` item id should map to its own feed card, not be rebound onto the latest card with the same tool name.
 - When desktop tool labels expose backend implementation details that do not change user action, collapse them to the generic user-facing tool name; `nativeWebSearch` should render as `Web Search`, not as a separate product concept.
 - For Electron desktop shutdown in this repo, keep `ipcMain.handle(...)` registrations alive until async shutdown actually finishes; unregistering IPC at `before-quit` entry can leave the renderer open long enough to hit `No handler registered for 'desktop:...'` recovery failures.
+- When the user asks to fix release automation for the next build only, land the workflow update as a separate follow-up commit and do not conflate it with the in-flight tagged release state.
