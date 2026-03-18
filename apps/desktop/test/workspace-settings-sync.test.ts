@@ -255,6 +255,52 @@ describe("workspace settings sync", () => {
     });
   });
 
+  test("init ignores non-editable providerOptions while keeping editable entries", async () => {
+    mockedLoadedState = {
+      version: 2,
+      workspaces: [
+        {
+          id: "ws-provider-options",
+          name: "Loaded provider options",
+          path: "/tmp/workspace-provider-options",
+          createdAt: "2026-02-19T00:00:00.000Z",
+          lastOpenedAt: "2026-02-19T00:00:00.000Z",
+          defaultProvider: "openai",
+          defaultModel: "gpt-5.2",
+          providerOptions: {
+            openai: {
+              reasoningEffort: "medium",
+              textVerbosity: "high",
+            },
+            "aws-bedrock-proxy": {
+              promptCaching: {
+                enabled: true,
+                ttl: "5m",
+              },
+            },
+          },
+          defaultEnableMcp: true,
+          defaultBackupsEnabled: true,
+          yolo: false,
+        },
+      ],
+      threads: [],
+      developerMode: false,
+      showHiddenFiles: false,
+    };
+
+    await useAppStore.getState().init();
+
+    const loaded = useAppStore.getState().workspaces[0];
+    expect(loaded?.providerOptions).toEqual({
+      openai: {
+        reasoningEffort: "medium",
+        textVerbosity: "high",
+      },
+    });
+    expect((loaded?.providerOptions as any)?.["aws-bedrock-proxy"]).toBeUndefined();
+  });
+
   test("init preserves persisted workspace overflow defaults during rehydration", async () => {
     mockedLoadedState = {
       version: 2,
@@ -656,6 +702,47 @@ describe("workspace settings sync", () => {
     const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
     expect(workspace?.providerOptions).toBeUndefined();
     expect((runtime?.controlSessionConfig as any)?.providerOptions).toBeUndefined();
+  });
+
+  test("control session_config ignores non-editable providerOptions keys like aws-bedrock-proxy", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+
+    controlSocket.emit({
+      type: "session_config",
+      sessionId: "control-session",
+      config: {
+        yolo: false,
+        observabilityEnabled: true,
+        backupsEnabled: true,
+        defaultBackupsEnabled: true,
+        toolOutputOverflowChars: 25000,
+        subAgentModel: "gpt-5-mini",
+        maxSteps: 75,
+        userName: "Alex",
+        userProfile: { instructions: "", work: "", details: "" },
+        providerOptions: {
+          openai: {
+            reasoningSummary: "concise",
+          },
+          "aws-bedrock-proxy": {
+            promptCaching: {
+              enabled: true,
+              ttl: "5m",
+            },
+          },
+        },
+      },
+    });
+
+    const workspace = useAppStore.getState().workspaces.find((entry) => entry.id === workspaceId);
+    expect(workspace?.providerOptions).toEqual({
+      openai: {
+        reasoningSummary: "concise",
+      },
+    });
+    expect((workspace?.providerOptions as any)?.["aws-bedrock-proxy"]).toBeUndefined();
   });
 
   test("applyWorkspaceDefaultsToThread sends model, session config, and mcp toggle", async () => {

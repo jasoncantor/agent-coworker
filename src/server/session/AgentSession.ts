@@ -49,7 +49,7 @@ import type {
   SessionInfoState,
   SessionRuntimeState,
 } from "./SessionContext";
-import type { SessionConfigPatch } from "../protocol";
+import type { SessionConfigPatch, UserConfigPatch } from "../protocol";
 import { SessionMetadataManager } from "./SessionMetadataManager";
 import { SessionRuntimeSupport } from "./SessionRuntimeSupport";
 import { SessionSnapshotBuilder } from "./SessionSnapshotBuilder";
@@ -151,6 +151,8 @@ export class AgentSession {
     runTurnImpl?: typeof runTurn;
     persistModelSelectionImpl?: (selection: PersistedModelSelection) => Promise<void> | void;
     persistProjectConfigPatchImpl?: (patch: PersistedProjectConfigPatch) => Promise<void> | void;
+    readUserConfigImpl?: SessionDependencies["readUserConfigImpl"];
+    persistUserConfigPatchImpl?: SessionDependencies["persistUserConfigPatchImpl"];
     generateSessionTitleImpl?: typeof generateSessionTitle;
     sessionDb?: SessionDb | null;
     writePersistedSessionSnapshotImpl?: typeof writePersistedSessionSnapshot;
@@ -233,6 +235,8 @@ export class AgentSession {
       runTurnImpl: opts.runTurnImpl ?? runTurn,
       persistModelSelectionImpl: opts.persistModelSelectionImpl,
       persistProjectConfigPatchImpl: opts.persistProjectConfigPatchImpl,
+      readUserConfigImpl: opts.readUserConfigImpl,
+      persistUserConfigPatchImpl: opts.persistUserConfigPatchImpl,
       generateSessionTitleImpl: opts.generateSessionTitleImpl ?? generateSessionTitle,
       sessionDb: opts.sessionDb ?? null,
       writePersistedSessionSnapshotImpl: opts.writePersistedSessionSnapshotImpl ?? writePersistedSessionSnapshot,
@@ -770,6 +774,14 @@ export class AgentSession {
 
   emitProviderAuthMethods() {
     this.providerCatalogManager.emitProviderAuthMethods();
+  }
+
+  async emitUserConfig() {
+    await this.metadataManager.emitUserConfig();
+  }
+
+  async setUserConfig(patch: UserConfigPatch) {
+    await this.metadataManager.setUserConfig(patch);
   }
 
   async authorizeProviderAuth(providerRaw: AgentConfig["provider"], methodIdRaw: string) {

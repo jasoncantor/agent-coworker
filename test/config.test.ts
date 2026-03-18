@@ -342,6 +342,57 @@ describe("loadConfig", () => {
     expect(cfg.subAgentModel).toBe(cfg.model);
   });
 
+  test("dynamic aws-bedrock-proxy model ids load without requiring static registry membership", async () => {
+    const { cwd, home } = await makeTmpDirs();
+
+    await writeJson(path.join(cwd, ".agent", "config.json"), {
+      provider: "aws-bedrock-proxy",
+      model: "us.anthropic.claude-sonnet-4-6",
+      subAgentModel: "us.anthropic.claude-sonnet-4-6",
+    });
+
+    const cfg = await loadConfig({
+      cwd,
+      homedir: home,
+      builtInDir: repoRoot(),
+      env: {},
+    });
+
+    expect(cfg.provider).toBe("aws-bedrock-proxy");
+    expect(cfg.model).toBe("us.anthropic.claude-sonnet-4-6");
+    expect(cfg.subAgentModel).toBe("us.anthropic.claude-sonnet-4-6");
+    expect(cfg.providerOptions?.["aws-bedrock-proxy"]?.promptCaching).toEqual({
+      enabled: true,
+      ttl: "5m",
+    });
+  });
+
+  test("legacy openai-proxy config provider normalizes to aws-bedrock-proxy with dynamic model ids intact", async () => {
+    const { cwd, home } = await makeTmpDirs();
+
+    await writeJson(path.join(cwd, ".agent", "config.json"), {
+      provider: "openai-proxy",
+      model: "us.anthropic.claude-sonnet-4-6",
+      subAgentModel: "us.anthropic.claude-sonnet-4-6",
+    });
+
+    const cfg = await loadConfig({
+      cwd,
+      homedir: home,
+      builtInDir: repoRoot(),
+      env: {},
+    });
+
+    expect(cfg.provider).toBe("aws-bedrock-proxy");
+    expect(cfg.model).toBe("us.anthropic.claude-sonnet-4-6");
+    expect(cfg.subAgentModel).toBe("us.anthropic.claude-sonnet-4-6");
+    expect(cfg.providerOptions?.["aws-bedrock-proxy"]?.promptCaching).toEqual({
+      enabled: true,
+      ttl: "5m",
+    });
+    expect(cfg.providerOptions).not.toHaveProperty("openai-proxy");
+  });
+
   test("AGENT_WORKING_DIR env var overrides cwd", async () => {
     const { cwd, home } = await makeTmpDirs();
     const customDir = path.join(os.tmpdir(), "custom-working-dir");

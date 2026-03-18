@@ -154,6 +154,8 @@ describe("desktop protocol v2 mapping", () => {
       providerAuthMethodsByProvider: {},
       providerLastAuthChallenge: null,
       providerLastAuthResult: null,
+      userConfig: {},
+      userConfigLastResult: null,
       view: "chat",
       startupError: null,
       ready: true,
@@ -169,6 +171,7 @@ describe("desktop protocol v2 mapping", () => {
     const sentTypes = controlSocket.sent.map((msg) => msg?.type).filter(Boolean);
     expect(sentTypes).toContain("provider_catalog_get");
     expect(sentTypes).toContain("provider_auth_methods_get");
+    expect(sentTypes).toContain("user_config_get");
     expect(sentTypes).toContain("refresh_provider_status");
     expect(sentTypes).toContain("mcp_servers_get");
   });
@@ -481,6 +484,54 @@ describe("desktop protocol v2 mapping", () => {
     expect(sent?.apiKey).toBe("sk-test");
   });
 
+  test("setProviderApiKey waits for control hello before sending", async () => {
+    const savePromise = useAppStore.getState().setProviderApiKey("aws-bedrock-proxy", "api_key", "proxy-key");
+    await flushAsyncWork();
+
+    const controlSocket = socketByClient("desktop-control");
+    expect(controlSocket.sent.some((msg) => msg?.type === "provider_auth_set_api_key")).toBe(false);
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+
+    emitServerHello(controlSocket, "control-session");
+    await savePromise;
+
+    const sent = controlSocket.sent.find((msg) => msg?.type === "provider_auth_set_api_key");
+    expect(sent).toBeDefined();
+    expect(sent?.provider).toBe("aws-bedrock-proxy");
+    expect(sent?.methodId).toBe("api_key");
+    expect(sent?.apiKey).toBe("proxy-key");
+  });
+
+  test("setProviderApiKey reports not connected when control socket closes before hello", async () => {
+    const savePromise = useAppStore.getState().setProviderApiKey("aws-bedrock-proxy", "api_key", "proxy-key");
+    await flushAsyncWork();
+
+    const controlSocket = socketByClient("desktop-control");
+    controlSocket.close();
+    await savePromise;
+
+    const notification = useAppStore.getState().notifications.at(-1);
+    expect(notification?.title).toBe("Not connected");
+    expect(notification?.detail).toBe("Unable to connect to provider auth service.");
+    expect(controlSocket.sent.some((msg) => msg?.type === "provider_auth_set_api_key")).toBe(false);
+  });
+
+  test("setGlobalOpenAiProxyBaseUrl waits for control hello before sending", async () => {
+    const savePromise = useAppStore.getState().setGlobalOpenAiProxyBaseUrl("https://proxy.example.com/v1");
+    await flushAsyncWork();
+
+    const controlSocket = socketByClient("desktop-control");
+    expect(controlSocket.sent.some((msg) => msg?.type === "user_config_set")).toBe(false);
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+
+    emitServerHello(controlSocket, "control-session");
+    await savePromise;
+
+    const sent = controlSocket.sent.find((msg) => msg?.type === "user_config_set");
+    expect(sent).toBeDefined();
+    expect(sent?.config?.awsBedrockProxyBaseUrl).toBe("https://proxy.example.com/v1");
+  });
+
   test("copyProviderApiKey sends provider_auth_copy_api_key", async () => {
     await useAppStore.getState().newThread({ workspaceId });
     const controlSocket = socketByClient("desktop-control");
@@ -586,6 +637,79 @@ describe("desktop protocol v2 mapping", () => {
     const notification = useAppStore.getState().notifications.at(-1);
     expect(notification?.title).toBe("Provider disconnected: codex-cli");
     expect(notification?.detail).toBe("Codex OAuth credentials cleared.");
+  });
+
+  test("control error while API key save is pending surfaces inline provider auth failure", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+
+    await useAppStore.getState().setProviderApiKey("aws-bedrock-proxy", "api_key", "proxy-key");
+
+    controlSocket.emit({
+      type: "error",
+      sessionId: "control-session",
+      code: "internal_error",
+      source: "session",
+      message: "connection store unavailable",
+    });
+
+    const result = useAppStore.getState().providerLastAuthResult;
+    expect(result?.ok).toBe(false);
+    expect(result?.provider).toBe("aws-bedrock-proxy");
+    expect(result?.methodId).toBe("api_key");
+    expect(result?.message).toContain("session/internal_error: connection store unavailable");
+  });
+
+  test("control error while global proxy URL save is pending surfaces inline user config failure", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+
+    await useAppStore.getState().setGlobalOpenAiProxyBaseUrl("https://proxy.example.com/v1");
+
+    controlSocket.emit({
+      type: "error",
+      sessionId: "control-session",
+      code: "internal_error",
+      source: "session",
+      message: "config file invalid",
+    });
+
+    const result = useAppStore.getState().userConfigLastResult;
+    expect(result?.ok).toBe(false);
+    expect(result?.message).toContain("session/internal_error: config file invalid");
+    expect(useAppStore.getState().pendingUserConfigSave).toBe(false);
+  });
+
+  test("user_config events update desktop store state", async () => {
+    await useAppStore.getState().newThread({ workspaceId });
+    const controlSocket = socketByClient("desktop-control");
+    emitServerHello(controlSocket, "control-session");
+
+    controlSocket.emit({
+      type: "user_config",
+      sessionId: "control-session",
+      config: {
+        awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+      },
+    });
+
+    expect(useAppStore.getState().userConfig.awsBedrockProxyBaseUrl).toBe("https://proxy.example.com/v1");
+
+    controlSocket.emit({
+      type: "user_config_result",
+      sessionId: "control-session",
+      ok: true,
+      message: "Saved globally to ~/.agent/config.json. Restart running workspaces to apply.",
+      config: {
+        awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+      },
+    });
+
+    expect(useAppStore.getState().userConfigLastResult?.ok).toBe(true);
+    const notification = useAppStore.getState().notifications.at(-1);
+    expect(notification?.title).toBe("Global user config updated");
   });
 
   test("approval prompt keeps required reasonCode", async () => {

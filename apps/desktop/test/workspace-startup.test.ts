@@ -222,4 +222,63 @@ describe("workspace startup flow", () => {
     expect(runtime?.serverUrl).toBe("ws://fresh");
     expect(runtime?.error).toBeNull();
   });
+
+  test("provider auth save surfaces workspace startup failure detail", async () => {
+    const workspaceId = "ws-auth";
+    useAppStore.setState({
+      workspaces: [
+        {
+          id: workspaceId,
+          name: "Workspace",
+          path: "/tmp/workspace",
+          createdAt: "2026-03-08T00:00:00.000Z",
+          lastOpenedAt: "2026-03-08T00:00:00.000Z",
+          defaultEnableMcp: true,
+          yolo: false,
+        },
+      ],
+      selectedWorkspaceId: workspaceId,
+    });
+
+    const savePromise = useAppStore.getState().setProviderApiKey("openai", "api_key", "sk-test");
+    await flushAsyncWork();
+    expect(startCalls).toHaveLength(1);
+
+    startDeferreds[0]?.reject(new Error("startup crashed"));
+    await savePromise;
+
+    const notification = useAppStore.getState().notifications.at(-1);
+    expect(notification?.title).toBe("Not connected");
+    expect(notification?.detail).toContain("Unable to connect to provider auth service.");
+    expect(notification?.detail).toContain("Workspace server failed to start: startup crashed");
+  });
+
+  test("newThread keeps the workspace startup error as actionable detail", async () => {
+    const workspaceId = "ws-thread";
+    useAppStore.setState({
+      workspaces: [
+        {
+          id: workspaceId,
+          name: "Workspace",
+          path: "/tmp/workspace",
+          createdAt: "2026-03-08T00:00:00.000Z",
+          lastOpenedAt: "2026-03-08T00:00:00.000Z",
+          defaultEnableMcp: true,
+          yolo: false,
+        },
+      ],
+      selectedWorkspaceId: workspaceId,
+    });
+
+    const createPromise = useAppStore.getState().newThread({ workspaceId });
+    await flushAsyncWork();
+    expect(startCalls).toHaveLength(1);
+
+    startDeferreds[0]?.reject(new Error("server startup failed"));
+    await createPromise;
+
+    const notifications = useAppStore.getState().notifications;
+    const createSessionError = notifications.find((item) => item.title === "Unable to create session");
+    expect(createSessionError?.detail).toContain("server startup failed");
+  });
 });

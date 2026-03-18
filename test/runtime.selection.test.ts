@@ -70,12 +70,12 @@ describe("runtime selection", () => {
     expect(createRuntime(config).name).toBe("pi");
   });
 
-  test("routes openai-proxy through the pi runtime", () => {
+  test("routes aws-bedrock-proxy through the pi runtime", () => {
     const config = makeConfig({
-      provider: "openai-proxy",
+      provider: "aws-bedrock-proxy",
       model: "claude-sonnet-4-5",
       subAgentModel: "claude-sonnet-4-5",
-      openaiProxyBaseUrl: "https://proxy.internal/v1",
+      awsBedrockProxyBaseUrl: "https://proxy.internal/v1",
     });
     expect(resolveRuntimeName(config)).toBe("pi");
     expect(createRuntime(config).name).toBe("pi");

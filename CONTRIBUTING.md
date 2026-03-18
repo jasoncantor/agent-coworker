@@ -120,6 +120,9 @@ The `.cowork/` directory is used for MCP server configs and auth credentials (se
 - Required config/env:
   - `OPENAI_PROXY_BASE_URL`: proxy base URL (for example `https://proxy.example.com/v1`)
   - `OPENAI_PROXY_API_KEY`: optional env fallback when a saved provider key is not present
+- Provider key saves are strict:
+  - `provider_auth_set_api_key` validates the submitted token against `<OPENAI_PROXY_BASE_URL>/models` before persisting it.
+  - If the proxy URL is missing, or `/models` auth/discovery fails, the key save is rejected.
 - Model list is dynamic:
   - Cowork fetches `<OPENAI_PROXY_BASE_URL>/models` for provider catalog population.
   - Claude/Anthropic model IDs are preferred when present.

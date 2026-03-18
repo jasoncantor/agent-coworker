@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { PROVIDER_NAMES } from "../types";
+import { providerNameWithAliasesSchema } from "../types";
 import type {
   BudgetStatus,
   ModelUsageSummary,
@@ -10,7 +10,7 @@ import type {
 } from "./costTracker";
 import type { ModelPricing } from "./pricing";
 
-const providerNameSchema = z.enum(PROVIDER_NAMES);
+const providerNameSchema = providerNameWithAliasesSchema;
 const isoTimestampSchema = z.string().datetime({ offset: true });
 
 export const modelPricingSchema: z.ZodType<ModelPricing> = z.object({

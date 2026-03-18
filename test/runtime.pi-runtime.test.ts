@@ -77,6 +77,16 @@ async function withEnv<T>(
   }
 }
 
+async function readRewrittenBody(
+  rewritten: [RequestInfo | URL, RequestInit | undefined],
+): Promise<Record<string, unknown>> {
+  const [nextInput, nextInit] = rewritten;
+  const fromInit = typeof nextInit?.body === "string" ? nextInit.body : undefined;
+  const fromRequest = nextInput instanceof Request ? await nextInput.text() : undefined;
+  const rawBody = fromInit ?? fromRequest ?? "{}";
+  return JSON.parse(rawBody) as Record<string, unknown>;
+}
+
 describe("pi runtime regressions", () => {
   test("calls onModelAbort exactly once when turn starts with an aborted signal", async () => {
     const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-abort-"));
@@ -848,30 +858,374 @@ describe("pi runtime regressions", () => {
     expect(result.content).toEqual([{ type: "text", text: toolResultOutput.value }]);
   });
 
-  test("openai-proxy runtime model resolution requires a configured proxy base URL", async () => {
-    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-openai-proxy-missing-url-"));
-    const defaultProxyModelId = defaultSupportedModel("openai-proxy").id;
+  test("aws-bedrock-proxy prompt caching defaults to claude-only auto mode", () => {
+    expect(piRuntimeInternal.resolveOpenAiProxyPromptCachingConfig({
+      baseUrl: "https://proxy.internal/v1",
+      modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      streamOptions: {},
+    })).toEqual({
+      enabled: true,
+      ttl: "5m",
+    });
+
+    expect(piRuntimeInternal.resolveOpenAiProxyPromptCachingConfig({
+      baseUrl: "https://proxy.internal/v1",
+      modelId: "gpt-4o-mini",
+      streamOptions: {},
+    })).toEqual({
+      enabled: false,
+      ttl: "5m",
+    });
+  });
+
+  test("aws-bedrock-proxy prompt caching accepts 1h ttl only on supported 4.5 models", () => {
+    expect(piRuntimeInternal.resolveOpenAiProxyPromptCachingConfig({
+      baseUrl: "https://proxy.internal/v1",
+      modelId: "anthropic.claude-sonnet-4-5",
+      streamOptions: {
+        openAiProxyPromptCachingTtl: "1h",
+      },
+    })).toEqual({
+      enabled: true,
+      ttl: "1h",
+    });
+
+    expect(piRuntimeInternal.resolveOpenAiProxyPromptCachingConfig({
+      baseUrl: "https://proxy.internal/v1",
+      modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      streamOptions: {
+        openAiProxyPromptCachingTtl: "1h",
+      },
+    })).toEqual({
+      enabled: true,
+      ttl: "5m",
+    });
+  });
+
+  test("aws-bedrock-proxy request rewrite injects cache_control into the last user text block", async () => {
+    const request = new Request("https://proxy.internal/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({
+        model: "anthropic.claude-sonnet-4-5",
+        messages: [
+          { role: "system", content: "System prompt" },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "prefix text" },
+              { type: "text", text: "cache this text" },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const rewritten = await piRuntimeInternal.maybeRewriteOpenAiProxyFetchRequest(
+      request,
+      undefined,
+      {
+        baseUrl: "https://proxy.internal/v1",
+        modelId: "anthropic.claude-sonnet-4-5",
+        streamOptions: {},
+      },
+    );
+    const body = await readRewrittenBody(rewritten);
+    const messages = body.messages as Array<Record<string, unknown>>;
+    const user = messages[1] as Record<string, unknown>;
+    const content = user.content as Array<Record<string, unknown>>;
+    expect(content[1]?.cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  test("aws-bedrock-proxy request rewrite falls back to system/developer text when user has no text blocks", async () => {
+    const request = new Request("https://proxy.internal/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({
+        model: "anthropic.claude-sonnet-4-5",
+        messages: [
+          { role: "system", content: "System prompt text" },
+          { role: "user", content: [{ type: "image_url", image_url: { url: "https://example.com/a.png" } }] },
+        ],
+      }),
+    });
+
+    const rewritten = await piRuntimeInternal.maybeRewriteOpenAiProxyFetchRequest(
+      request,
+      undefined,
+      {
+        baseUrl: "https://proxy.internal/v1",
+        modelId: "anthropic.claude-sonnet-4-5",
+        streamOptions: {},
+      },
+    );
+    const body = await readRewrittenBody(rewritten);
+    const messages = body.messages as Array<Record<string, unknown>>;
+    const system = messages[0] as Record<string, unknown>;
+    expect(system.content).toEqual([
+      {
+        type: "text",
+        text: "System prompt text",
+        cache_control: { type: "ephemeral" },
+      },
+    ]);
+  });
+
+  test("aws-bedrock-proxy request rewrite preserves existing explicit cache_control", async () => {
+    const originalBody = {
+      model: "anthropic.claude-sonnet-4-5",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "already cached",
+              cache_control: { type: "ephemeral", ttl: "1h" },
+            },
+          ],
+        },
+      ],
+    };
+    const request = new Request("https://proxy.internal/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify(originalBody),
+    });
+
+    const rewritten = await piRuntimeInternal.maybeRewriteOpenAiProxyFetchRequest(
+      request,
+      undefined,
+      {
+        baseUrl: "https://proxy.internal/v1",
+        modelId: "anthropic.claude-sonnet-4-5",
+        streamOptions: {},
+      },
+    );
+    const body = await readRewrittenBody(rewritten);
+    expect(body).toEqual(originalBody);
+  });
+
+  test("aws-bedrock-proxy request rewrite skips when prompt caching is explicitly disabled", async () => {
+    const originalBody = {
+      model: "anthropic.claude-sonnet-4-5",
+      messages: [{ role: "user", content: "do not rewrite" }],
+    };
+    const request = new Request("https://proxy.internal/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify(originalBody),
+    });
+
+    const rewritten = await piRuntimeInternal.maybeRewriteOpenAiProxyFetchRequest(
+      request,
+      undefined,
+      {
+        baseUrl: "https://proxy.internal/v1",
+        modelId: "anthropic.claude-sonnet-4-5",
+        streamOptions: {
+          openAiProxyPromptCachingEnabled: false,
+        },
+      },
+    );
+    const body = await readRewrittenBody(rewritten);
+    expect(body).toEqual(originalBody);
+  });
+
+  test("aws-bedrock-proxy request rewrite skips non-claude models even when explicitly enabled", async () => {
+    const originalBody = {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "hello world" }],
+    };
+    const request = new Request("https://proxy.internal/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify(originalBody),
+    });
+
+    const rewritten = await piRuntimeInternal.maybeRewriteOpenAiProxyFetchRequest(
+      request,
+      undefined,
+      {
+        baseUrl: "https://proxy.internal/v1",
+        modelId: "gpt-4o-mini",
+        streamOptions: {
+          openAiProxyPromptCachingEnabled: true,
+        },
+      },
+    );
+    const body = await readRewrittenBody(rewritten);
+    expect(body).toEqual(originalBody);
+  });
+
+  test.serial("aws-bedrock-proxy runtime patches chat-completions fetch body while preserving forced headers", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-aws-bedrock-proxy-rewrite-"));
     const config = makeConfig(homeDir, {
-      provider: "openai-proxy",
+      provider: "aws-bedrock-proxy",
+      model: "anthropic.claude-sonnet-4-5",
+      subAgentModel: "anthropic.claude-sonnet-4-5",
+      awsBedrockProxyBaseUrl: "https://proxy.internal/v1",
+      providerOptions: {
+        "aws-bedrock-proxy": {
+          promptCaching: {
+            enabled: true,
+            ttl: "1h",
+          },
+        },
+      },
+    });
+
+    const fetchCalls: Array<{ url: string; body: Record<string, unknown>; headers: HeadersInit | undefined }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const bodyRaw = typeof init?.body === "string" ? init.body : "{}";
+      fetchCalls.push({
+        url,
+        body: JSON.parse(bodyRaw),
+        headers: init?.headers,
+      });
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    const runtime = createPiRuntime({
+      piStreamImpl: () => ({
+        async *[Symbol.asyncIterator]() {
+          await fetch("https://proxy.internal/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+              authorization: "Bearer proxy-key",
+            },
+            body: JSON.stringify({
+              model: "anthropic.claude-sonnet-4-5",
+              messages: [{ role: "user", content: "rewrite me" }],
+            }),
+          });
+        },
+        async result() {
+          return {
+            role: "assistant",
+            content: [{ type: "text", text: "ok" }],
+            api: "openai-completions",
+            provider: "aws-bedrock-proxy",
+            model: "anthropic.claude-sonnet-4-5",
+            usage: {
+              input: 1,
+              output: 1,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 2,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: "stop",
+            timestamp: Date.now(),
+          };
+        },
+      }) as any,
+    });
+
+    try {
+      await runtime.runTurn(makeParams(config, { providerOptions: config.providerOptions }));
+      expect(fetchCalls).toHaveLength(1);
+      expect(fetchCalls[0]?.url).toBe("https://proxy.internal/v1/chat/completions");
+      expect(fetchCalls[0]?.body.messages).toEqual([
+        {
+          role: "user",
+          content: [
+            {
+              cache_control: { type: "ephemeral", ttl: "1h" },
+              text: "rewrite me",
+              type: "text",
+            },
+          ],
+        },
+      ]);
+      const headers = new Headers(fetchCalls[0]?.headers);
+      expect(headers.get("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")).toBe("1");
+      expect(headers.get("authorization")).toBe("Bearer proxy-key");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test.serial("non-aws-bedrock-proxy providers do not apply aws-bedrock-proxy fetch rewrite", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-openai-no-proxy-rewrite-"));
+    const config = makeConfig(homeDir, {
+      provider: "google",
+      model: "gemini-3-flash-preview",
+      subAgentModel: "gemini-3-flash-preview",
+    });
+
+    const fetchBodies: Record<string, unknown>[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const bodyRaw = typeof init?.body === "string" ? init.body : "{}";
+      fetchBodies.push(JSON.parse(bodyRaw));
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    const runtime = createPiRuntime({
+      piStreamImpl: () => ({
+        async *[Symbol.asyncIterator]() {
+          await fetch("https://proxy.internal/v1/chat/completions", {
+            method: "POST",
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [{ role: "user", content: "should stay string" }],
+            }),
+          });
+        },
+        async result() {
+          return {
+            role: "assistant",
+            content: [{ type: "text", text: "ok" }],
+            api: "google-generative-ai",
+            provider: "google",
+            model: "gemini-3-flash-preview",
+            usage: {
+              input: 1,
+              output: 1,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 2,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: "stop",
+            timestamp: Date.now(),
+          };
+        },
+      }) as any,
+    });
+
+    try {
+      await runtime.runTurn(makeParams(config));
+      expect(fetchBodies).toHaveLength(1);
+      expect(fetchBodies[0]?.messages).toEqual([{ role: "user", content: "should stay string" }]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("aws-bedrock-proxy runtime model resolution requires a configured proxy base URL", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-aws-bedrock-proxy-missing-url-"));
+    const defaultProxyModelId = defaultSupportedModel("aws-bedrock-proxy").id;
+    const config = makeConfig(homeDir, {
+      provider: "aws-bedrock-proxy",
       model: defaultProxyModelId,
       subAgentModel: defaultProxyModelId,
     });
 
     await expect(piRuntimeInternal.resolvePiModel(makeParams(config))).rejects.toThrow(
-      "Missing OPENAI_PROXY_BASE_URL (or openaiProxyBaseUrl config) for provider openai-proxy."
+      "Missing AWS_BEDROCK_PROXY_BASE_URL (or legacy OPENAI_PROXY_BASE_URL / awsBedrockProxyBaseUrl / openaiProxyBaseUrl config) for provider aws-bedrock-proxy."
     );
   });
 
-  test("openai-proxy runtime model resolution injects forced cache header and env API key fallback", async () => {
-    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-openai-proxy-env-key-"));
+  test("aws-bedrock-proxy runtime model resolution injects forced cache header and env API key fallback", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-aws-bedrock-proxy-env-key-"));
     const config = makeConfig(homeDir, {
-      provider: "openai-proxy",
+      provider: "aws-bedrock-proxy",
       model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
       subAgentModel: "anthropic.claude-3-5-sonnet-20241022-v2:0",
-      openaiProxyBaseUrl: "https://proxy.internal/v1/",
+      awsBedrockProxyBaseUrl: "https://proxy.internal/v1/",
     });
 
-    const resolved = await withEnv("OPENAI_PROXY_API_KEY", "env-proxy-key", async () => (
+    const resolved = await withEnv("AWS_BEDROCK_PROXY_API_KEY", "env-proxy-key", async () => (
       await piRuntimeInternal.resolvePiModel(makeParams(config))
     ));
 
@@ -883,7 +1237,7 @@ describe("pi runtime regressions", () => {
       id: "anthropic.claude-3-5-sonnet-20241022-v2:0",
       name: "anthropic.claude-3-5-sonnet-20241022-v2:0",
       api: "openai-completions",
-      provider: "openai-proxy",
+      provider: "aws-bedrock-proxy",
       baseUrl: "https://proxy.internal/v1",
       reasoning: true,
       contextWindow: 262_144,
@@ -892,8 +1246,8 @@ describe("pi runtime regressions", () => {
     expect(resolved.model.input).toEqual(["text"]);
   });
 
-  test("openai-proxy runtime model resolution prefers saved API key over env fallback", async () => {
-    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-openai-proxy-saved-key-"));
+  test("aws-bedrock-proxy runtime model resolution prefers saved API key over env fallback", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-aws-bedrock-proxy-saved-key-"));
     const paths = getAiCoworkerPaths({ homedir: homeDir });
     await fs.mkdir(path.dirname(paths.connectionsFile), { recursive: true });
     await fs.writeFile(
@@ -902,8 +1256,8 @@ describe("pi runtime regressions", () => {
         version: 1,
         updatedAt: new Date().toISOString(),
         services: {
-          "openai-proxy": {
-            service: "openai-proxy",
+          "aws-bedrock-proxy": {
+            service: "aws-bedrock-proxy",
             mode: "api_key",
             apiKey: "saved-proxy-key",
             updatedAt: new Date().toISOString(),
@@ -914,14 +1268,14 @@ describe("pi runtime regressions", () => {
     );
 
     const config = makeConfig(homeDir, {
-      provider: "openai-proxy",
+      provider: "aws-bedrock-proxy",
       model: "claude-sonnet-4-5",
       subAgentModel: "claude-sonnet-4-5",
-      openaiProxyBaseUrl: "https://proxy.internal/v1",
+      awsBedrockProxyBaseUrl: "https://proxy.internal/v1",
       userAgentDir: path.join(homeDir, ".agent"),
     });
 
-    const resolved = await withEnv("OPENAI_PROXY_API_KEY", "env-proxy-key", async () => (
+    const resolved = await withEnv("AWS_BEDROCK_PROXY_API_KEY", "env-proxy-key", async () => (
       await piRuntimeInternal.resolvePiModel(makeParams(config))
     ));
 

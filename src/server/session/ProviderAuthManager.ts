@@ -333,6 +333,8 @@ export class ProviderAuthManager {
         cwd: config.workingDirectory,
         paths: this.opts.getCoworkPaths(),
         connect: async (opts) => await this.opts.runProviderConnect(opts),
+        awsBedrockProxyBaseUrl: config.awsBedrockProxyBaseUrl,
+        openaiProxyBaseUrl: (config as { openaiProxyBaseUrl?: string }).openaiProxyBaseUrl,
       });
 
       this.opts.emit({

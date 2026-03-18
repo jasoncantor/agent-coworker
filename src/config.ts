@@ -88,7 +88,16 @@ function mergeProviderOptionDefaults(
   modelId: string,
   providerOptions: Record<string, any> | undefined,
 ): Record<string, any> | undefined {
-  const defaults = assertSupportedModel(provider, modelId, "model").providerOptionsDefaults;
+  const defaults = (() => {
+    const supported = getSupportedModel(provider, modelId);
+    if (supported) {
+      return supported.providerOptionsDefaults;
+    }
+    if (isDynamicModelProvider(provider)) {
+      return defaultSupportedModel(provider).providerOptionsDefaults;
+    }
+    return assertSupportedModel(provider, modelId, "model").providerOptionsDefaults;
+  })();
   const current = isPlainObject(providerOptions) ? deepMerge({}, providerOptions) as Record<string, any> : undefined;
   const currentProviderOptions =
     current && isPlainObject(current[provider]) ? current[provider] as Record<string, unknown> : undefined;
@@ -340,10 +349,14 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
   const runtime = normalizeRuntimeNameForProvider(provider, rawRuntime);
 
   const workingDirectory = env.AGENT_WORKING_DIR || cwd;
-  const openaiProxyBaseUrl =
+  const awsBedrockProxyBaseUrl =
+    asNonEmptyString(env.AWS_BEDROCK_PROXY_BASE_URL) ||
     asNonEmptyString(env.OPENAI_PROXY_BASE_URL) ||
+    asNonEmptyString(projectConfig.awsBedrockProxyBaseUrl) ||
     asNonEmptyString(projectConfig.openaiProxyBaseUrl) ||
+    asNonEmptyString(userConfig.awsBedrockProxyBaseUrl) ||
     asNonEmptyString(userConfig.openaiProxyBaseUrl) ||
+    asNonEmptyString(builtInDefaults.awsBedrockProxyBaseUrl) ||
     asNonEmptyString(builtInDefaults.openaiProxyBaseUrl);
 
   const model =
@@ -487,6 +500,13 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
   const providerOptions = isPlainObject((merged as Record<string, unknown>).providerOptions)
     ? (deepMerge({}, (merged as Record<string, unknown>).providerOptions as Record<string, unknown>) as Record<string, any>)
     : undefined;
+  if (providerOptions) {
+    const legacyAwsBedrockProxyOptions = providerOptions["openai-proxy"];
+    if (legacyAwsBedrockProxyOptions !== undefined && providerOptions["aws-bedrock-proxy"] === undefined) {
+      providerOptions["aws-bedrock-proxy"] = legacyAwsBedrockProxyOptions;
+    }
+    delete providerOptions["openai-proxy"];
+  }
   const disableBuiltInSkills = asBoolean(env.COWORK_DISABLE_BUILTIN_SKILLS) ?? false;
 
   const normalizedProviderOptions = mergeProviderOptionDefaults(provider, supportedModel.id, providerOptions);
@@ -540,7 +560,7 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     observability,
     harness,
     command,
-    ...(openaiProxyBaseUrl ? { openaiProxyBaseUrl } : {}),
+    ...(awsBedrockProxyBaseUrl ? { awsBedrockProxyBaseUrl } : {}),
     ...(normalizedProviderOptions ? { providerOptions: normalizedProviderOptions } : {}),
     ...(normalizedModelSettings ? { modelSettings: normalizedModelSettings } : {}),
   };

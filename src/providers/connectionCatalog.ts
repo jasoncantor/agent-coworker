@@ -3,7 +3,7 @@ import { PROVIDER_NAMES, type ProviderName } from "../types";
 import { defaultSupportedModel, listSupportedModels, type SupportedModel } from "../models/registry";
 import { readCodexAuthMaterial } from "./codex-auth";
 import { getOpenCodeDisplayName } from "./opencodeShared";
-import { discoverOpenAiProxyModels, resolveOpenAiProxyBaseUrl } from "./openaiProxyShared";
+import { discoverAwsBedrockProxyModels, resolveAwsBedrockProxyBaseUrl } from "./awsBedrockProxyShared";
 
 export type ProviderCatalogModelEntry = Pick<
   SupportedModel,
@@ -26,7 +26,7 @@ export type ProviderCatalogPayload = {
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   google: "Google",
   openai: "OpenAI",
-  "openai-proxy": "OpenAI-API Proxy",
+  "aws-bedrock-proxy": "AWS Bedrock Proxy",
   anthropic: "Anthropic",
   baseten: "Baseten",
   together: "Together AI",
@@ -57,6 +57,7 @@ export async function getProviderCatalog(opts: {
   readCodexAuthMaterialImpl?: typeof readCodexAuthMaterial;
   activeProvider?: ProviderName;
   activeModel?: string;
+  awsBedrockProxyBaseUrl?: string;
   openaiProxyBaseUrl?: string;
 } = {}): Promise<ProviderCatalogPayload> {
   const paths = opts.paths ?? getAiCoworkerPaths({ homedir: opts.homedir });
@@ -65,17 +66,17 @@ export async function getProviderCatalog(opts: {
   const store = await readStore(paths);
   const all = listProviderCatalogEntries();
 
-  const openAiProxyIndex = all.findIndex((entry) => entry.id === "openai-proxy");
-  if (openAiProxyIndex >= 0) {
-    const proxyEntry = all[openAiProxyIndex];
-    const savedKey = store.services["openai-proxy"]?.mode === "api_key"
-      ? store.services["openai-proxy"].apiKey
+  const awsBedrockProxyIndex = all.findIndex((entry) => entry.id === "aws-bedrock-proxy");
+  if (awsBedrockProxyIndex >= 0) {
+    const proxyEntry = all[awsBedrockProxyIndex];
+    const savedKey = store.services["aws-bedrock-proxy"]?.mode === "api_key"
+      ? store.services["aws-bedrock-proxy"].apiKey
       : undefined;
-    const baseUrl = resolveOpenAiProxyBaseUrl({
-      baseUrl: opts.openaiProxyBaseUrl,
+    const baseUrl = resolveAwsBedrockProxyBaseUrl({
+      baseUrl: opts.awsBedrockProxyBaseUrl ?? opts.openaiProxyBaseUrl,
       env: {},
     });
-    const discoveredModels = await discoverOpenAiProxyModels({
+    const discoveredModels = await discoverAwsBedrockProxyModels({
       baseUrl,
       apiKey: savedKey,
     });
@@ -84,7 +85,7 @@ export async function getProviderCatalog(opts: {
       ? discoveredModels
       : proxyEntry.models;
 
-    const activeProxyModel = opts.activeProvider === "openai-proxy" ? opts.activeModel?.trim() : undefined;
+    const activeProxyModel = opts.activeProvider === "aws-bedrock-proxy" ? opts.activeModel?.trim() : undefined;
     const hasActiveModel = Boolean(activeProxyModel && mergedModels.some((model) => model.id === activeProxyModel));
     const models = activeProxyModel && !hasActiveModel
       ? [
@@ -98,7 +99,7 @@ export async function getProviderCatalog(opts: {
         ]
       : mergedModels;
 
-    all[openAiProxyIndex] = {
+    all[awsBedrockProxyIndex] = {
       ...proxyEntry,
       models,
       defaultModel: models[0]?.id ?? proxyEntry.defaultModel,

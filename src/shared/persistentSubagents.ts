@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { PROVIDER_NAMES, type ProviderName } from "../types";
+import { providerNameWithAliasesSchema, type ProviderName } from "../types";
 
 export const SESSION_KIND_VALUES = ["root", "subagent"] as const;
 export type SessionKind = (typeof SESSION_KIND_VALUES)[number];
@@ -29,7 +29,7 @@ export const persistentSubagentSummarySchema = z.object({
   parentSessionId: z.string().trim().min(1),
   agentType: subagentAgentTypeSchema,
   title: z.string().trim().min(1),
-  provider: z.enum(PROVIDER_NAMES),
+  provider: providerNameWithAliasesSchema,
   model: z.string().trim().min(1),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),

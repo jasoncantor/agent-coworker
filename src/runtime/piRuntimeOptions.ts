@@ -36,6 +36,15 @@ export function asFiniteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function asOpenAiProxyPromptCachingTtl(value: unknown): "5m" | "1h" | undefined {
+  if (value === "5m" || value === "1h") return value;
+  return undefined;
+}
+
 export function pickKnownPiModel(provider: string, modelId: string): PiModel | null {
   const direct = getPiModel(provider as any, modelId as any) as unknown;
   const directRecord = asRecord(direct);
@@ -94,7 +103,7 @@ export function buildPiStreamOptions(
   if (
     params.config.provider === "openai" ||
     params.config.provider === "codex-cli" ||
-    params.config.provider === "openai-proxy"
+    params.config.provider === "aws-bedrock-proxy"
   ) {
     const reasoningEffort = asNonEmptyString(providerSection.reasoningEffort);
     if (reasoningEffort) options.reasoningEffort = reasoningEffort;
@@ -104,6 +113,16 @@ export function buildPiStreamOptions(
     if (textVerbosity) options.textVerbosity = textVerbosity;
     const temperature = asFiniteNumber(providerSection.temperature);
     if (temperature !== undefined) options.temperature = temperature;
+  }
+
+  if (params.config.provider === "aws-bedrock-proxy") {
+    const promptCaching = asRecord(providerSection.promptCaching);
+    if (promptCaching) {
+      const enabled = asBoolean(promptCaching.enabled);
+      if (enabled !== undefined) options.openAiProxyPromptCachingEnabled = enabled;
+      const ttl = asOpenAiProxyPromptCachingTtl(promptCaching.ttl);
+      if (ttl) options.openAiProxyPromptCachingTtl = ttl;
+    }
   }
 
   if (params.config.provider === "anthropic") {

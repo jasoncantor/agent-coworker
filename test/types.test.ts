@@ -12,7 +12,7 @@ describe("PROVIDER_NAMES", () => {
   test("contains expected provider names", () => {
     expect(PROVIDER_NAMES).toContain("google");
     expect(PROVIDER_NAMES).toContain("openai");
-    expect(PROVIDER_NAMES).toContain("openai-proxy");
+    expect(PROVIDER_NAMES).toContain("aws-bedrock-proxy");
     expect(PROVIDER_NAMES).toContain("anthropic");
     expect(PROVIDER_NAMES).toContain("baseten");
     expect(PROVIDER_NAMES).toContain("together");
@@ -27,7 +27,7 @@ describe("resolveProviderName", () => {
   test("returns exact provider names", () => {
     expect(resolveProviderName("google")).toBe("google");
     expect(resolveProviderName("openai")).toBe("openai");
-    expect(resolveProviderName("openai-proxy")).toBe("openai-proxy");
+    expect(resolveProviderName("aws-bedrock-proxy")).toBe("aws-bedrock-proxy");
     expect(resolveProviderName("anthropic")).toBe("anthropic");
     expect(resolveProviderName("baseten")).toBe("baseten");
     expect(resolveProviderName("together")).toBe("together");
@@ -35,6 +35,10 @@ describe("resolveProviderName", () => {
     expect(resolveProviderName("opencode-go")).toBe("opencode-go");
     expect(resolveProviderName("opencode-zen")).toBe("opencode-zen");
     expect(resolveProviderName("codex-cli")).toBe("codex-cli");
+  });
+
+  test("maps legacy aliases to canonical provider names", () => {
+    expect(resolveProviderName("openai-proxy")).toBe("aws-bedrock-proxy");
   });
 
   test("returns null for unknown provider names", () => {
@@ -57,8 +61,8 @@ describe("isProviderName", () => {
       expect(isProviderName("openai")).toBe(true);
     });
 
-    test("openai-proxy", () => {
-      expect(isProviderName("openai-proxy")).toBe(true);
+    test("aws-bedrock-proxy", () => {
+      expect(isProviderName("aws-bedrock-proxy")).toBe(true);
     });
 
     test("anthropic", () => {
@@ -89,6 +93,10 @@ describe("isProviderName", () => {
       expect(isProviderName("opencode-zen")).toBe(true);
     });
 
+  });
+
+  test("returns false for legacy provider aliases", () => {
+    expect(isProviderName("openai-proxy")).toBe(false);
   });
 
   // ---- Invalid strings -----------------------------------------------------

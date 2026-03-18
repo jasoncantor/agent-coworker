@@ -145,6 +145,22 @@ describe("agent socket parser", () => {
         sessionId: "s-1",
         usage: null,
       },
+      {
+        type: "user_config",
+        sessionId: "s-1",
+        config: {
+          awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+        },
+      },
+      {
+        type: "user_config_result",
+        sessionId: "s-1",
+        ok: true,
+        message: "Saved globally",
+        config: {
+          awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+        },
+      },
     ];
 
     for (const fixture of fixtures) {

@@ -111,7 +111,7 @@ describe("providers/connectionCatalog", () => {
     });
   });
 
-  test("lists OpenAI-API Proxy in the provider catalog and preserves active model selections", async () => {
+  test("lists AWS Bedrock Proxy in the provider catalog and preserves active model selections", async () => {
     const payload = await getProviderCatalog({
       readCodexAuthMaterialImpl: readNoCodexAuth,
       readStore: async () => ({
@@ -119,14 +119,14 @@ describe("providers/connectionCatalog", () => {
         updatedAt: "2026-02-17T00:00:00.000Z",
         services: {},
       }),
-      activeProvider: "openai-proxy",
+      activeProvider: "aws-bedrock-proxy",
       activeModel: "anthropic.claude-3-5-sonnet-20241022-v2:0",
     });
 
-    expect(payload.default["openai-proxy"]).toBe("anthropic.claude-3-5-sonnet-20241022-v2:0");
+    expect(payload.default["aws-bedrock-proxy"]).toBe("anthropic.claude-3-5-sonnet-20241022-v2:0");
     expect(payload.all).toContainEqual({
-      id: "openai-proxy",
-      name: "OpenAI-API Proxy",
+      id: "aws-bedrock-proxy",
+      name: "AWS Bedrock Proxy",
       models: [
         {
           id: "anthropic.claude-3-5-sonnet-20241022-v2:0",
@@ -145,7 +145,7 @@ describe("providers/connectionCatalog", () => {
     });
   });
 
-  test("uses dynamic /models discovery for openai-proxy when a base URL is configured", async () => {
+  test("uses dynamic /models discovery for aws-bedrock-proxy when a base URL is configured", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const requestUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -168,21 +168,21 @@ describe("providers/connectionCatalog", () => {
           version: 1,
           updatedAt: "2026-02-17T00:00:00.000Z",
           services: {
-            "openai-proxy": {
-              service: "openai-proxy",
+            "aws-bedrock-proxy": {
+              service: "aws-bedrock-proxy",
               mode: "api_key",
               apiKey: "proxy-key",
               updatedAt: "2026-02-17T00:00:00.000Z",
             },
           },
         }),
-        openaiProxyBaseUrl: "https://proxy.internal/v1",
+        awsBedrockProxyBaseUrl: "https://proxy.internal/v1",
       });
 
-      expect(payload.default["openai-proxy"]).toBe("anthropic.claude-3-5-sonnet-20241022-v2:0");
+      expect(payload.default["aws-bedrock-proxy"]).toBe("anthropic.claude-3-5-sonnet-20241022-v2:0");
       expect(payload.all).toContainEqual({
-        id: "openai-proxy",
-        name: "OpenAI-API Proxy",
+        id: "aws-bedrock-proxy",
+        name: "AWS Bedrock Proxy",
         models: [
           {
             id: "anthropic.claude-3-5-sonnet-20241022-v2:0",
@@ -198,7 +198,7 @@ describe("providers/connectionCatalog", () => {
     }
   });
 
-  test("falls back to static openai-proxy catalog metadata when /models discovery fails", async () => {
+  test("falls back to static aws-bedrock-proxy catalog metadata when /models discovery fails", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => new Response("upstream error", { status: 502 })) as typeof fetch;
 
@@ -210,13 +210,13 @@ describe("providers/connectionCatalog", () => {
           updatedAt: "2026-02-17T00:00:00.000Z",
           services: {},
         }),
-        openaiProxyBaseUrl: "https://proxy.internal/v1",
+        awsBedrockProxyBaseUrl: "https://proxy.internal/v1",
       });
 
-      expect(payload.default["openai-proxy"]).toBe("claude-sonnet-4-5");
+      expect(payload.default["aws-bedrock-proxy"]).toBe("claude-sonnet-4-5");
       expect(payload.all).toContainEqual({
-        id: "openai-proxy",
-        name: "OpenAI-API Proxy",
+        id: "aws-bedrock-proxy",
+        name: "AWS Bedrock Proxy",
         models: [
           {
             id: "claude-sonnet-4-5",

@@ -377,6 +377,39 @@ describe("Server Startup", () => {
     }
   });
 
+  test("starts successfully with legacy openai-proxy + dynamic discovered model config", async () => {
+    const tmpDir = await makeTmpProject();
+    await fs.writeFile(
+      path.join(tmpDir, ".agent", "config.json"),
+      `${JSON.stringify({
+        provider: "openai-proxy",
+        model: "us.anthropic.claude-sonnet-4-6",
+        subAgentModel: "us.anthropic.claude-sonnet-4-6",
+      }, null, 2)}\n`,
+      "utf-8",
+    );
+
+    const { server, config, url } = await startAgentServer(
+      serverOpts(tmpDir, {
+        env: {
+          AGENT_WORKING_DIR: tmpDir,
+          COWORK_SKIP_DEFAULT_SKILLS_BOOTSTRAP: "1",
+        },
+      })
+    );
+
+    try {
+      expect(config.provider).toBe("aws-bedrock-proxy");
+      expect(config.model).toBe("us.anthropic.claude-sonnet-4-6");
+      expect(config.subAgentModel).toBe("us.anthropic.claude-sonnet-4-6");
+
+      const hello = await connectAndWaitForEvent(url, (message) => message.type === "server_hello");
+      expect(hello?.type).toBe("server_hello");
+    } finally {
+      server.stop();
+    }
+  });
+
   test("shared startup omits built-in skills from active runtime config", async () => {
     const tmpDir = await makeTmpProject();
     const { server, config } = await startAgentServer(serverOpts(tmpDir));
@@ -569,6 +602,33 @@ describe("WebSocket Lifecycle", () => {
           reasoningSummary: "detailed",
           textVerbosity: "medium",
         },
+      });
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("connect session_config excludes internal aws-bedrock-proxy promptCaching provider options", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      providerOptions: {
+        ...DEFAULT_PROVIDER_OPTIONS,
+        "aws-bedrock-proxy": {
+          promptCaching: {
+            enabled: true,
+            ttl: "5m",
+          },
+        },
+      },
+    }));
+    try {
+      const messages = await collectMessages(url, 4);
+      const configEvt = messages.find((msg: any) => msg.type === "session_config");
+      expect((configEvt?.config.providerOptions as any)?.["aws-bedrock-proxy"]).toBeUndefined();
+      expect(configEvt?.config.providerOptions?.openai).toEqual({
+        reasoningEffort: "high",
+        reasoningSummary: "detailed",
+        textVerbosity: "medium",
       });
     } finally {
       server.stop();
@@ -2780,6 +2840,87 @@ describe("Protocol Doc Parity", () => {
       expect(persistedConfig.providerOptions["codex-cli"].textVerbosity).toBe("medium");
     } finally {
       server.stop();
+    }
+  });
+
+  test("user_config_get/user_config_set read and write global awsBedrockProxyBaseUrl", async () => {
+    const tmpDir = await makeTmpProject();
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-server-usercfg-home-"));
+    await fs.mkdir(path.join(homeDir, ".agent"), { recursive: true });
+    await fs.writeFile(
+      path.join(homeDir, ".agent", "config.json"),
+      `${JSON.stringify({
+        openaiProxyBaseUrl: "https://proxy.initial.example/v1/",
+        provider: "openai",
+      }, null, 2)}\n`,
+      "utf-8",
+    );
+
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, { homedir: homeDir }));
+    try {
+      const initial = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({
+          type: "user_config_get",
+          sessionId,
+        }),
+        (message) =>
+          message.type === "user_config"
+          && message.config?.awsBedrockProxyBaseUrl === "https://proxy.initial.example/v1",
+      );
+      expect(initial.type).toBe("user_config");
+      expect(initial.config.awsBedrockProxyBaseUrl).toBe("https://proxy.initial.example/v1");
+
+      const saved = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({
+          type: "user_config_set",
+          sessionId,
+          config: {
+            openaiProxyBaseUrl: "https://proxy.changed.example/v1/",
+          },
+        }),
+        (message) =>
+          message.type === "user_config_result"
+          && message.ok === true
+          && message.config?.awsBedrockProxyBaseUrl === "https://proxy.changed.example/v1",
+      );
+      expect(saved.type).toBe("user_config_result");
+      expect(saved.ok).toBe(true);
+
+      const persistedAfterSet = JSON.parse(
+        await fs.readFile(path.join(homeDir, ".agent", "config.json"), "utf-8"),
+      ) as any;
+      expect(persistedAfterSet.awsBedrockProxyBaseUrl).toBe("https://proxy.changed.example/v1");
+      expect(persistedAfterSet.openaiProxyBaseUrl).toBeUndefined();
+      expect(persistedAfterSet.provider).toBe("openai");
+
+      const cleared = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({
+          type: "user_config_set",
+          sessionId,
+          config: {
+            awsBedrockProxyBaseUrl: null,
+          },
+        }),
+        (message) =>
+          message.type === "user_config_result"
+          && message.ok === true
+          && !("awsBedrockProxyBaseUrl" in (message.config ?? {})),
+      );
+      expect(cleared.type).toBe("user_config_result");
+      expect(cleared.ok).toBe(true);
+
+      const persistedAfterClear = JSON.parse(
+        await fs.readFile(path.join(homeDir, ".agent", "config.json"), "utf-8"),
+      ) as any;
+      expect(persistedAfterClear.awsBedrockProxyBaseUrl).toBeUndefined();
+      expect(persistedAfterClear.openaiProxyBaseUrl).toBeUndefined();
+      expect(persistedAfterClear.provider).toBe("openai");
+    } finally {
+      server.stop();
+      await fs.rm(homeDir, { recursive: true, force: true });
     }
   });
 

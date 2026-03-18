@@ -13,7 +13,7 @@ import { promptForApiKey, promptForProviderMethod } from "./authPrompts";
 import { normalizeProviderAuthMethods, type ProviderAuthMethod } from "../parser";
 import { defaultModelForProvider } from "../../config";
 import type { ClientMessage } from "../../server/protocol";
-import { isProviderName, PROVIDER_NAMES } from "../../types";
+import { PROVIDER_NAMES, resolveProviderName } from "../../types";
 import type { PublicConfig } from "./serverEventHandler";
 
 const UI_PROVIDER_NAMES = PROVIDER_NAMES;
@@ -112,8 +112,8 @@ export async function handleSlashCommand(input: string, ctx: ReplCommandContext)
   }
 
   if (cmd === "provider") {
-    const name = (rest[0] ?? "").trim();
-    if (!isProviderName(name)) {
+    const name = resolveProviderName((rest[0] ?? "").trim());
+    if (!name) {
       console.log(`usage: /provider <${UI_PROVIDER_NAMES.join("|")}>`);
       ctx.activateNextPrompt();
       return true;
@@ -268,7 +268,8 @@ export async function handleSlashCommand(input: string, ctx: ReplCommandContext)
 
     const providerList = ctx.getProviderList();
     const allowedProviders = providerList.length > 0 ? providerList : [...UI_PROVIDER_NAMES];
-    if (!isProviderName(serviceToken) || !allowedProviders.includes(serviceToken)) {
+    const normalizedProvider = resolveProviderName(serviceToken);
+    if (!normalizedProvider || !allowedProviders.includes(normalizedProvider)) {
       console.log(`usage: /connect <${allowedProviders.join("|")}> [api_key]`);
       ctx.activateNextPrompt();
       return true;
@@ -280,7 +281,7 @@ export async function handleSlashCommand(input: string, ctx: ReplCommandContext)
       return true;
     }
 
-    const methods = normalizeProviderAuthMethods(ctx.getProviderAuthMethods()[serviceToken]);
+    const methods = normalizeProviderAuthMethods(ctx.getProviderAuthMethods()[normalizedProvider]);
     const apiMethod = methods.find((method) => method.type === "api") ?? null;
 
     if (apiKeyArg) {
@@ -292,17 +293,17 @@ export async function handleSlashCommand(input: string, ctx: ReplCommandContext)
       const ok = ctx.trySend({
         type: "provider_auth_set_api_key",
         sessionId: sessionId()!,
-        provider: serviceToken,
+        provider: normalizedProvider,
         methodId: apiMethod.id,
         apiKey: apiKeyArg,
       });
       if (!ok) return true;
-      console.log(`saving key for ${serviceToken}...`);
+      console.log(`saving key for ${normalizedProvider}...`);
       ctx.activateNextPrompt();
       return true;
     }
 
-    const method = await promptForProviderMethod(ctx.rl, serviceToken, methods);
+    const method = await promptForProviderMethod(ctx.rl, normalizedProvider, methods);
     if (!method) {
       console.log("connect cancelled.");
       ctx.activateNextPrompt();
@@ -310,21 +311,21 @@ export async function handleSlashCommand(input: string, ctx: ReplCommandContext)
     }
 
     if (method.type === "api") {
-      const promptedKey = await promptForApiKey(ctx.rl, serviceToken);
+      const promptedKey = await promptForApiKey(ctx.rl, normalizedProvider);
       if (!promptedKey) {
-        console.log(`API key is required for ${serviceToken}.`);
+        console.log(`API key is required for ${normalizedProvider}.`);
         ctx.activateNextPrompt();
         return true;
       }
       const ok = ctx.trySend({
         type: "provider_auth_set_api_key",
         sessionId: sessionId()!,
-        provider: serviceToken,
+        provider: normalizedProvider,
         methodId: method.id,
         apiKey: promptedKey,
       });
       if (!ok) return true;
-      console.log(`saving key for ${serviceToken}...`);
+      console.log(`saving key for ${normalizedProvider}...`);
       ctx.activateNextPrompt();
       return true;
     }
@@ -332,7 +333,7 @@ export async function handleSlashCommand(input: string, ctx: ReplCommandContext)
     const ok = ctx.trySend({
       type: "provider_auth_authorize",
       sessionId: sessionId()!,
-      provider: serviceToken,
+      provider: normalizedProvider,
       methodId: method.id,
     });
     if (!ok) return true;
@@ -341,12 +342,12 @@ export async function handleSlashCommand(input: string, ctx: ReplCommandContext)
       ctx.trySend({
         type: "provider_auth_callback",
         sessionId: sessionId()!,
-        provider: serviceToken,
+        provider: normalizedProvider,
         methodId: method.id,
       });
     }
 
-    console.log(`starting OAuth sign-in for ${serviceToken}...`);
+    console.log(`starting OAuth sign-in for ${normalizedProvider}...`);
     ctx.activateNextPrompt();
     return true;
   }

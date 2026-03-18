@@ -89,6 +89,8 @@ type ProviderAuthMethodsEvent = Extract<ServerEvent, { type: "provider_auth_meth
 type ProviderAuthMethod = ProviderAuthMethodsEvent["methods"][string][number];
 type ProviderAuthChallengeEvent = Extract<ServerEvent, { type: "provider_auth_challenge" }>;
 type ProviderAuthResultEvent = Extract<ServerEvent, { type: "provider_auth_result" }>;
+type UserConfigEvent = Extract<ServerEvent, { type: "user_config" }>;
+type UserConfigResultEvent = Extract<ServerEvent, { type: "user_config_result" }>;
 
 function isProviderName(v: unknown): v is ProviderName {
   return typeof v === "string" && (PROVIDER_NAMES as readonly string[]).includes(v);
@@ -152,6 +154,10 @@ export type AppStoreState = {
   providerAuthMethodsByProvider: Record<string, ProviderAuthMethod[]>;
   providerLastAuthChallenge: ProviderAuthChallengeEvent | null;
   providerLastAuthResult: ProviderAuthResultEvent | null;
+  pendingProviderAuthSave: { provider: ProviderName; methodId: string } | null;
+  userConfig: UserConfigEvent["config"];
+  userConfigLastResult: UserConfigResultEvent | null;
+  pendingUserConfigSave: boolean;
 
   composerText: string;
   injectContext: boolean;
@@ -244,6 +250,8 @@ export type AppStoreState = {
   requestProviderCatalog: () => Promise<void>;
   requestProviderAuthMethods: () => Promise<void>;
   refreshProviderStatus: () => Promise<void>;
+  requestUserConfig: () => Promise<void>;
+  setGlobalOpenAiProxyBaseUrl: (baseUrl: string | null) => Promise<void>;
 
   answerAsk: (threadId: string, requestId: string, answer: string) => void;
   answerApproval: (threadId: string, requestId: string, approved: boolean) => void;
@@ -308,7 +316,7 @@ const { ensureThreadSocket, sendThread, sendUserMessageToThread } = createThread
 
 async function ensureServerRunning(
   get: () => AppStoreState,
-  set: (fn: (s: AppStoreState) => Partial<AppStoreState>) => void,
+  set: StoreSet,
   workspaceId: string,
 ) {
   ensureWorkspaceRuntime(get, set, workspaceId);
@@ -381,6 +389,32 @@ async function ensureServerRunning(
   }
 }
 
+const DEFAULT_CONTROL_READY_TIMEOUT_MS = 3000;
+const CONTROL_READY_POLL_INTERVAL_MS = 25;
+
+async function ensureControlSessionReady(
+  get: () => AppStoreState,
+  set: StoreSet,
+  workspaceId: string,
+  timeoutMs = DEFAULT_CONTROL_READY_TIMEOUT_MS,
+): Promise<boolean> {
+  await ensureServerRunning(get, set, workspaceId);
+  const socket = ensureControlSocket(get, set, workspaceId);
+  if (!socket) return false;
+  if (get().workspaceRuntimeById[workspaceId]?.controlSessionId) return true;
+
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  while (Date.now() < deadline) {
+    const hasSessionId = Boolean(get().workspaceRuntimeById[workspaceId]?.controlSessionId);
+    const hasSocket = Boolean(RUNTIME.controlSockets.get(workspaceId));
+    if (hasSessionId && hasSocket) return true;
+    if (!hasSocket) return false;
+    await new Promise<void>((resolve) => setTimeout(resolve, CONTROL_READY_POLL_INTERVAL_MS));
+  }
+
+  return Boolean(get().workspaceRuntimeById[workspaceId]?.controlSessionId);
+}
+
 export {
   RUNTIME,
   bumpWorkspaceStartGeneration,
@@ -403,6 +437,7 @@ export {
   persist,
   persistNow,
   ensureServerRunning,
+  ensureControlSessionReady,
   ensureControlSocket,
   ensureThreadSocket,
   sendControl,

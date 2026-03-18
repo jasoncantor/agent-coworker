@@ -16,7 +16,7 @@ describe("Cross-provider model creation", () => {
     { name: "together", providerPrefix: "together.completions" },
     { name: "nvidia", providerPrefix: "nvidia.completions" },
     { name: "openai", providerPrefix: "openai.responses" },
-    { name: "openai-proxy", providerPrefix: "openai-proxy.completions" },
+    { name: "aws-bedrock-proxy", providerPrefix: "aws-bedrock-proxy.completions" },
     { name: "google", providerPrefix: "google.generative-ai" },
     { name: "opencode-go", providerPrefix: "opencode-go.completions" },
     { name: "opencode-zen", providerPrefix: "opencode-zen.completions" },
@@ -72,8 +72,8 @@ describe("Session reasoning kind mapping", () => {
     expect(reasoningModeForProvider("openai")).toBe("summary");
   });
 
-  test("openai-proxy provider maps to 'reasoning' kind", () => {
-    expect(reasoningModeForProvider("openai-proxy")).toBe("reasoning");
+  test("aws-bedrock-proxy provider maps to 'reasoning' kind", () => {
+    expect(reasoningModeForProvider("aws-bedrock-proxy")).toBe("reasoning");
   });
 
   test("anthropic provider maps to 'reasoning' kind", () => {

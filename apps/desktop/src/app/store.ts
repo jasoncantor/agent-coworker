@@ -35,6 +35,10 @@ const initialState: AppStoreDataState = {
   providerAuthMethodsByProvider: {},
   providerLastAuthChallenge: null,
   providerLastAuthResult: null,
+  pendingProviderAuthSave: null,
+  userConfig: {},
+  userConfigLastResult: null,
+  pendingUserConfigSave: false,
 
   composerText: "",
   injectContext: false,

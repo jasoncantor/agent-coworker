@@ -19,15 +19,15 @@ describe("src/providers/index.ts", () => {
 
     test("creates a runnable OpenAI-API proxy model with forced cache header", async () => {
       const config = makeConfig({
-        provider: "openai-proxy",
+        provider: "aws-bedrock-proxy",
         model: "claude-sonnet-4-5",
         subAgentModel: "claude-sonnet-4-5",
-        openaiProxyBaseUrl: "https://proxy.internal/v1",
+        awsBedrockProxyBaseUrl: "https://proxy.internal/v1",
       });
       const model = getModelForProvider(config, "claude-sonnet-4-5", "proxy-key") as any;
       const headers = await model.config.headers();
       expect(model.modelId).toBe("claude-sonnet-4-5");
-      expect(model.provider).toBe("openai-proxy.completions");
+      expect(model.provider).toBe("aws-bedrock-proxy.completions");
       expect(headers.authorization).toBe("Bearer proxy-key");
       expect(headers.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS).toBe("1");
     });
@@ -135,7 +135,7 @@ describe("src/providers/index.ts", () => {
     test("returns catalog defaults for all providers", () => {
       expect(defaultModelForProvider("google")).toBe(PROVIDERS.google.defaultModel);
       expect(defaultModelForProvider("openai")).toBe(PROVIDERS.openai.defaultModel);
-      expect(defaultModelForProvider("openai-proxy")).toBe(PROVIDERS["openai-proxy"].defaultModel);
+      expect(defaultModelForProvider("aws-bedrock-proxy")).toBe(PROVIDERS["aws-bedrock-proxy"].defaultModel);
       expect(defaultModelForProvider("anthropic")).toBe(PROVIDERS.anthropic.defaultModel);
       expect(defaultModelForProvider("baseten")).toBe(PROVIDERS.baseten.defaultModel);
       expect(defaultModelForProvider("together")).toBe(PROVIDERS.together.defaultModel);
@@ -155,8 +155,8 @@ describe("src/providers/index.ts", () => {
       expect(getProviderKeyCandidates("openai")).toBe(PROVIDERS.openai.keyCandidates);
     });
 
-    test("returns key candidates for openai-proxy", () => {
-      expect(getProviderKeyCandidates("openai-proxy")).toBe(PROVIDERS["openai-proxy"].keyCandidates);
+    test("returns key candidates for aws-bedrock-proxy", () => {
+      expect(getProviderKeyCandidates("aws-bedrock-proxy")).toBe(PROVIDERS["aws-bedrock-proxy"].keyCandidates);
     });
 
     test("returns key candidates for anthropic", () => {

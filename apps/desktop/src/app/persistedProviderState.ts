@@ -1,4 +1,4 @@
-import { PROVIDER_NAMES, type ProviderName } from "../lib/wsProtocol";
+import { PROVIDER_NAMES, resolveProviderName, type ProviderName } from "../lib/wsProtocol";
 import type { PersistedProviderState, PersistedProviderStatus } from "./types";
 
 const PROVIDER_STATUS_MODES = new Set(["missing", "error", "api_key", "oauth", "oauth_pending"]);
@@ -46,7 +46,9 @@ export function normalizePersistedProviderStatus(
   expectedProvider: ProviderName,
   value: unknown,
 ): PersistedProviderStatus | null {
-  if (!isRecord(value) || value.provider !== expectedProvider) return null;
+  if (!isRecord(value)) return null;
+  const normalizedProvider = resolveProviderName(value.provider);
+  if (normalizedProvider !== expectedProvider) return null;
 
   const authorized = typeof value.authorized === "boolean" ? value.authorized : false;
   const verified = typeof value.verified === "boolean" ? value.verified : false;
@@ -84,7 +86,10 @@ export function normalizePersistedProviderState(value: unknown): PersistedProvid
   const rawStatusByName = isRecord(value.statusByName) ? value.statusByName : {};
   const statusByName: Partial<Record<ProviderName, PersistedProviderStatus>> = {};
   for (const provider of PROVIDER_NAMES) {
-    const status = normalizePersistedProviderStatus(provider, rawStatusByName[provider]);
+    const rawStatus =
+      rawStatusByName[provider]
+      ?? (provider === "aws-bedrock-proxy" ? rawStatusByName["openai-proxy"] : undefined);
+    const status = normalizePersistedProviderStatus(provider, rawStatus);
     if (status) {
       statusByName[provider] = status;
     }
