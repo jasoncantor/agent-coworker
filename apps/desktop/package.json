@@ -24,6 +24,7 @@
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "@streamdown/cjk": "^1.0.2",
     "@streamdown/code": "^1.0.2",
     "@streamdown/math": "^1.0.2",
@@ -44,6 +45,7 @@
   },
   "devDependencies": {
     "@electron/notarize": "^2.5.0",
+    "@react-grab/mcp": "^0.1.28",
     "@tailwindcss/vite": "^4.1.18",
     "@types/node": "^24.3.0",
     "@types/react": "^19.1.8",
@@ -53,6 +55,7 @@
     "electron-builder": "^24.13.3",
     "electron-rebuild": "^3.2.9",
     "electron-vite": "^5.0.0",
+    "react-grab": "^0.1.28",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"

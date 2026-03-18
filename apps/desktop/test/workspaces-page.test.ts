@@ -86,8 +86,16 @@ function setupJsdom(): JsdomHarness {
     HTMLElement: globalThis.HTMLElement,
     Node: globalThis.Node,
     getComputedStyle: globalThis.getComputedStyle,
+    requestAnimationFrame: globalThis.requestAnimationFrame,
+    cancelAnimationFrame: globalThis.cancelAnimationFrame,
     actEnv: (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT,
   };
+  const requestAnimationFrame =
+    dom.window.requestAnimationFrame?.bind(dom.window) ??
+    ((callback: FrameRequestCallback) => window.setTimeout(() => callback(Date.now()), 0));
+  const cancelAnimationFrame =
+    dom.window.cancelAnimationFrame?.bind(dom.window) ??
+    ((handle: number) => window.clearTimeout(handle));
 
   Object.assign(globalThis, {
     window: dom.window,
@@ -96,6 +104,8 @@ function setupJsdom(): JsdomHarness {
     HTMLElement: dom.window.HTMLElement,
     Node: dom.window.Node,
     getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
+    requestAnimationFrame,
+    cancelAnimationFrame,
   });
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -108,6 +118,8 @@ function setupJsdom(): JsdomHarness {
       globalThis.HTMLElement = saved.HTMLElement;
       globalThis.Node = saved.Node;
       globalThis.getComputedStyle = saved.getComputedStyle;
+      globalThis.requestAnimationFrame = saved.requestAnimationFrame;
+      globalThis.cancelAnimationFrame = saved.cancelAnimationFrame;
       (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = saved.actEnv;
       dom.window.close();
     },
@@ -137,7 +149,7 @@ describe("desktop workspaces page", () => {
     }));
   });
 
-  test("renders workspace controls for openai-compatible verbosity, reasoning effort, and reasoning summary", () => {
+  test("renders OpenAI and ChatGPT settings controls with compact web search options", () => {
     const html = renderToStaticMarkup(
       createElement(OpenAiCompatibleModelSettingsCard, {
         workspace: {
@@ -152,24 +164,166 @@ describe("desktop workspaces page", () => {
               reasoningEffort: "medium",
               reasoningSummary: "concise",
               textVerbosity: "low",
+              webSearchBackend: "native",
+              webSearchMode: "live",
+              webSearch: {
+                contextSize: "high",
+                allowedDomains: ["openai.com"],
+                location: {
+                  country: "US",
+                  timezone: "America/New_York",
+                },
+              },
             },
           },
         },
         providerStatusByName: {
           openai: { verified: true },
-          "codex-cli": { authorized: true },
+          "codex-cli": { authorized: true, mode: "oauth" },
         },
         updateWorkspaceDefaults: async () => {},
       }),
     );
 
-    expect(html).toContain("OpenAI-Compatible Model Settings");
+    expect(html).toContain("OpenAI &amp; ChatGPT Settings");
+    expect(html).toContain("Workspace defaults for ChatGPT Subscription and OpenAI API models.");
     expect(html).toContain("OpenAI API");
-    expect(html).toContain("Codex CLI");
+    expect(html).toContain("ChatGPT Subscription");
     expect(html).toContain("Verbosity");
     expect(html).toContain("Reasoning effort");
     expect(html).toContain("Reasoning summary");
-    expect(html).toContain("Applies when this workspace runs on OpenAI API.");
+    expect(html).toContain("Web search");
+    expect(html).toContain("Advanced options");
+    expect(html).toContain("OpenAI API");
+  });
+
+  test("reveals codex web search advanced controls and manages optional allowed domains", async () => {
+    const harness = setupJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
+    const updateWorkspaceDefaults = mock(async () => {});
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          createElement(OpenAiCompatibleModelSettingsCard, {
+            workspace: {
+              id: "ws-1",
+              providerOptions: {
+                "codex-cli": {
+                  reasoningEffort: "medium",
+                  reasoningSummary: "concise",
+                  textVerbosity: "low",
+                  webSearchBackend: "native",
+                  webSearchMode: "live",
+                  webSearch: {
+                    contextSize: "high",
+                    location: {
+                      country: "US",
+                      timezone: "America/New_York",
+                    },
+                  },
+                },
+              },
+            },
+            providerStatusByName: {
+              "codex-cli": { authorized: true, mode: "oauth" },
+            },
+            updateWorkspaceDefaults,
+          }),
+        );
+      });
+
+      expect(container.textContent).toContain("Web search");
+      expect(container.textContent).toContain("Advanced options");
+      expect(container.textContent).not.toContain("Allowed domains");
+
+      const advancedButton = [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Advanced options"));
+      if (!(advancedButton instanceof harness.dom.window.HTMLButtonElement)) {
+        throw new Error("missing advanced options button");
+      }
+
+      await act(async () => {
+        advancedButton.click();
+      });
+
+      const text = container.textContent ?? "";
+      expect(text).toContain("Search mode");
+      expect(text).toContain("Context size");
+      expect(text).toContain("Allowed domains");
+      expect(text).toContain("Country");
+      expect(text).toContain("Timezone");
+      expect(text).toContain("Open to all domains unless you add one or more here.");
+
+      const helpButton = container.querySelector('[aria-label="Allowed domains help"]');
+      if (!(helpButton instanceof harness.dom.window.HTMLButtonElement)) {
+        throw new Error("missing allowed domains help button");
+      }
+      expect(helpButton.title).toBe("Open to all domains unless you add one or more domains here.");
+
+      const domainInput = container.querySelector('[aria-label="Codex allowed domains input"]');
+      if (!(domainInput instanceof harness.dom.window.HTMLInputElement)) {
+        throw new Error("missing allowed domains input");
+      }
+
+      const addButton = [...container.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Add");
+      if (!(addButton instanceof harness.dom.window.HTMLButtonElement)) {
+        throw new Error("missing add domains button");
+      }
+      expect(addButton.disabled).toBe(true);
+
+      await act(async () => {
+        domainInput.value = "https://OpenAI.com/docs, example.com/path; api.example.com:443";
+        domainInput.dispatchEvent(new harness.dom.window.Event("input", { bubbles: true }));
+        domainInput.dispatchEvent(new harness.dom.window.Event("change", { bubbles: true }));
+      });
+
+      const addButtonAfterInput = [...container.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Add");
+      if (!(addButtonAfterInput instanceof harness.dom.window.HTMLButtonElement)) {
+        throw new Error("missing add domains button after input");
+      }
+      expect(addButtonAfterInput.disabled).toBe(false);
+
+      await act(async () => {
+        addButtonAfterInput.click();
+      });
+
+      expect(domainInput.value).toBe("");
+      expect(updateWorkspaceDefaults).toHaveBeenCalledTimes(1);
+      expect(updateWorkspaceDefaults.mock.calls[0]).toEqual([
+        "ws-1",
+        {
+          providerOptions: {
+            "codex-cli": {
+              reasoningEffort: "medium",
+              reasoningSummary: "concise",
+              textVerbosity: "low",
+              webSearchBackend: "native",
+              webSearchMode: "live",
+              webSearch: {
+                contextSize: "high",
+                allowedDomains: ["openai.com", "example.com", "api.example.com"],
+                location: {
+                  country: "US",
+                  timezone: "America/New_York",
+                },
+              },
+            },
+          },
+        },
+      ]);
+
+    } finally {
+      if (root) {
+        await act(async () => {
+          root?.unmount();
+        });
+      }
+      harness.restore();
+    }
   });
 
   test("renders workspace controls for user profile context", () => {
@@ -198,6 +352,7 @@ describe("desktop workspaces page", () => {
   test("renders cross-provider child routing controls for workspace defaults", async () => {
     useAppStore.setState((state) => ({
       ...state,
+      perWorkspaceSettings: true,
       workspaces: [
         {
           id: "ws-1",
@@ -225,23 +380,68 @@ describe("desktop workspaces page", () => {
           models: [{ id: "gpt-5.4", displayName: "GPT-5.4", knowledgeCutoff: "unknown", supportsImageInput: true }],
         },
         {
+          id: "opencode-go",
+          name: "OpenCode Go",
+          defaultModel: "glm-5",
+          models: [{ id: "glm-5", displayName: "GLM-5", knowledgeCutoff: "unknown", supportsImageInput: false }],
+        },
+        {
+          id: "google",
+          name: "Google",
+          defaultModel: "gemini-3-flash-preview",
+          models: [{ id: "gemini-3-flash-preview", displayName: "Gemini 3 Flash Preview", knowledgeCutoff: "unknown", supportsImageInput: true }],
+        },
+        {
+          id: "anthropic",
+          name: "Anthropic",
+          defaultModel: "claude-4.5-sonnet",
+          models: [{ id: "claude-4.5-sonnet", displayName: "Claude 4.5 Sonnet", knowledgeCutoff: "unknown", supportsImageInput: true }],
+        },
+        {
           id: "opencode-zen",
           name: "OpenCode Zen",
           defaultModel: "glm-5",
           models: [{ id: "glm-5", displayName: "GLM-5", knowledgeCutoff: "unknown", supportsImageInput: false }],
         },
         {
-          id: "opencode-go",
-          name: "OpenCode Go",
-          defaultModel: "glm-5",
-          models: [{ id: "glm-5", displayName: "GLM-5", knowledgeCutoff: "unknown", supportsImageInput: false }],
+          id: "nvidia",
+          name: "NVIDIA",
+          defaultModel: "nvidia/nemotron-3-super-120b-a12b",
+          models: [{ id: "nvidia/nemotron-3-super-120b-a12b", displayName: "Nemotron 3 Super", knowledgeCutoff: "unknown", supportsImageInput: false }],
+        },
+        {
+          id: "together",
+          name: "Together AI",
+          defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+          models: [{ id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", displayName: "Llama 3.3 70B Turbo", knowledgeCutoff: "unknown", supportsImageInput: false }],
+        },
+        {
+          id: "baseten",
+          name: "Baseten",
+          defaultModel: "nvidia/Nemotron-4-340B-Instruct",
+          models: [{ id: "nvidia/Nemotron-4-340B-Instruct", displayName: "Nemotron 4 340B", knowledgeCutoff: "unknown", supportsImageInput: false }],
         },
       ],
-      providerConnected: ["codex-cli", "opencode-zen", "opencode-go"],
+      providerConnected: ["codex-cli", "opencode-go", "google", "anthropic", "opencode-zen", "nvidia", "together", "baseten"],
       providerDefaultModelByProvider: {
         "codex-cli": "gpt-5.4",
-        "opencode-zen": "glm-5",
         "opencode-go": "glm-5",
+        google: "gemini-3-flash-preview",
+        anthropic: "claude-4.5-sonnet",
+        "opencode-zen": "glm-5",
+        nvidia: "nvidia/nemotron-3-super-120b-a12b",
+        together: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        baseten: "nvidia/Nemotron-4-340B-Instruct",
+      },
+      providerStatusByName: {
+        "codex-cli": { authorized: true, verified: true },
+        "opencode-go": { authorized: true, verified: true },
+        google: { authorized: true, verified: true },
+        anthropic: { authorized: true, verified: true },
+        "opencode-zen": { authorized: true, verified: true },
+        nvidia: { authorized: true, verified: true },
+        together: { authorized: true, verified: true },
+        baseten: { authorized: true, verified: true },
       },
     }));
 
@@ -257,6 +457,13 @@ describe("desktop workspaces page", () => {
         root.render(createElement(WorkspacesPage));
       });
 
+      const topLevelText = container.textContent ?? "";
+      expect(topLevelText).toContain("Current provider:");
+      expect(topLevelText).toContain("Model:");
+      expect(topLevelText).toContain("Subagent routing:");
+      expect(topLevelText).toContain("Preferred subagent model:");
+      expect(topLevelText.indexOf("Current provider:")).toBeLessThan(topLevelText.indexOf("Active workspace"));
+
       const modelsTab = [...container.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Models");
       if (!(modelsTab instanceof harness.dom.window.HTMLButtonElement)) {
         throw new Error("missing Models tab");
@@ -267,11 +474,44 @@ describe("desktop workspaces page", () => {
       });
 
       const text = container.textContent ?? "";
-      expect(text).toContain("Child routing mode");
-      expect(text).toContain("cross-provider-allowlist");
-      expect(text).toContain("Allowed child targets");
-      expect(text).toContain("Preferred child target");
-      expect(text).toContain("opencode-zen:glm-5");
+      expect(text).toContain("Subagent routing");
+      expect(text).toContain("Multiple providers");
+      expect(text).toContain("Subagent Models");
+      expect(text).toContain("Preferred subagent model");
+
+      const subagentModelsToggle = [...container.querySelectorAll("button")].find((button) =>
+        button.textContent?.includes("Show"),
+      );
+      if (!(subagentModelsToggle instanceof harness.dom.window.HTMLButtonElement)) {
+        throw new Error("missing Subagent Models toggle");
+      }
+
+      await act(async () => {
+        subagentModelsToggle.click();
+      });
+
+      const expandedText = container.textContent ?? "";
+      expect(expandedText).toContain("OpenCode Zen | glm-5");
+      // Search within the subagent models section to avoid matching provider
+      // names that appear earlier in the summary bar or dropdowns.
+      const sectionStart = expandedText.indexOf("Subagent Models");
+      expect(sectionStart).toBeGreaterThanOrEqual(0);
+      const sectionText = expandedText.slice(sectionStart);
+      const expectedProviderOrder = [
+        "ChatGPT Subscription",
+        "OpenCode Go",
+        "Google",
+        "Anthropic",
+        "OpenCode Zen",
+        "NVIDIA",
+        "Together AI",
+      ];
+      const providerIndexes = expectedProviderOrder.map((name) => sectionText.indexOf(name));
+      expect(providerIndexes.every((index) => index >= 0)).toBe(true);
+      for (let index = 1; index < providerIndexes.length; index += 1) {
+        expect(providerIndexes[index - 1]).toBeLessThan(providerIndexes[index]);
+      }
+      expect(expandedText).not.toContain("Baseten");
     } finally {
       if (root) {
         await act(async () => {
@@ -360,6 +600,7 @@ describe("desktop workspaces page", () => {
           view: "settings",
           settingsPage: "workspaces",
           lastNonSettingsView: "chat",
+          perWorkspaceSettings: true,
           workspaces: [
             {
               id: "ws-1",

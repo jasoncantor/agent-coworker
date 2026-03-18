@@ -44,9 +44,12 @@ import { cn } from "../lib/utils";
 import { formatCost, formatTokenCount } from "../../../../src/session/pricing";
 import {
   buildCitationOverflowFilePathsByMessageId,
+  buildCitationSourcesByMessageId,
   buildCitationUrlsByMessageId,
   extractCitationUrlsFromWebSearchResult,
 } from "../../../../src/shared/displayCitationMarkers";
+import type { CitationSource } from "../../../../src/shared/displayCitationMarkers";
+import { SourcesCarousel } from "../components/ai-elements/sources-carousel";
 import type { SessionUsageSnapshot, TurnUsageSnapshot } from "../app/types";
 import { ActivityGroupCard } from "./chat/ActivityGroupCard";
 import { buildChatRenderItems } from "./chat/activityGroups";
@@ -273,9 +276,11 @@ export function ChatThreadHeader(props: {
 const FeedRow = memo(function FeedRow(props: {
   item: FeedItem;
   citationUrlsByIndex?: ReadonlyMap<number, string>;
+  citationSources?: CitationSource[];
 }) {
   const { developerMode } = useChatViewContext();
   const item = props.item;
+  const hasSources = props.citationSources && props.citationSources.length > 0;
 
   if (item.kind === "message") {
     return (
@@ -283,8 +288,10 @@ const FeedRow = memo(function FeedRow(props: {
         <MessageContent>
           {item.role === "assistant" ? (
             <MessageResponse
+              citationAnnotations={item.annotations}
               citationUrlsByIndex={props.citationUrlsByIndex}
               normalizeDisplayCitations
+              fallbackToSourcesFooter={!hasSources}
             >
               {item.text}
             </MessageResponse>
@@ -292,6 +299,9 @@ const FeedRow = memo(function FeedRow(props: {
             <div className="whitespace-pre-wrap">{item.text}</div>
           )}
         </MessageContent>
+        {hasSources && (
+          <SourcesCarousel sources={props.citationSources!} className="mt-1" />
+        )}
       </Message>
     );
   }
@@ -362,7 +372,7 @@ const PROVIDER_LABELS: Record<ProviderName, string> = {
   nvidia: "NVIDIA",
   "opencode-go": "OpenCode Go",
   "opencode-zen": "OpenCode Zen",
-  "codex-cli": "Codex CLI",
+  "codex-cli": "ChatGPT Subscription",
 };
 
 function ThreadModelSelector({
@@ -469,6 +479,7 @@ export function ChatView() {
     }
     return merged;
   }, [inlineCitationUrlsByMessageId, overflowCitationUrlsByMessageId]);
+  const citationSourcesByMessageId = useMemo(() => buildCitationSourcesByMessageId(visibleFeed), [visibleFeed]);
   const renderItems = useMemo(() => buildChatRenderItems(visibleFeed), [visibleFeed]);
   const contextValue = useMemo<ChatViewContextValue>(
     () => ({
@@ -675,6 +686,7 @@ export function ChatView() {
                     key={item.item.id}
                     item={item.item}
                     citationUrlsByIndex={citationUrlsByMessageId.get(item.item.id)}
+                    citationSources={citationSourcesByMessageId.get(item.item.id)}
                   />
                 )
               )

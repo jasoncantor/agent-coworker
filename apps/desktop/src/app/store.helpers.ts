@@ -166,6 +166,7 @@ export type AppStoreState = {
   injectContext: boolean;
   developerMode: boolean;
   showHiddenFiles: boolean;
+  perWorkspaceSettings: boolean;
   updateState: UpdaterState;
 
   onboardingVisible: boolean;
@@ -204,6 +205,7 @@ export type AppStoreState = {
   setInjectContext: (v: boolean) => void;
   setDeveloperMode: (v: boolean) => void;
   setShowHiddenFiles: (v: boolean) => void;
+  setPerWorkspaceSettings: (enabled: boolean) => void;
   setUpdateState: (state: UpdaterState) => void;
   checkForUpdates: () => Promise<void>;
   quitAndInstallUpdate: () => Promise<void>;
@@ -257,6 +259,8 @@ export type AppStoreState = {
   requestProviderCatalog: () => Promise<void>;
   requestProviderAuthMethods: () => Promise<void>;
   refreshProviderStatus: () => Promise<void>;
+
+  loadAllThreadUsage: () => Promise<void>;
 
   answerAsk: (threadId: string, requestId: string, answer: string) => void;
   answerApproval: (threadId: string, requestId: string, approved: boolean) => void;

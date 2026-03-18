@@ -443,12 +443,16 @@ function DesktopMessageLink({
 export type MessageResponseProps = StreamdownProps & {
   normalizeDisplayCitations?: boolean;
   citationUrlsByIndex?: ReadonlyMap<number, string>;
+  citationAnnotations?: unknown;
+  fallbackToSourcesFooter?: boolean;
 };
 
 function normalizeMessageResponseChildren(
   children: StreamdownProps["children"],
   normalizeDisplayCitations: boolean,
   citationUrlsByIndex?: ReadonlyMap<number, string>,
+  citationAnnotations?: unknown,
+  fallbackToSourcesFooter = true,
 ): StreamdownProps["children"] {
   if (!normalizeDisplayCitations) {
     return children;
@@ -458,6 +462,8 @@ function normalizeMessageResponseChildren(
     return normalizeDisplayCitationMarkers(children, {
       citationUrlsByIndex,
       citationMode: "html",
+      annotations: citationAnnotations,
+      fallbackToSourcesFooter,
     });
   }
 
@@ -465,6 +471,8 @@ function normalizeMessageResponseChildren(
     ? normalizeDisplayCitationMarkers(child, {
       citationUrlsByIndex,
       citationMode: "html",
+      annotations: citationAnnotations,
+      fallbackToSourcesFooter,
     })
     : child);
 }
@@ -472,7 +480,9 @@ function normalizeMessageResponseChildren(
 export const MessageResponse = memo(function MessageResponse({
   className,
   citationUrlsByIndex,
+  citationAnnotations,
   normalizeDisplayCitations = false,
+  fallbackToSourcesFooter = true,
   ...props
 }: MessageResponseProps) {
   const { children, components, plugins, rehypePlugins, remarkPlugins, ...restProps } = props;
@@ -480,7 +490,13 @@ export const MessageResponse = memo(function MessageResponse({
   return (
     <Streamdown
       {...restProps}
-      children={normalizeMessageResponseChildren(children, normalizeDisplayCitations, citationUrlsByIndex)}
+      children={normalizeMessageResponseChildren(
+        children,
+        normalizeDisplayCitations,
+        citationUrlsByIndex,
+        citationAnnotations,
+        fallbackToSourcesFooter,
+      )}
       className={cn(
         "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:underline [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border/80 [&_pre]:bg-muted/45 [&_pre]:p-3 [&_sup]:ml-0.5 [&_sup]:align-super [&_sup]:text-[0.72em] [&_sup]:leading-none [&_sup_a]:font-medium [&_sup_a]:text-primary [&_sup_a]:no-underline hover:[&_sup_a]:underline",
         className,
