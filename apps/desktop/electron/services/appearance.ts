@@ -5,7 +5,10 @@ import type {
   SystemAppearance,
   WindowsBackgroundMaterial,
 } from "../../src/lib/desktopApi";
-import { shouldUseMacosLiquidGlass } from "./windowEnhancements";
+import {
+  shouldUseMacosNativeGlass,
+  syncWindowChromeAppearance,
+} from "./windowEnhancements";
 
 const LIGHT_SHELL_BACKGROUND = "#e7dfd4";
 const DARK_SHELL_BACKGROUND = "#1f1913";
@@ -40,15 +43,19 @@ export function defaultWindowsBackgroundMaterial(
 
 export function getInitialWindowAppearanceOptions(options: {
   platform?: NodeJS.Platform;
-  useMacosLiquidGlass?: boolean;
+  useMacosNativeGlass?: boolean;
   useDarkColors?: boolean;
 } = {}): Pick<BrowserWindowConstructorOptions, "show" | "backgroundColor" | "backgroundMaterial"> {
   const platform = options.platform ?? process.platform;
   const useDarkColors = options.useDarkColors ?? nativeTheme.shouldUseDarkColors;
-  const useMacosLiquidGlass = options.useMacosLiquidGlass ?? shouldUseMacosLiquidGlass(platform);
+  const useMacosNativeGlass =
+    options.useMacosNativeGlass
+    ?? shouldUseMacosNativeGlass(platform, process.env, {
+      prefersReducedTransparency: nativeTheme.prefersReducedTransparency,
+    });
 
   const backgroundColor =
-    platform === "darwin" && useMacosLiquidGlass
+    platform === "darwin" && useMacosNativeGlass
       ? "#00000000"
       : defaultDesktopShellBackgroundColor(useDarkColors);
 
@@ -72,14 +79,6 @@ function setWindowBackgroundMaterial(win: BrowserWindow, material: WindowsBackgr
   }
 }
 
-export function applyInitialWindowAppearance(win: BrowserWindow): void {
-  const material = defaultWindowsBackgroundMaterial();
-  if (!material) {
-    return;
-  }
-  setWindowBackgroundMaterial(win, material);
-}
-
 export function applyWindowAppearance(win: BrowserWindow, opts: SetWindowAppearanceInput): SystemAppearance {
   if (opts.themeSource) {
     nativeTheme.themeSource = opts.themeSource;
@@ -87,6 +86,12 @@ export function applyWindowAppearance(win: BrowserWindow, opts: SetWindowAppeara
   if (opts.backgroundMaterial) {
     setWindowBackgroundMaterial(win, opts.backgroundMaterial);
   }
+  syncWindowChromeAppearance(win, {
+    useDarkColors: nativeTheme.shouldUseDarkColors,
+    useMacosNativeGlass: shouldUseMacosNativeGlass(process.platform, process.env, {
+      prefersReducedTransparency: nativeTheme.prefersReducedTransparency,
+    }),
+  });
   return getSystemAppearanceSnapshot();
 }
 

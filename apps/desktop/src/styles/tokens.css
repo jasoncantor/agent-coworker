@@ -13,8 +13,8 @@
     --glass-fill: color-mix(in srgb, var(--panel-bg) 86%, transparent);
     --glass-border: rgba(94, 67, 41, 0.24);
     --sidebar-blur: 0px;
-    --sidebar-titlebar-blur: 16px;
-    --titlebar-blur: 16px;
+    --sidebar-titlebar-blur: 12px;
+    --titlebar-blur: 10px;
     --border: rgba(94, 67, 41, 0.14);
     --text: #2f2318;
     --muted: #5a4736;
@@ -40,7 +40,8 @@
     );
     --glass-fill: color-mix(in srgb, var(--panel-bg) 80%, transparent);
     --glass-border: rgba(255, 233, 212, 0.22);
-    --sidebar-titlebar-blur: 16px;
+    --sidebar-titlebar-blur: 12px;
+    --titlebar-blur: 10px;
     --border: rgba(255, 233, 212, 0.16);
     --text: #f6ece0;
     --muted: #d8c7b6;
@@ -61,13 +62,14 @@
         --sidebar-surface: color-mix(in srgb, var(--sidebar-bg) 88%, black 12%);
         --content-surface: color-mix(
             in srgb,
-            var(--sidebar-bg) 74%,
-            var(--app-bg) 26%
-        );
-        --glass-fill: color-mix(in srgb, var(--panel-bg) 80%, transparent);
-        --glass-border: rgba(255, 233, 212, 0.22);
-        --sidebar-titlebar-blur: 16px;
-        --border: rgba(255, 233, 212, 0.16);
+        var(--sidebar-bg) 74%,
+        var(--app-bg) 26%
+    );
+    --glass-fill: color-mix(in srgb, var(--panel-bg) 80%, transparent);
+    --glass-border: rgba(255, 233, 212, 0.22);
+    --sidebar-titlebar-blur: 12px;
+    --titlebar-blur: 10px;
+    --border: rgba(255, 233, 212, 0.16);
         --text: #f6ece0;
         --muted: #d8c7b6;
         --accent: #e29a62;
@@ -95,16 +97,19 @@
 }
 
 :root[data-platform="win32"][data-reduced-transparency="false"] {
-    --window-bg: var(--app-bg);
-    --shell-bg: var(--app-bg);
-    --sidebar-surface: color-mix(in srgb, var(--sidebar-bg) 90%, transparent);
+    --window-bg: transparent;
+    --shell-bg: transparent;
+    --sidebar-surface: color-mix(in srgb, var(--sidebar-bg) 78%, transparent);
     --content-surface: color-mix(
         in srgb,
-        var(--sidebar-bg) 82%,
-        var(--app-bg) 18%
+        var(--sidebar-bg) 70%,
+        var(--app-bg) 30%
     );
-    --glass-fill: color-mix(in srgb, var(--panel-bg) 88%, transparent);
+    --glass-fill: color-mix(in srgb, var(--panel-bg) 80%, transparent);
     --glass-border: color-mix(in srgb, var(--border) 95%, transparent);
+    --sidebar-blur: 10px;
+    --sidebar-titlebar-blur: 10px;
+    --titlebar-blur: 8px;
 }
 
 :root[data-reduced-transparency="true"] {

@@ -40,7 +40,7 @@ COWORK_ELECTRON_REMOTE_DEBUG=1 bun run dev
 bun run build
 ```
 
-The build pipeline rebuilds bundled desktop resources (`cowork-server` sidecar + prompts/config/docs) via the root `build:desktop-resources` script. Curated default skills are bootstrapped by the shared agent runtime into `~/.cowork/skills` from GitHub instead of being bundled into the app.
+The build pipeline rebuilds bundled desktop resources (`cowork-server` sidecar + prompts/config by default, with docs opt-in via `COWORK_BUNDLE_DESKTOP_DOCS=1`) via the root `build:desktop-resources` script. Curated default skills are bootstrapped by the shared agent runtime into `~/.cowork/skills` from GitHub instead of being bundled into the app.
 Desktop packaging now clears `apps/desktop/resources/binaries/`, emits exactly one platform-specific `cowork-server-*` sidecar, and writes `cowork-server-manifest.json` beside it so the packaged app launches that pinned bundled binary instead of scanning for an arbitrary match.
 The source macOS icon lives at `apps/desktop/build/icon.icon`. For packaging with the current `electron-builder`, regenerate `apps/desktop/build/icon.icns` from that source with `xcrun actool apps/desktop/build/icon.icon --app-icon icon --compile <outdir> --output-partial-info-plist <outdir>/assetcatalog_generated_info.plist --minimum-deployment-target 12.0 --platform macosx --target-device mac`, then copy the emitted `icon.icns` into `apps/desktop/build/icon.icns`. Regenerate `apps/desktop/build/icon.ico` from `apps/desktop/build/icon.png` (for example with Pillow) so Windows packaging stays aligned with the same source art.
 

@@ -18,9 +18,9 @@ import { ServerManager } from "./services/serverManager";
 import { createBeforeQuitHandler } from "./services/shutdown";
 import { DesktopUpdaterService } from "./services/updater";
 import {
-  applyMacosPremiumEnhancements,
   macosBrowserWindowOptions,
-  shouldUseMacosLiquidGlass,
+  shouldUseMacosNativeGlass,
+  syncWindowChromeAppearance,
 } from "./services/windowEnhancements";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -188,14 +188,17 @@ function applyWindowSecurity(win: BrowserWindow): void {
 }
 
 async function createWindow(): Promise<void> {
-  const useMacosLiquidGlass = shouldUseMacosLiquidGlass();
+  const useMacosNativeGlass = shouldUseMacosNativeGlass(process.platform, process.env, {
+    prefersReducedTransparency: getSystemAppearanceSnapshot().prefersReducedTransparency,
+  });
+  const useDarkColors = getSystemAppearanceSnapshot().shouldUseDarkColors;
 
   const win = new BrowserWindow({
     title: "Cowork",
     width: 1240,
     height: 820,
-    ...getInitialWindowAppearanceOptions({ useMacosLiquidGlass }),
-    ...macosBrowserWindowOptions(process.platform, { useMacosLiquidGlass }),
+    ...getInitialWindowAppearanceOptions({ useDarkColors, useMacosNativeGlass }),
+    ...macosBrowserWindowOptions(process.platform, { useDarkColors, useMacosNativeGlass }),
     webPreferences: {
       preload: path.join(__dirname, "../preload/preload.js"),
       contextIsolation: true,
@@ -215,6 +218,10 @@ async function createWindow(): Promise<void> {
     win.setMenu(null);
   }
   applyWindowSecurity(win);
+  syncWindowChromeAppearance(win, {
+    useDarkColors,
+    useMacosNativeGlass,
+  });
   const showWindow = () => {
     if (win.isDestroyed()) {
       return;
@@ -264,18 +271,6 @@ async function createWindow(): Promise<void> {
 
   win.webContents.once("did-finish-load", () => {
     emitSystemAppearance();
-    if (process.platform === "darwin" && useMacosLiquidGlass) {
-      void applyMacosPremiumEnhancements(win)
-        .then((premiumResult) => {
-          if (!premiumResult.liquidGlassApplied) {
-            win.setBackgroundColor(defaultDesktopShellBackgroundColor());
-          }
-        })
-        .catch((error) => {
-          console.warn(`[desktop] Failed to apply macOS liquid glass enhancements: ${String(error)}`);
-          win.setBackgroundColor(defaultDesktopShellBackgroundColor());
-        });
-    }
   });
 
   if (!app.isPackaged) {
@@ -314,6 +309,32 @@ if (!gotSingleInstanceLock) {
       updater,
     });
     unregisterAppearanceListener = registerSystemAppearanceListener((appearance) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (win.isDestroyed()) {
+          continue;
+        }
+        syncWindowChromeAppearance(win, {
+          platform: appearance.platform as NodeJS.Platform,
+          useDarkColors: appearance.shouldUseDarkColors,
+          useMacosNativeGlass: shouldUseMacosNativeGlass(
+            appearance.platform as NodeJS.Platform,
+            process.env,
+            { prefersReducedTransparency: appearance.prefersReducedTransparency },
+          ),
+        });
+        if (appearance.platform === "darwin") {
+          const useMacosNativeGlass = shouldUseMacosNativeGlass(
+            "darwin",
+            process.env,
+            { prefersReducedTransparency: appearance.prefersReducedTransparency },
+          );
+          win.setBackgroundColor(
+            useMacosNativeGlass
+              ? "#00000000"
+              : defaultDesktopShellBackgroundColor(appearance.shouldUseDarkColors),
+          );
+        }
+      }
       emitDesktopEvent(DESKTOP_EVENT_CHANNELS.systemAppearanceChanged, appearance);
     });
 
