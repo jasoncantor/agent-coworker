@@ -35,14 +35,14 @@ export function AppTopBar({
         aria-hidden="true"
         style={{ left: sidebarCollapsed ? 0 : sidebarWidth }}
       />
-      <div className="app-topbar__inline-sidebar-toggle app-topbar__controls absolute left-4 top-1/2 flex min-w-0 -translate-y-1/2 items-center gap-1">
+      <div className="app-topbar__inline-sidebar-toggle app-topbar__toolbar app-topbar__controls absolute left-4 top-1/2 flex min-w-0 -translate-y-1/2 items-center gap-1">
         <Button
           size="icon-sm"
           variant="ghost"
           onClick={onToggleSidebar}
           title={sidebarLabel}
           aria-label={sidebarLabel}
-          className="text-muted-foreground hover:text-foreground"
+          className="app-topbar__toolbar-button text-muted-foreground hover:text-foreground"
         >
           <PanelLeftIcon className="h-[18px] w-[18px]" />
         </Button>
@@ -52,7 +52,7 @@ export function AppTopBar({
         Cowork
       </div>
 
-      <div className="app-topbar__controls flex items-center gap-2">
+      <div className="app-topbar__toolbar app-topbar__toolbar--right app-topbar__controls flex items-center gap-2">
         {busy ? (
           <Badge variant="secondary" className="gap-1.5">
             <LoaderCircleIcon className="h-3.5 w-3.5 animate-spin" />
@@ -65,7 +65,7 @@ export function AppTopBar({
           onClick={onToggleContextSidebar}
           title={rightSidebarLabel}
           aria-label={rightSidebarLabel}
-          className="text-muted-foreground hover:text-foreground"
+          className="app-topbar__toolbar-button text-muted-foreground hover:text-foreground"
         >
           <PanelRightIcon className="h-[18px] w-[18px]" />
         </Button>

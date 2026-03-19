@@ -103,8 +103,21 @@ body {
   -webkit-app-region: no-drag;
 }
 
+.app-topbar__toolbar {
+  position: relative;
+  z-index: 1;
+}
+
 .app-topbar__inline-sidebar-toggle {
   z-index: 1;
+}
+
+.app-topbar__toolbar-button {
+  color: var(--muted);
+}
+
+.app-topbar__toolbar-button:hover {
+  color: var(--text);
 }
 
 .app-topbar__sidebar-fill {
@@ -138,6 +151,15 @@ body {
 
 :root[data-platform="darwin"] .app-topbar__inline-sidebar-toggle {
   left: 5.75rem;
+}
+
+:root[data-platform="darwin"] .app-topbar__toolbar--right {
+  padding-right: 0.125rem;
+}
+
+:root[data-platform="darwin"] .app-topbar__toolbar--right .app-topbar__toolbar-button {
+  color: var(--text);
+  filter: drop-shadow(0 1px 0.75px color-mix(in srgb, var(--panel-bg) 72%, transparent));
 }
 
 :root[data-platform="win32"] .app-topbar__inline-sidebar-toggle {
