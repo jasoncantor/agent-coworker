@@ -644,7 +644,7 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
       });
 
       return (
-        <Card key={provider} className={cn("border-border/80 bg-card/85", isExpanded && "border-primary/35")}>
+        <Card key={provider} className={cn("provider-settings-card border-border/80 bg-card/85", isExpanded && "border-primary/35")}>
           <button
             className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
             type="button"
@@ -755,7 +755,7 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
     }
 
     return (
-      <Card key={provider} className={cn("border-border/80 bg-card/85", isExpanded && "border-primary/35")}>
+      <Card key={provider} className={cn("provider-settings-card border-border/80 bg-card/85", isExpanded && "border-primary/35")}>
         <button
           className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
           type="button"
@@ -907,7 +907,7 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
     // But since the user wants sections split visually, we just always render it in Tool Providers
 
     return (
-      <Card key="exa" className={cn("border-border/80 bg-card/85", exaExpanded && "border-primary/35")}>
+      <Card key="exa" className={cn("provider-settings-card border-border/80 bg-card/85", exaExpanded && "border-primary/35")}>
         <button
           className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
           type="button"
@@ -995,21 +995,21 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
         </Card>
       ) : null}
 
-      <div className="flex space-x-1 rounded-lg bg-muted p-1 border border-border/70 max-w-fit mb-2 relative">
+      <div className="relative mb-2 flex max-w-fit space-x-1 rounded-xl border border-border/70 bg-foreground/[0.04] p-1.5 shadow-sm backdrop-blur-sm">
         {(["models", "tools"] as const).map((tab) => (
           <button
             key={tab}
             type="button"
             onClick={() => { setActiveTab(tab); setExpandedSectionId(null); }}
             className={cn(
-              "px-3 py-1.5 text-sm font-medium rounded-md transition-colors relative z-10",
+              "relative z-10 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors",
               activeTab === tab ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
             {activeTab === tab && (
               <motion.div
                 layoutId="providers-active-tab"
-                className="absolute inset-0 bg-background shadow-sm rounded-md -z-10 border border-border/50"
+                className="absolute inset-0 -z-10 rounded-lg border border-border/55 bg-panel/85 shadow-sm backdrop-blur-sm"
                 transition={{ type: "spring", stiffness: 500, damping: 30 }}
               />
             )}

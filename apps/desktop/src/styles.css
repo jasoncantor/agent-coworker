@@ -240,6 +240,28 @@ body {
   background: var(--glass-fill);
 }
 
+.settings-shell__main {
+  border-left-width: 0;
+  background: color-mix(in srgb, var(--content-surface) 72%, var(--glass-fill) 28%);
+}
+
+.settings-shell__content {
+  min-height: 100%;
+}
+
+.settings-shell__main [data-slot="card"] {
+  border-color: color-mix(in srgb, var(--glass-border) 82%, transparent);
+  background: color-mix(in srgb, var(--panel-bg) 88%, transparent);
+  box-shadow:
+    0 1px 1px color-mix(in srgb, var(--text) 3%, transparent),
+    0 10px 24px -18px color-mix(in srgb, var(--text) 16%, transparent);
+  backdrop-filter: blur(calc(var(--titlebar-blur) + 1px));
+}
+
+.settings-shell__main [data-slot="card"]:has([data-provider-card]) {
+  background: color-mix(in srgb, var(--panel-bg) 84%, transparent);
+}
+
 @keyframes collapsible-open {
   from {
     height: 0;
