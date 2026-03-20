@@ -4042,7 +4042,7 @@ describe("Protocol Doc Parity", () => {
     }
   });
 
-  test("set_config rejects unsupported preferredChildModel values before persisting them", async () => {
+  test("set_config normalizes cross-provider preferred child settings from the canonical ref", async () => {
     const tmpDir = await makeTmpProject();
     await fs.writeFile(
       path.join(tmpDir, ".agent", "config.json"),
@@ -4062,26 +4062,36 @@ describe("Protocol Doc Parity", () => {
       },
     }));
     try {
-      const errorEvent = await sendAndWaitForEvent(
+      const configEvent = await sendAndWaitForEvent(
         url,
         (sessionId) => ({
           type: "set_config",
           sessionId,
           config: {
+            childModelRoutingMode: "cross-provider-allowlist",
             preferredChildModel: "gemini-3.1-pro-preview",
+            preferredChildModelRef: "google:gemini-3.1-pro-preview",
+            allowedChildModelRefs: ["google:gemini-3.1-pro-preview"],
           },
         }),
-        (message) => message.type === "error",
+        (message) =>
+          message.type === "session_config"
+          && message.config?.childModelRoutingMode === "cross-provider-allowlist"
+          && message.config?.preferredChildModelRef === "google:gemini-3.1-pro-preview",
       );
 
-      expect(errorEvent.code).toBe("validation_failed");
-      expect(errorEvent.source).toBe("session");
-      expect(errorEvent.message).toContain('Unsupported session config preferred child target "gemini-3.1-pro-preview" for provider openai');
+      expect(configEvent.config.preferredChildModel).toBe("gpt-5.2");
+      expect(configEvent.config.childModelRoutingMode).toBe("cross-provider-allowlist");
+      expect(configEvent.config.preferredChildModelRef).toBe("google:gemini-3.1-pro-preview");
+      expect(configEvent.config.allowedChildModelRefs).toEqual(["google:gemini-3.1-pro-preview"]);
 
       const persistedConfig = JSON.parse(
         await fs.readFile(path.join(tmpDir, ".agent", "config.json"), "utf-8"),
       ) as any;
       expect(persistedConfig.preferredChildModel).toBe("gpt-5.2");
+      expect(persistedConfig.childModelRoutingMode).toBe("cross-provider-allowlist");
+      expect(persistedConfig.preferredChildModelRef).toBe("google:gemini-3.1-pro-preview");
+      expect(persistedConfig.allowedChildModelRefs).toEqual(["google:gemini-3.1-pro-preview"]);
     } finally {
       server.stop();
     }

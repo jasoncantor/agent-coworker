@@ -118,7 +118,7 @@ Changes in `7.16`:
 
 - Child-agent websocket control is now fully normalized around `agent_*` messages and `agent_spawned` / `agent_list` / `agent_status` events.
 - Child sessions now report `sessionKind: "agent"` plus role, mode, depth, effective model, and effective reasoning metadata in `server_hello` and `session_info`.
-- `preferredChildModel` remains as the legacy same-provider suggestion field; `preferredChildModelRef` is the canonical child target reference field.
+- `preferredChildModel` remains as legacy same-provider fallback state; `preferredChildModelRef` is the canonical child target reference field, especially for cross-provider routing.
 
 Changes in `7.15`:
 
@@ -2327,9 +2327,9 @@ Update runtime configuration values.
 | `config.backupsEnabled` | `boolean` | No | Toggle session backups for the current session and persist the workspace default for future sessions |
 | `config.toolOutputOverflowChars` | `number \| null` | No | Workspace-scoped character threshold for when oversized tool outputs start spilling into `.ModelScratchpad`; `null` disables spill files. Spill results still keep a fixed inline preview (currently the first 5,000 characters). |
 | `config.clearToolOutputOverflowChars` | `boolean` | No | When `true`, delete the persisted workspace overflow override and resume inheriting the built-in or user-level default. Cannot be combined with `config.toolOutputOverflowChars`. |
-| `config.preferredChildModel` | `string` | No | Legacy same-provider preferred child model ID. Unsupported values are rejected with a `validation_failed` session error. |
+| `config.preferredChildModel` | `string` | No | Legacy same-provider preferred child model ID. In `same-provider` mode it is validated against the current provider. In `cross-provider-allowlist` mode it is treated as derived same-provider fallback state and does not override `config.preferredChildModelRef`. |
 | `config.childModelRoutingMode` | `"same-provider" \| "cross-provider-allowlist"` | No | Workspace child-routing policy. Cross-provider refs only route when this is `"cross-provider-allowlist"` |
-| `config.preferredChildModelRef` | `string` | No | Preferred child target ref. Accepts either a plain same-provider model id or a canonical `provider:modelId` ref |
+| `config.preferredChildModelRef` | `string` | No | Canonical preferred child target ref. Accepts either a plain same-provider model id or a canonical `provider:modelId` ref |
 | `config.allowedChildModelRefs` | `string[]` | No | Exact cross-provider child target refs allowed for this workspace |
 | `config.maxSteps` | `number` | No | Max steps per turn (1-1000) |
 | `config.providerOptions` | `object` | No | Editable provider option patch. Only `openai`, `codex-cli`, `google`, and `lmstudio` are allowed |
@@ -4087,7 +4087,7 @@ Current runtime config. Sent on connection and after `set_config`.
 | `config.defaultBackupsEnabled` | `boolean` | The persisted workspace backup default from the harness/core config, before any live session override is applied |
 | `config.toolOutputOverflowChars` | `number \| null` | Effective character threshold for when oversized tool outputs start spilling into `.ModelScratchpad`; `null` disables spill files. Spill results still keep a fixed inline preview (currently the first 5,000 characters). |
 | `config.defaultToolOutputOverflowChars` | `number \| null` | Persisted workspace overflow default when explicitly configured; omitted when the session is inheriting the built-in or user-level default |
-| `config.preferredChildModel` | `string` | Preferred child model identifier used as the default override suggestion |
+| `config.preferredChildModel` | `string` | Normalized same-provider fallback model identifier used for legacy/default suggestion state |
 | `config.childModelRoutingMode` | `"same-provider" \| "cross-provider-allowlist"` | Workspace child-routing policy |
 | `config.preferredChildModelRef` | `string` | Canonical preferred child target ref shown in workspace/UI suggestions |
 | `config.allowedChildModelRefs` | `string[]` | Exact cross-provider child target refs allowed for this workspace |

@@ -1035,7 +1035,7 @@ describe("AgentSession", () => {
       ]);
     });
 
-    test("setConfig rejects unsupported preferredChildModel values before persistence", async () => {
+    test("setConfig normalizes cross-provider preferred child settings from the canonical ref", async () => {
       const persistProjectConfigPatchImpl = mock(async () => {});
       const { session, events } = makeSession({
         config: {
@@ -1048,20 +1048,24 @@ describe("AgentSession", () => {
       });
 
       await session.setConfig({
+        childModelRoutingMode: "cross-provider-allowlist",
         preferredChildModel: "gemini-3.1-pro-preview",
+        preferredChildModelRef: "google:gemini-3.1-pro-preview",
+        allowedChildModelRefs: ["google:gemini-3.1-pro-preview"],
       });
 
-      expect(persistProjectConfigPatchImpl).not.toHaveBeenCalled();
+      expect(persistProjectConfigPatchImpl).toHaveBeenCalledTimes(1);
+      expect(persistProjectConfigPatchImpl).toHaveBeenCalledWith({
+        preferredChildModel: "gpt-5.2",
+        childModelRoutingMode: "cross-provider-allowlist",
+        preferredChildModelRef: "google:gemini-3.1-pro-preview",
+        allowedChildModelRefs: ["google:gemini-3.1-pro-preview"],
+      });
       expect(session.getSessionConfigEvent().config.preferredChildModel).toBe("gpt-5.2");
-      expect(events.some((evt) => evt.type === "session_config")).toBe(false);
-
-      const errEvt = events.find((evt): evt is Extract<ServerEvent, { type: "error" }> => evt.type === "error");
-      expect(errEvt).toBeDefined();
-      if (errEvt) {
-        expect(errEvt.code).toBe("validation_failed");
-        expect(errEvt.source).toBe("session");
-        expect(errEvt.message).toContain('Unsupported session config preferred child target "gemini-3.1-pro-preview" for provider openai');
-      }
+      expect(session.getSessionConfigEvent().config.childModelRoutingMode).toBe("cross-provider-allowlist");
+      expect(session.getSessionConfigEvent().config.preferredChildModelRef).toBe("google:gemini-3.1-pro-preview");
+      expect(session.getSessionConfigEvent().config.allowedChildModelRefs).toEqual(["google:gemini-3.1-pro-preview"]);
+      expect(events.some((evt) => evt.type === "error")).toBe(false);
     });
 
     test("setConfig can clear the persisted toolOutputOverflowChars override and restore inheritance", async () => {
@@ -1561,6 +1565,38 @@ describe("AgentSession", () => {
         childModelRoutingMode: "same-provider",
         preferredChildModelRef: "openai:gpt-5.2",
         allowedChildModelRefs: [],
+      });
+    });
+
+    test("preserves canonical cross-provider child refs when the session provider changes", async () => {
+      const persistModelSelectionImpl = mock(async () => {});
+      const { session } = makeSession({
+        config: {
+          ...makeConfig("/tmp/test-session"),
+          provider: "codex-cli",
+          model: "gpt-5.4",
+          preferredChildModel: "gpt-5-mini",
+          childModelRoutingMode: "cross-provider-allowlist",
+          preferredChildModelRef: "google:gemini-3.1-pro-preview",
+          allowedChildModelRefs: ["google:gemini-3.1-pro-preview"],
+        },
+        persistModelSelectionImpl,
+      });
+
+      await session.setModel("gpt-5.2", "openai");
+
+      const configEvent = session.getSessionConfigEvent();
+      expect(configEvent.config.preferredChildModel).toBe("gpt-5-mini");
+      expect(configEvent.config.childModelRoutingMode).toBe("cross-provider-allowlist");
+      expect(configEvent.config.preferredChildModelRef).toBe("google:gemini-3.1-pro-preview");
+      expect(configEvent.config.allowedChildModelRefs).toEqual(["google:gemini-3.1-pro-preview"]);
+      expect(persistModelSelectionImpl).toHaveBeenCalledWith({
+        provider: "openai",
+        model: "gpt-5.2",
+        preferredChildModel: "gpt-5-mini",
+        childModelRoutingMode: "cross-provider-allowlist",
+        preferredChildModelRef: "google:gemini-3.1-pro-preview",
+        allowedChildModelRefs: ["google:gemini-3.1-pro-preview"],
       });
     });
 

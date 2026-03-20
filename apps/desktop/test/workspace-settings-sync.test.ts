@@ -986,6 +986,7 @@ describe("workspace settings sync", () => {
         },
       },
     });
+    expect((threadSocket.sent[0] as any).config?.preferredChildModel).toBeUndefined();
   });
 
   test("applyWorkspaceDefaultsToThread preserves an existing baseten workspace provider", async () => {

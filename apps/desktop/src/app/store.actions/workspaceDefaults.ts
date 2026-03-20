@@ -127,7 +127,8 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
     }
 
     if (
-      opts.desired.preferredChildModel
+      opts.desired.childModelRoutingMode !== "cross-provider-allowlist"
+      && opts.desired.preferredChildModel
       && opts.desired.preferredChildModel !== opts.current.sessionConfig?.preferredChildModel
     ) {
       configPatch.preferredChildModel = opts.desired.preferredChildModel;

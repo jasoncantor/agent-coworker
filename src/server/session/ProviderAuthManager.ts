@@ -112,9 +112,12 @@ export class ProviderAuthManager {
       model: resolvedModel.id,
       childModelRoutingMode: currentConfig.childModelRoutingMode,
       preferredChildModelRef:
-        currentConfig.provider !== nextProvider || currentConfig.preferredChildModel === currentConfig.model
+        currentConfig.childModelRoutingMode === "cross-provider-allowlist"
+          ? currentConfig.preferredChildModelRef
+          : currentConfig.provider !== nextProvider || currentConfig.preferredChildModel === currentConfig.model
           ? `${nextProvider}:${resolvedModel.id}`
           : currentConfig.preferredChildModelRef ?? currentConfig.preferredChildModel,
+      preferredChildModel: currentConfig.preferredChildModel,
       allowedChildModelRefs: currentConfig.allowedChildModelRefs,
       source: "model selection",
     });

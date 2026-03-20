@@ -82,6 +82,22 @@ export function legacyPreferredChildModelForProvider(
   }
 }
 
+function normalizeLegacyPreferredChildModel(
+  provider: ProviderName,
+  currentModel: string,
+  preferredChildModel?: string | null,
+): string {
+  const trimmed = preferredChildModel?.trim();
+  if (!trimmed) {
+    return currentModel;
+  }
+  try {
+    return normalizeModelIdForProvider(provider, trimmed, "preferred child model");
+  } catch {
+    return currentModel;
+  }
+}
+
 export function normalizeChildRoutingConfig(opts: {
   provider: ProviderName;
   model: string;
@@ -107,32 +123,50 @@ export function normalizeChildRoutingConfig(opts: {
     opts.provider,
     `${source} allowlist entry`,
   );
+  const preferredChildModel = normalizeLegacyPreferredChildModel(
+    opts.provider,
+    fallbackModelId,
+    opts.preferredChildModel,
+  );
 
   let preferredRef = fallbackRef;
   const rawPreferredRef = typeof opts.preferredChildModelRef === "string" && opts.preferredChildModelRef.trim()
     ? opts.preferredChildModelRef.trim()
-    : typeof opts.preferredChildModel === "string" && opts.preferredChildModel.trim()
-      ? opts.preferredChildModel.trim()
-      : undefined;
-
-  if (rawPreferredRef) {
-    preferredRef = parseChildModelRef(rawPreferredRef, opts.provider, `${source} preferred child target`).ref;
-  }
+    : undefined;
 
   if (mode === "cross-provider-allowlist") {
+    if (rawPreferredRef) {
+      try {
+        preferredRef = parseChildModelRef(rawPreferredRef, opts.provider, `${source} preferred child target`).ref;
+      } catch {
+        preferredRef = fallbackRef;
+      }
+    }
     if (allowedChildModelRefs.length > 0) {
       preferredRef = allowedChildModelRefs.includes(preferredRef) ? preferredRef : allowedChildModelRefs[0]!;
     } else {
       preferredRef = fallbackRef;
     }
   } else {
+    const rawPreferredTarget = rawPreferredRef
+      ?? (typeof opts.preferredChildModel === "string" && opts.preferredChildModel.trim()
+        ? opts.preferredChildModel.trim()
+        : undefined);
+    if (rawPreferredTarget) {
+      preferredRef = parseChildModelRef(rawPreferredTarget, opts.provider, `${source} preferred child target`).ref;
+    }
     const parsedPreferred = parseChildModelRef(preferredRef, opts.provider, `${source} preferred child target`);
     preferredRef = parsedPreferred.provider === opts.provider ? parsedPreferred.ref : fallbackRef;
   }
 
   return {
     childModelRoutingMode: mode,
-    preferredChildModel: legacyPreferredChildModelForProvider(opts.provider, opts.model, preferredRef),
+    preferredChildModel:
+      mode === "cross-provider-allowlist"
+        ? (typeof opts.preferredChildModel === "string" && opts.preferredChildModel.trim()
+            ? preferredChildModel
+            : legacyPreferredChildModelForProvider(opts.provider, opts.model, preferredRef))
+        : legacyPreferredChildModelForProvider(opts.provider, opts.model, preferredRef),
     preferredChildModelRef: preferredRef,
     allowedChildModelRefs,
   };
