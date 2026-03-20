@@ -174,6 +174,11 @@ const desktopApi = Object.freeze<DesktopApi>({
     return ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.readTranscript, opts);
   },
 
+  hydrateTranscript: (opts: ReadTranscriptInput) => {
+    assertReadTranscriptInput(opts);
+    return ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.hydrateTranscript, opts);
+  },
+
   appendTranscriptEvent: (opts: TranscriptBatchInput) => {
     assertTranscriptBatchInput(opts);
     return ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.appendTranscriptEvent, opts);

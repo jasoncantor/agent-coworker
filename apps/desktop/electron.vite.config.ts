@@ -7,6 +7,9 @@ import tailwindcss from "@tailwindcss/vite";
 
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(appRoot, "../..");
+const coworkAlias = {
+  "@cowork": path.resolve(repoRoot, "src"),
+};
 const defaultDesktopRendererPort = 1420;
 
 function resolveDesktopRendererPort(value: string | undefined): number {
@@ -29,6 +32,9 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     future: "warn",
+    resolve: {
+      alias: coworkAlias,
+    },
     build: {
       outDir: "out/main",
       rollupOptions: {
@@ -39,6 +45,9 @@ export default defineConfig({
   preload: {
     plugins: [externalizeDepsPlugin({ exclude: ["zod"] })],
     future: "warn",
+    resolve: {
+      alias: coworkAlias,
+    },
     build: {
       // Sandboxed preloads cannot rely on arbitrary runtime requires from node_modules.
       // Bundle preload deps so the desktop bridge stays available at startup.
@@ -61,7 +70,7 @@ export default defineConfig({
     resolve: {
       alias: {
         "@": path.resolve(appRoot, "src"),
-        "@cowork": path.resolve(repoRoot, "src"),
+        ...coworkAlias,
       },
     },
     server: {

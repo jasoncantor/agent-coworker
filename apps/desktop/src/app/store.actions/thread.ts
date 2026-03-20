@@ -1,20 +1,7 @@
 import { defaultModelForProvider } from "@cowork/providers/catalog";
 import { z } from "zod";
 
-import {
-  deleteTranscript,
-  listDirectory,
-  loadState,
-  pickWorkspaceDirectory,
-  readTranscript,
-  stopWorkspaceServer,
-  openPath,
-  revealPath,
-  copyPath,
-  createDirectory,
-  renamePath,
-  trashPath,
-} from "../../lib/desktopCommands";
+import * as desktopCommands from "../../lib/desktopCommands";
 import type { ProviderName } from "../../lib/wsProtocol";
 
 import {
@@ -24,9 +11,10 @@ import {
   RUNTIME,
   appendThreadTranscript,
   basename,
+  beginThreadSelectionRequest,
   buildContextPreamble,
   clearPendingThreadSteers,
-  extractAgentStateFromTranscript,
+  clearThreadSelectionRequest,
   extractUsageStateFromTranscript,
   ensureControlSocket,
   ensureServerRunning,
@@ -34,8 +22,8 @@ import {
   ensureThreadSocket,
   ensureWorkspaceRuntime,
   isProviderName,
+  isCurrentThreadSelectionRequest,
   makeId,
-  mapTranscriptToFeed,
   nowIso,
   persistNow,
   providerAuthMethodsFor,
@@ -48,9 +36,51 @@ import {
   syncDesktopStateCache,
   truncateTitle,
 } from "../store.helpers";
+import { hydrateTranscriptSnapshot } from "../transcriptHydration";
 import type { ThreadBusyPolicy, ThreadRecord, WorkspaceRecord } from "../types";
 
 export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "removeThread" | "deleteThreadHistory" | "renameThread" | "newThread" | "selectThread" | "reconnectThread" | "sendMessage" | "cancelThread" | "clearThreadUsageHardCap" | "setThreadModel" | "setComposerText" | "setInjectContext" | "answerAsk" | "answerApproval" | "dismissPrompt" | "loadAllThreadUsage"> {
+  const waitForSelectionFrame = async () => {
+    await new Promise<void>((resolve) => {
+      if (typeof window === "undefined") {
+        setTimeout(resolve, 0);
+        return;
+      }
+
+      const schedule = typeof window.requestAnimationFrame === "function"
+        ? window.requestAnimationFrame.bind(window)
+        : (callback: FrameRequestCallback) => setTimeout(() => callback(Date.now()), 0);
+
+      schedule(() => {
+        setTimeout(resolve, 0);
+      });
+    });
+  };
+
+  const isSelectionCurrent = (threadId: string, requestId: number) =>
+    get().selectedThreadId === threadId && isCurrentThreadSelectionRequest(threadId, requestId);
+
+  const clearThreadHydrationIfCurrent = (threadId: string, requestId: number) => {
+    if (!isCurrentThreadSelectionRequest(threadId, requestId)) {
+      return;
+    }
+    set((s) => {
+      const rt = s.threadRuntimeById[threadId];
+      if (!rt) return {};
+      return {
+        threadRuntimeById: {
+          ...s.threadRuntimeById,
+          [threadId]: {
+            ...rt,
+            hydrating: false,
+            transcriptOnly: false,
+          },
+        },
+      };
+    });
+    clearThreadSelectionRequest(threadId, requestId);
+  };
+
   const closeThreadSession = (threadId: string) => {
     sendThread(get, threadId, (sessionId) => ({ type: "session_close", sessionId }));
   };
@@ -65,6 +95,7 @@ export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStore
       RUNTIME.pendingWorkspaceDefaultApplyThreadIds.delete(threadId);
       RUNTIME.pendingWorkspaceDefaultApplyModeByThread.delete(threadId);
       RUNTIME.modelStreamByThread.delete(threadId);
+      RUNTIME.threadSelectionRequests.delete(threadId);
       clearPendingThreadSteers(threadId);
       try {
         sock?.close();
@@ -89,7 +120,7 @@ export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStore
       });
   
       try {
-        await deleteTranscript({ threadId });
+        await desktopCommands.deleteTranscript({ threadId });
       } catch {
         // ignore
       }
@@ -222,41 +253,69 @@ export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStore
   
 
     selectThread: async (threadId: string) => {
-      set({ selectedThreadId: threadId, view: "chat" });
-      syncDesktopStateCache(get);
-      ensureThreadRuntime(get, set, threadId);
-  
       const thread = get().threads.find((t) => t.id === threadId);
       if (!thread) return;
-  
+
+      ensureThreadRuntime(get, set, threadId);
       const rt = get().threadRuntimeById[threadId];
+      if (get().selectedThreadId === threadId && (RUNTIME.threadSelectionRequests.has(threadId) || RUNTIME.threadSockets.has(threadId))) {
+        return;
+      }
+
       const alreadyLoaded = rt?.feed && rt.feed.length > 0;
-      if (!alreadyLoaded) {
-        set((s) => ({
-          threadRuntimeById: {
-            ...s.threadRuntimeById,
-            [threadId]: { ...s.threadRuntimeById[threadId], hydrating: true },
+
+      const requestId = beginThreadSelectionRequest(threadId);
+      set((s) => ({
+        selectedThreadId: threadId,
+        selectedWorkspaceId: thread.workspaceId,
+        view: "chat",
+        threadRuntimeById: {
+          ...s.threadRuntimeById,
+          [threadId]: {
+            ...s.threadRuntimeById[threadId],
+            hydrating: !alreadyLoaded,
+            transcriptOnly: false,
           },
-        }));
+        },
+      }));
+      syncDesktopStateCache(get);
+
+      await waitForSelectionFrame();
+      if (!isSelectionCurrent(threadId, requestId)) {
+        clearThreadHydrationIfCurrent(threadId, requestId);
+        return;
+      }
+
+      if (!alreadyLoaded) {
         try {
-          const transcript = await readTranscript({ threadId });
-          const feed = mapTranscriptToFeed(transcript);
-          const agents = extractAgentStateFromTranscript(transcript);
-          const usageState = extractUsageStateFromTranscript(transcript);
+          const snapshot = typeof desktopCommands.hydrateTranscript === "function"
+            ? await desktopCommands.hydrateTranscript({ threadId })
+            : hydrateTranscriptSnapshot(await desktopCommands.readTranscript({ threadId }));
+          if (!isSelectionCurrent(threadId, requestId)) {
+            clearThreadHydrationIfCurrent(threadId, requestId);
+            return;
+          }
+
           set((s) => ({
             threadRuntimeById: {
               ...s.threadRuntimeById,
               [threadId]: {
                 ...s.threadRuntimeById[threadId],
-                ...usageState,
-                agents,
-                feed,
+                sessionUsage: snapshot.sessionUsage,
+                lastTurnUsage: snapshot.lastTurnUsage,
+                agents: snapshot.agents,
+                feed: snapshot.feed,
                 hydrating: false,
                 transcriptOnly: false,
               },
             },
           }));
         } catch (error) {
+          if (!isSelectionCurrent(threadId, requestId)) {
+            clearThreadHydrationIfCurrent(threadId, requestId);
+            return;
+          }
+
           const detail = error instanceof Error ? error.message : String(error);
           set((s) => ({
             notifications: pushNotification(s.notifications, {
@@ -267,28 +326,42 @@ export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStore
               detail,
             }),
           }));
+          clearThreadHydrationIfCurrent(threadId, requestId);
+          return;
         }
       }
-  
+
+      if (!isSelectionCurrent(threadId, requestId)) {
+        clearThreadHydrationIfCurrent(threadId, requestId);
+        return;
+      }
+
       set((s) => ({
         threadRuntimeById: {
           ...s.threadRuntimeById,
           [threadId]: { ...s.threadRuntimeById[threadId], hydrating: false, transcriptOnly: false },
         },
       }));
-  
-      await get().reconnectThread(threadId);
+
+      await get().reconnectThread(threadId, undefined, { selectionRequestId: requestId });
+      clearThreadSelectionRequest(threadId, requestId);
     },
   
 
-    reconnectThread: async (threadId: string, firstMessage?: string) => {
+    reconnectThread: async (threadId: string, firstMessage?: string, opts?: { selectionRequestId?: number }) => {
+      const isReconnectCurrent = () =>
+        opts?.selectionRequestId === undefined
+        || (get().selectedThreadId === threadId && isCurrentThreadSelectionRequest(threadId, opts.selectionRequestId));
+
       ensureThreadRuntime(get, set, threadId);
   
       const thread = get().threads.find((t) => t.id === threadId);
       if (!thread) return;
   
       await get().selectWorkspace(thread.workspaceId);
+      if (!isReconnectCurrent()) return;
       await ensureServerRunning(get, set, thread.workspaceId);
+      if (!isReconnectCurrent()) return;
       ensureControlSocket(get, set, thread.workspaceId);
   
       const url = get().workspaceRuntimeById[thread.workspaceId]?.serverUrl;
@@ -304,6 +377,7 @@ export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStore
         }));
         return;
       }
+      if (!isReconnectCurrent()) return;
   
       if (firstMessage && firstMessage.trim()) {
         queuePendingThreadMessage(threadId, firstMessage);
@@ -443,7 +517,7 @@ export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStore
           if (rt?.sessionUsage !== undefined && rt.sessionUsage !== null) return;
 
           try {
-            const transcript = await readTranscript({ threadId: thread.id });
+            const transcript = await desktopCommands.readTranscript({ threadId: thread.id });
             const usageState = extractUsageStateFromTranscript(transcript);
             if (!usageState.sessionUsage) return; // No usage in this thread
 

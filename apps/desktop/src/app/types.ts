@@ -279,6 +279,13 @@ export type ThreadRuntime = {
   transcriptOnly: boolean;
 };
 
+export type HydratedTranscriptSnapshot = {
+  feed: FeedItem[];
+  agents: ThreadAgentSummary[];
+  sessionUsage: SessionUsageSnapshot | null;
+  lastTurnUsage: TurnUsageSnapshot | null;
+};
+
 export type ConnectDraft = {
   provider: ProviderName;
   apiKey: string;

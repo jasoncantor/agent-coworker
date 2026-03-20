@@ -32,9 +32,33 @@ class MockAgentSocket {
   }
 }
 
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error: unknown) => void;
+};
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushAsyncWork(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 const MOCK_SOCKETS: MockAgentSocket[] = [];
 let mockedTranscript: any[] = [];
 let mockedTranscriptError: Error | null = null;
+let readTranscriptImpl: ((threadId: string) => Promise<any[]>) | null = null;
+const readTranscriptCalls: string[] = [];
 const MOCK_SYSTEM_APPEARANCE = {
   platform: "linux",
   themeSource: "system",
@@ -61,7 +85,11 @@ mock.module("../src/lib/desktopCommands", () => ({
   listDirectory: async () => [],
   loadState: async () => ({ version: 1, workspaces: [], threads: [] }),
   pickWorkspaceDirectory: async () => null,
-  readTranscript: async () => {
+  readTranscript: async ({ threadId }: { threadId: string }) => {
+    readTranscriptCalls.push(threadId);
+    if (readTranscriptImpl) {
+      return await readTranscriptImpl(threadId);
+    }
     if (mockedTranscriptError) {
       throw mockedTranscriptError;
     }
@@ -137,11 +165,14 @@ describe("thread reconnect", () => {
     MOCK_SOCKETS.length = 0;
     mockedTranscript = [];
     mockedTranscriptError = null;
+    readTranscriptImpl = null;
+    readTranscriptCalls.length = 0;
     RUNTIME.controlSockets.clear();
     RUNTIME.threadSockets.clear();
     RUNTIME.optimisticUserMessageIds.clear();
     RUNTIME.pendingThreadMessages.clear();
     RUNTIME.pendingThreadSteers.clear();
+    RUNTIME.threadSelectionRequests.clear();
     RUNTIME.pendingWorkspaceDefaultApplyThreadIds.clear();
     RUNTIME.pendingWorkspaceDefaultApplyModeByThread.clear();
     RUNTIME.workspaceStartPromises.clear();
@@ -201,6 +232,57 @@ describe("thread reconnect", () => {
     expect(state.threadRuntimeById[threadId]?.connected).toBe(true);
     expect(state.threadRuntimeById[threadId]?.sessionId).toBe("thread-session");
     expect(state.threadRuntimeById[threadId]?.transcriptOnly).toBe(false);
+  });
+
+  test("rapid thread switching ignores stale transcript hydration and reconnect", async () => {
+    const secondThreadId = `t-${crypto.randomUUID()}`;
+    useAppStore.setState((state) => ({
+      ...state,
+      threads: [
+        ...state.threads,
+        {
+          id: secondThreadId,
+          workspaceId,
+          title: "Thread 2",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          lastMessageAt: "2024-01-01T00:00:00.000Z",
+          status: "disconnected",
+        },
+      ],
+    }));
+
+    const transcriptDeferreds = new Map<string, Deferred<any[]>>([
+      [threadId, createDeferred<any[]>()],
+      [secondThreadId, createDeferred<any[]>()],
+    ]);
+    readTranscriptImpl = async (targetThreadId) => await transcriptDeferreds.get(targetThreadId)!.promise;
+
+    const firstSelect = useAppStore.getState().selectThread(threadId);
+    await flushAsyncWork();
+    expect(readTranscriptCalls).toEqual([threadId]);
+    expect(useAppStore.getState().threadRuntimeById[threadId]?.hydrating).toBe(true);
+
+    const secondSelect = useAppStore.getState().selectThread(secondThreadId);
+    await flushAsyncWork();
+    expect(readTranscriptCalls).toEqual([threadId, secondThreadId]);
+    expect(useAppStore.getState().selectedThreadId).toBe(secondThreadId);
+    expect(useAppStore.getState().threadRuntimeById[secondThreadId]?.hydrating).toBe(true);
+
+    transcriptDeferreds.get(secondThreadId)!.resolve([]);
+    await secondSelect;
+
+    const threadSocketsAfterLatestSelect = MOCK_SOCKETS.filter((socket) => socket.opts.client === "desktop");
+    expect(threadSocketsAfterLatestSelect).toHaveLength(1);
+    const latestSocket = threadSocketsAfterLatestSelect[0];
+    expect(latestSocket?.opts.resumeSessionId).toBeUndefined();
+
+    transcriptDeferreds.get(threadId)!.resolve([]);
+    await firstSelect;
+
+    expect(MOCK_SOCKETS.filter((socket) => socket.opts.client === "desktop")).toHaveLength(1);
+    expect(useAppStore.getState().selectedThreadId).toBe(secondThreadId);
+    expect(useAppStore.getState().threadRuntimeById[threadId]?.hydrating).toBe(false);
+    expect(useAppStore.getState().threadRuntimeById[secondThreadId]?.hydrating).toBe(false);
   });
 
   test("resumed threads do not replay workspace default set_model on reconnect", async () => {

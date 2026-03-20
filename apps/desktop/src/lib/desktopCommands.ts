@@ -1,4 +1,4 @@
-import type { PersistedState, TranscriptEvent } from "../app/types";
+import type { HydratedTranscriptSnapshot, PersistedState, TranscriptEvent } from "../app/types";
 import type {
   ConfirmActionInput,
   DesktopMenuCommand,
@@ -39,6 +39,10 @@ export async function saveState(state: PersistedState): Promise<void> {
 
 export async function readTranscript(opts: { threadId: string }): Promise<TranscriptEvent[]> {
   return await requireDesktopApi().readTranscript(opts);
+}
+
+export async function hydrateTranscript(opts: { threadId: string }): Promise<HydratedTranscriptSnapshot> {
+  return await requireDesktopApi().hydrateTranscript(opts);
 }
 
 export async function appendTranscriptEvent(opts: {

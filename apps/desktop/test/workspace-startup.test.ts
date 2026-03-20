@@ -128,6 +128,7 @@ describe("workspace startup flow", () => {
     RUNTIME.threadSockets.clear();
     RUNTIME.optimisticUserMessageIds.clear();
     RUNTIME.pendingThreadMessages.clear();
+    RUNTIME.threadSelectionRequests.clear();
     RUNTIME.pendingWorkspaceDefaultApplyThreadIds.clear();
     RUNTIME.pendingWorkspaceDefaultApplyModeByThread.clear();
     RUNTIME.workspaceStartPromises.clear();

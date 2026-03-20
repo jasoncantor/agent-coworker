@@ -36,9 +36,12 @@ import {
   defaultWorkspaceRuntime,
   clearPendingThreadSteer,
   clearPendingThreadSteers,
+  clearThreadSelectionRequest,
+  beginThreadSelectionRequest,
   ensureThreadRuntime,
   ensureWorkspaceRuntime,
   hasPendingThreadSteer,
+  isCurrentThreadSelectionRequest,
   getWorkspaceStartGeneration,
   markPendingThreadSteerAccepted,
   queuePendingThreadMessage,
@@ -200,7 +203,7 @@ export type AppStoreState = {
   removeThread: (threadId: string) => Promise<void>;
   deleteThreadHistory: (threadId: string) => Promise<void>;
   selectThread: (threadId: string) => Promise<void>;
-  reconnectThread: (threadId: string, firstMessage?: string) => Promise<void>;
+  reconnectThread: (threadId: string, firstMessage?: string, opts?: { selectionRequestId?: number }) => Promise<void>;
   renameThread: (threadId: string, newTitle: string) => void;
 
   sendMessage: (text: string, busyPolicy?: ThreadBusyPolicy) => Promise<void>;
@@ -427,11 +430,14 @@ export {
   providerAuthMethodsFor,
   defaultWorkspaceRuntime,
   defaultThreadRuntime,
+  beginThreadSelectionRequest,
   clearPendingThreadSteer,
   clearPendingThreadSteers,
+  clearThreadSelectionRequest,
   ensureWorkspaceRuntime,
   ensureThreadRuntime,
   hasPendingThreadSteer,
+  isCurrentThreadSelectionRequest,
   mapTranscriptToFeed,
   markPendingThreadSteerAccepted,
   persist,

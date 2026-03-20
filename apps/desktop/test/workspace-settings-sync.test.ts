@@ -136,6 +136,7 @@ describe("workspace settings sync", () => {
     RUNTIME.threadSockets.clear();
     RUNTIME.optimisticUserMessageIds.clear();
     RUNTIME.pendingThreadMessages.clear();
+    RUNTIME.threadSelectionRequests.clear();
     RUNTIME.pendingWorkspaceDefaultApplyThreadIds.clear();
     RUNTIME.pendingWorkspaceDefaultApplyModeByThread.clear();
     RUNTIME.workspaceStartPromises.clear();
@@ -425,6 +426,7 @@ describe("workspace settings sync", () => {
 
     await useAppStore.getState().init();
     await flushAsyncWork();
+    await flushAsyncWork();
 
     const state = useAppStore.getState();
     expect(state.selectedWorkspaceId).toBe("ws-load");
@@ -489,6 +491,7 @@ describe("workspace settings sync", () => {
     };
 
     await useAppStore.getState().init();
+    await flushAsyncWork();
     await flushAsyncWork();
 
     const state = useAppStore.getState();

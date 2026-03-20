@@ -1,6 +1,6 @@
 import desktopPackage from "../../package.json";
 
-import type { PersistedState, TranscriptEvent } from "../app/types";
+import type { HydratedTranscriptSnapshot, PersistedState, TranscriptEvent } from "../app/types";
 
 export type StartWorkspaceServerInput = {
   workspaceId: string;
@@ -194,6 +194,7 @@ export interface DesktopApi {
   loadState(): Promise<PersistedState>;
   saveState(state: PersistedState): Promise<void>;
   readTranscript(opts: ReadTranscriptInput): Promise<TranscriptEvent[]>;
+  hydrateTranscript(opts: ReadTranscriptInput): Promise<HydratedTranscriptSnapshot>;
   appendTranscriptEvent(opts: TranscriptBatchInput): Promise<void>;
   appendTranscriptBatch(events: TranscriptBatchInput[]): Promise<void>;
   deleteTranscript(opts: DeleteTranscriptInput): Promise<void>;
@@ -230,6 +231,7 @@ export const DESKTOP_IPC_CHANNELS = {
   loadState: "desktop:loadState",
   saveState: "desktop:saveState",
   readTranscript: "desktop:readTranscript",
+  hydrateTranscript: "desktop:hydrateTranscript",
   appendTranscriptEvent: "desktop:appendTranscriptEvent",
   appendTranscriptBatch: "desktop:appendTranscriptBatch",
   deleteTranscript: "desktop:deleteTranscript",

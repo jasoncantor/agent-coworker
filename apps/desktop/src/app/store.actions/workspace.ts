@@ -126,6 +126,7 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
         RUNTIME.threadSockets.delete(thread.id);
         RUNTIME.optimisticUserMessageIds.delete(thread.id);
         RUNTIME.pendingThreadMessages.delete(thread.id);
+        RUNTIME.threadSelectionRequests.delete(thread.id);
         RUNTIME.pendingWorkspaceDefaultApplyThreadIds.delete(thread.id);
         RUNTIME.pendingWorkspaceDefaultApplyModeByThread.delete(thread.id);
         RUNTIME.modelStreamByThread.delete(thread.id);
@@ -212,6 +213,7 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
         closeThreadSession(thread.id);
         sock?.close();
         RUNTIME.threadSockets.delete(thread.id);
+        RUNTIME.threadSelectionRequests.delete(thread.id);
         RUNTIME.pendingWorkspaceDefaultApplyThreadIds.delete(thread.id);
         RUNTIME.pendingWorkspaceDefaultApplyModeByThread.delete(thread.id);
       }

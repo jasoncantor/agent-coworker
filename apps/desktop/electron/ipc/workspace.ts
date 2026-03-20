@@ -2,6 +2,7 @@ import { BrowserWindow, dialog } from "electron";
 import { z } from "zod";
 
 import type { PersistedState } from "../../src/app/types";
+import { hydrateTranscriptSnapshot } from "../../src/app/transcriptHydration";
 import {
   DESKTOP_IPC_CHANNELS,
   type DeleteTranscriptInput,
@@ -65,6 +66,12 @@ export function registerWorkspaceIpc(context: DesktopIpcModuleContext): void {
   handleDesktopInvoke(DESKTOP_IPC_CHANNELS.readTranscript, async (_event, args: ReadTranscriptInput) => {
     const input = parseWithSchema(readTranscriptInputSchema, args, "readTranscript options");
     return await deps.persistence.readTranscript(input.threadId);
+  });
+
+  handleDesktopInvoke(DESKTOP_IPC_CHANNELS.hydrateTranscript, async (_event, args: ReadTranscriptInput) => {
+    const input = parseWithSchema(readTranscriptInputSchema, args, "hydrateTranscript options");
+    const transcript = await deps.persistence.readTranscript(input.threadId);
+    return hydrateTranscriptSnapshot(transcript);
   });
 
   handleDesktopInvoke(DESKTOP_IPC_CHANNELS.appendTranscriptEvent, async (_event, args: TranscriptBatchInput) => {

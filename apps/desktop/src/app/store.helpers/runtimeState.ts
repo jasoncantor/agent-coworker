@@ -22,6 +22,8 @@ export type RuntimeMaps = {
   optimisticUserMessageIds: Map<string, Set<string>>;
   pendingThreadMessages: Map<string, string[]>;
   pendingThreadSteers: Map<string, Map<string, PendingThreadSteer>>;
+  threadSelectionRequests: Map<string, number>;
+  nextThreadSelectionRequestId: number;
   pendingWorkspaceDefaultApplyThreadIds: Set<string>;
   pendingWorkspaceDefaultApplyModeByThread: Map<string, WorkspaceDefaultApplyMode>;
   workspaceStartPromises: Map<string, { generation: number; promise: Promise<void> }>;
@@ -36,6 +38,8 @@ export const RUNTIME: RuntimeMaps = {
   optimisticUserMessageIds: new Map(),
   pendingThreadMessages: new Map(),
   pendingThreadSteers: new Map(),
+  threadSelectionRequests: new Map(),
+  nextThreadSelectionRequestId: 0,
   pendingWorkspaceDefaultApplyThreadIds: new Set(),
   pendingWorkspaceDefaultApplyModeByThread: new Map(),
   workspaceStartPromises: new Map(),
@@ -116,6 +120,24 @@ export function clearPendingThreadSteer(threadId: string, clientMessageId: strin
 
 export function clearPendingThreadSteers(threadId: string) {
   RUNTIME.pendingThreadSteers.delete(threadId);
+}
+
+export function beginThreadSelectionRequest(threadId: string): number {
+  const next = RUNTIME.nextThreadSelectionRequestId + 1;
+  RUNTIME.nextThreadSelectionRequestId = next;
+  RUNTIME.threadSelectionRequests.set(threadId, next);
+  return next;
+}
+
+export function isCurrentThreadSelectionRequest(threadId: string, requestId: number): boolean {
+  return RUNTIME.threadSelectionRequests.get(threadId) === requestId;
+}
+
+export function clearThreadSelectionRequest(threadId: string, requestId?: number): void {
+  if (requestId !== undefined && !isCurrentThreadSelectionRequest(threadId, requestId)) {
+    return;
+  }
+  RUNTIME.threadSelectionRequests.delete(threadId);
 }
 
 export function defaultWorkspaceRuntime(): WorkspaceRuntime {
