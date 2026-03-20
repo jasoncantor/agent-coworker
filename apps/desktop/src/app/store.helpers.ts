@@ -199,7 +199,7 @@ export type AppStoreState = {
   selectWorkspace: (workspaceId: string) => Promise<void>;
   reorderWorkspaces: (sourceWorkspaceId: string, targetWorkspaceId: string) => Promise<void>;
 
-  newThread: (opts?: { workspaceId?: string; titleHint?: string; firstMessage?: string }) => Promise<void>;
+  newThread: (opts?: { workspaceId?: string; titleHint?: string; firstMessage?: string; mode?: "draft" | "session" }) => Promise<void>;
   removeThread: (threadId: string) => Promise<void>;
   deleteThreadHistory: (threadId: string) => Promise<void>;
   selectThread: (threadId: string) => Promise<void>;
@@ -322,7 +322,7 @@ function pushNotification(notifications: Notification[], entry: Notification): N
 }
 
 const { appendThreadTranscript } = createTranscriptBuffer({ nowIso });
-const { ensureControlSocket, waitForControlSession, sendControl } = createControlSocketHelpers({
+const { ensureControlSocket, waitForControlSession, sendControl, requestWorkspaceSessions, requestSessionSnapshot } = createControlSocketHelpers({
   nowIso,
   makeId,
   persist,
@@ -447,6 +447,8 @@ export {
   ensureServerRunning,
   ensureControlSocket,
   waitForControlSession,
+  requestWorkspaceSessions,
+  requestSessionSnapshot,
   ensureThreadSocket,
   sendControl,
   sendThread,

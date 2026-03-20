@@ -21,7 +21,8 @@ import { resolveAuthHomeDir } from "../utils/authHome";
 
 import { AgentControl } from "./agents/AgentControl";
 import { AgentSession } from "./session/AgentSession";
-import { SessionDb } from "./sessionDb";
+import { createLegacySessionSnapshot } from "./session/SessionSnapshotProjector";
+import { SessionDb, type PersistedSessionRecord } from "./sessionDb";
 import { WorkspaceBackupService } from "./workspaceBackups";
 import {
   WEBSOCKET_PROTOCOL_VERSION,
@@ -430,6 +431,9 @@ export async function startAgentServer(
         checkpointId: string;
       }) =>
         await workspaceBackupService.getCheckpointDelta(opts.workingDirectory, opts.targetSessionId, opts.checkpointId),
+      getLiveSessionSnapshotImpl: (sessionId: string) => sessionBindings.get(sessionId)?.session?.buildSessionSnapshot() ?? null,
+      buildLegacySessionSnapshotImpl: (record: import("./sessionDb").PersistedSessionRecord) =>
+        createLegacySessionSnapshot(record),
     };
   };
 
@@ -449,6 +453,21 @@ export async function startAgentServer(
       binding.socket?.close();
     } catch {
       // ignore
+    }
+  };
+
+  const loadInitialSessionSnapshot = (persisted: PersistedSessionRecord) => {
+    try {
+      const snapshot = sessionDb.getSessionSnapshot(persisted.sessionId);
+      if (!snapshot) {
+        return createLegacySessionSnapshot(persisted);
+      }
+      if (snapshot.lastEventSeq < persisted.lastEventSeq) {
+        return createLegacySessionSnapshot(persisted);
+      }
+      return snapshot;
+    } catch {
+      return createLegacySessionSnapshot(persisted);
     }
   };
 
@@ -472,6 +491,7 @@ export async function startAgentServer(
         const common = buildSessionCommon(binding, persisted.sessionKind);
         const session = AgentSession.fromPersisted({
           persisted,
+          initialSessionSnapshot: loadInitialSessionSnapshot(persisted),
           baseConfig: { ...config },
           ...common,
         });

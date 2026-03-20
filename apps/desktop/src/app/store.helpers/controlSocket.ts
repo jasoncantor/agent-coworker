@@ -4,7 +4,7 @@ import type { ClientMessage, ProviderName, ServerEvent } from "../../lib/wsProto
 import type { StoreGet, StoreSet } from "../store.helpers";
 import { normalizeWorkspaceProviderOptions } from "../openaiCompatibleProviderOptions";
 import { normalizeWorkspaceUserProfile } from "../types";
-import type { Notification } from "../types";
+import type { Notification, SessionSnapshot, ThreadRecord } from "../types";
 import { RUNTIME } from "./runtimeState";
 
 type ProviderStatusEvent = Extract<ServerEvent, { type: "provider_status" }>;
@@ -33,8 +33,20 @@ type ControlSocketDeps = {
   isProviderName: (value: unknown) => value is ProviderName;
 };
 
-export function createControlSocketHelpers(deps: ControlSocketDeps) {
+type ControlSocketHelperOptions = {
+  requestTimeoutMs?: number;
+};
+
+const REQUEST_TIMEOUT_MS = 5_000;
+
+export function createControlSocketHelpers(
+  deps: ControlSocketDeps,
+  options: ControlSocketHelperOptions = {},
+) {
   const controlSessionWaiters = new Map<string, Set<(sessionId: string | null) => void>>();
+  const workspaceSessionWaiters = new Map<string, Set<(sessions: Extract<ServerEvent, { type: "sessions" }>["sessions"] | null) => void>>();
+  const sessionSnapshotWaiters = new Map<string, Set<(snapshot: SessionSnapshot | null) => void>>();
+  const requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
 
   function resolveControlSessionWaiters(workspaceId: string, sessionId: string | null) {
     const waiters = controlSessionWaiters.get(workspaceId);
@@ -43,6 +55,211 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
     for (const resolve of waiters) {
       resolve(sessionId);
     }
+  }
+
+  function snapshotWaiterKey(workspaceId: string, sessionId: string): string {
+    return `${workspaceId}:${sessionId}`;
+  }
+
+  function registerWaiter<T>(
+    waitersByKey: Map<string, Set<(value: T | null) => void>>,
+    key: string,
+    resolve: (value: T | null) => void,
+  ): () => void {
+    const waiters = waitersByKey.get(key) ?? new Set();
+    waiters.add(resolve);
+    waitersByKey.set(key, waiters);
+    return () => {
+      const existing = waitersByKey.get(key);
+      if (!existing) return;
+      existing.delete(resolve);
+      if (existing.size === 0) {
+        waitersByKey.delete(key);
+      }
+    };
+  }
+
+  function resolveWorkspaceSessionWaiters(
+    workspaceId: string,
+    sessions: Extract<ServerEvent, { type: "sessions" }>["sessions"] | null,
+  ) {
+    const waiters = workspaceSessionWaiters.get(workspaceId);
+    if (!waiters || waiters.size === 0) return;
+    workspaceSessionWaiters.delete(workspaceId);
+    for (const resolve of waiters) {
+      resolve(sessions);
+    }
+  }
+
+  function resolveSessionSnapshotWaiters(
+    workspaceId: string,
+    targetSessionId: string,
+    snapshot: SessionSnapshot | null,
+  ) {
+    const key = snapshotWaiterKey(workspaceId, targetSessionId);
+    const waiters = sessionSnapshotWaiters.get(key);
+    if (!waiters || waiters.size === 0) return;
+    sessionSnapshotWaiters.delete(key);
+    for (const resolve of waiters) {
+      resolve(snapshot);
+    }
+  }
+
+  function resolvePendingControlRequestWaitersOnError(
+    workspaceId: string,
+    evt: Extract<ServerEvent, { type: "error" }>,
+  ) {
+    if (evt.source !== "session") {
+      return;
+    }
+
+    const message = evt.message.toLowerCase();
+    if (message.includes("list sessions")) {
+      resolveWorkspaceSessionWaiters(workspaceId, null);
+    }
+
+    if (message.includes("snapshot") || message.includes("target session")) {
+      const targetSessionId = /^unknown target session:\s*(.+)$/i.exec(evt.message.trim())?.[1]?.trim();
+      if (targetSessionId) {
+        resolveSessionSnapshotWaiters(workspaceId, targetSessionId, null);
+      }
+    }
+  }
+
+  function upsertWorkspaceThreads(
+    allThreads: ThreadRecord[],
+    threadRuntimeById: ReturnType<StoreGet>["threadRuntimeById"],
+    workspaceId: string,
+    sessions: Extract<ServerEvent, { type: "sessions" }>["sessions"],
+  ): ThreadRecord[] {
+    const workspaceThreads = allThreads.filter((thread) => thread.workspaceId === workspaceId);
+    const serverBackedBySessionId = new Map<string, ThreadRecord>();
+    for (const thread of workspaceThreads) {
+      const runtimeSessionId = threadRuntimeById[thread.id]?.sessionId;
+      const candidateSessionIds = [thread.sessionId, runtimeSessionId, thread.id].filter(
+        (value): value is string => typeof value === "string" && value.trim().length > 0,
+      );
+      for (const candidateSessionId of candidateSessionIds) {
+        if (!serverBackedBySessionId.has(candidateSessionId)) {
+          serverBackedBySessionId.set(candidateSessionId, thread);
+        }
+      }
+    }
+    const localOnlyThreads = workspaceThreads.filter((thread) => !thread.sessionId);
+    const nextServerThreads = sessions.map((session) => {
+      const existing = serverBackedBySessionId.get(session.sessionId);
+      const threadId = session.sessionId;
+      const runtime = threadRuntimeById[threadId] ?? (existing ? threadRuntimeById[existing.id] : undefined);
+      return {
+        id: threadId,
+        workspaceId,
+        title: session.title,
+        titleSource: session.titleSource,
+        createdAt: session.createdAt,
+        lastMessageAt: session.updatedAt,
+        status: runtime?.connected ? "active" as const : "disconnected" as const,
+        sessionId: session.sessionId,
+        messageCount: session.messageCount,
+        lastEventSeq: session.lastEventSeq,
+        draft: false,
+        legacyTranscriptId:
+          existing?.legacyTranscriptId
+          ?? (existing && existing.id !== session.sessionId ? existing.id : null),
+        } satisfies ThreadRecord;
+    });
+    const claimedLegacyThreadIds = new Set(
+      nextServerThreads
+        .map((thread) => thread.legacyTranscriptId)
+        .filter((threadId): threadId is string => typeof threadId === "string" && threadId.trim().length > 0),
+    );
+    return [
+      ...allThreads.filter((thread) => thread.workspaceId !== workspaceId),
+      ...nextServerThreads.sort((left, right) => right.lastMessageAt.localeCompare(left.lastMessageAt)),
+      ...localOnlyThreads
+        .filter((thread) => thread.draft === true || !claimedLegacyThreadIds.has(thread.id))
+        .sort((left, right) => right.lastMessageAt.localeCompare(left.lastMessageAt)),
+    ];
+  }
+
+  function collectWorkspaceSessionCandidateIds(
+    allThreads: ThreadRecord[],
+    threadRuntimeById: ReturnType<StoreGet>["threadRuntimeById"],
+    workspaceId: string,
+  ): Set<string> {
+    const sessionIds = new Set<string>();
+    for (const thread of allThreads) {
+      if (thread.workspaceId !== workspaceId) continue;
+      const runtimeSessionId = threadRuntimeById[thread.id]?.sessionId;
+      for (const candidateSessionId of [thread.sessionId, runtimeSessionId, thread.id]) {
+        if (typeof candidateSessionId !== "string" || candidateSessionId.trim().length === 0) {
+          continue;
+        }
+        sessionIds.add(candidateSessionId);
+      }
+    }
+    return sessionIds;
+  }
+
+  function pruneRemovedWorkspaceSessionSnapshots(
+    allThreads: ThreadRecord[],
+    threadRuntimeById: ReturnType<StoreGet>["threadRuntimeById"],
+    workspaceId: string,
+    sessions: Extract<ServerEvent, { type: "sessions" }>["sessions"],
+  ): string[] {
+    const liveSessionIds = new Set(sessions.map((session) => session.sessionId));
+    const removedSessionIds: string[] = [];
+    for (const sessionId of collectWorkspaceSessionCandidateIds(allThreads, threadRuntimeById, workspaceId)) {
+      if (!liveSessionIds.has(sessionId) && RUNTIME.sessionSnapshots.has(sessionId)) {
+        removedSessionIds.push(sessionId);
+      }
+    }
+    return removedSessionIds;
+  }
+
+  function reconcileSelectedThreadId(
+    allThreads: ThreadRecord[],
+    nextThreads: ThreadRecord[],
+    workspaceId: string,
+    selectedWorkspaceId: string | null,
+    selectedThreadId: string | null,
+  ): string | null {
+    if (!selectedThreadId) {
+      return null;
+    }
+    if (nextThreads.some((thread) => thread.id === selectedThreadId)) {
+      return selectedThreadId;
+    }
+
+    const migratedThreadId = nextThreads.find((thread) => thread.legacyTranscriptId === selectedThreadId)?.id ?? null;
+    if (migratedThreadId) {
+      return migratedThreadId;
+    }
+
+    const fallbackWorkspaceId =
+      allThreads.find((thread) => thread.id === selectedThreadId)?.workspaceId
+      ?? selectedWorkspaceId
+      ?? workspaceId;
+    return nextThreads.find((thread) => thread.workspaceId === fallbackWorkspaceId)?.id ?? null;
+  }
+
+  function withTimeout<T>(
+    register: (resolve: (value: T | null) => void) => (() => void) | void,
+  ): Promise<T | null> {
+    return new Promise((resolve) => {
+      let settled = false;
+      let unregister: (() => void) | void;
+      const finish = (value: T | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+        unregister?.();
+      };
+      const timer = setTimeout(() => finish(null), requestTimeoutMs);
+      unregister = register((value) => {
+        finish(value);
+      });
+    });
   }
 
   function ensureControlSocket(get: StoreGet, set: StoreSet, workspaceId: string) {
@@ -131,6 +348,7 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
             socket.send({ type: "list_skills", sessionId: evt.sessionId });
             const selected = get().workspaceRuntimeById[workspaceId]?.selectedSkillName;
             if (selected) socket.send({ type: "read_skill", sessionId: evt.sessionId, skillName: selected });
+            socket.send({ type: "list_sessions", sessionId: evt.sessionId, scope: "workspace" });
             socket.send({ type: "provider_catalog_get", sessionId: evt.sessionId });
             socket.send({ type: "provider_auth_methods_get", sessionId: evt.sessionId });
             socket.send({ type: "refresh_provider_status", sessionId: evt.sessionId });
@@ -357,6 +575,48 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
           return;
         }
 
+        if (evt.type === "sessions") {
+          let removedSessionSnapshotIds: string[] = [];
+          set((s) => {
+            removedSessionSnapshotIds = pruneRemovedWorkspaceSessionSnapshots(
+              s.threads,
+              s.threadRuntimeById,
+              workspaceId,
+              evt.sessions,
+            );
+            const nextThreads = upsertWorkspaceThreads(
+              s.threads,
+              s.threadRuntimeById,
+              workspaceId,
+              evt.sessions,
+            );
+            const selectedThreadId = reconcileSelectedThreadId(
+              s.threads,
+              nextThreads,
+              workspaceId,
+              s.selectedWorkspaceId,
+              s.selectedThreadId,
+            );
+            return {
+              threads: nextThreads,
+              selectedThreadId,
+            };
+          });
+          if (removedSessionSnapshotIds.length > 0) {
+            for (const sessionId of removedSessionSnapshotIds) {
+              RUNTIME.sessionSnapshots.delete(sessionId);
+            }
+          }
+          void deps.persist(get);
+          resolveWorkspaceSessionWaiters(workspaceId, evt.sessions);
+          return;
+        }
+
+        if (evt.type === "session_snapshot") {
+          resolveSessionSnapshotWaiters(workspaceId, evt.targetSessionId, evt.snapshot);
+          return;
+        }
+
         if (evt.type === "provider_status") {
           const byName: Partial<Record<ProviderName, ProviderStatus>> = {};
           for (const p of evt.providers) byName[p.provider] = p;
@@ -443,6 +703,7 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
         }
 
         if (evt.type === "error") {
+          resolvePendingControlRequestWaitersOnError(workspaceId, evt);
           set((s) => {
             const workspaceRuntime = s.workspaceRuntimeById[workspaceId];
             const hasPendingMemories = workspaceRuntime.memoriesLoading;
@@ -505,6 +766,11 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
         }
         RUNTIME.controlSockets.delete(workspaceId);
         resolveControlSessionWaiters(workspaceId, null);
+        resolveWorkspaceSessionWaiters(workspaceId, null);
+        for (const key of [...sessionSnapshotWaiters.keys()]) {
+          if (!key.startsWith(`${workspaceId}:`)) continue;
+          resolveSessionSnapshotWaiters(workspaceId, key.slice(workspaceId.length + 1), null);
+        }
         set((s) => {
           const workspaceRuntime = s.workspaceRuntimeById[workspaceId];
           const hadPendingMemories = workspaceRuntime?.memoriesLoading ?? false;
@@ -583,9 +849,58 @@ export function createControlSocketHelpers(deps: ControlSocketDeps) {
     return sock.send(build(sessionId));
   }
 
+  async function requestWorkspaceSessions(
+    get: StoreGet,
+    set: StoreSet,
+    workspaceId: string,
+  ): Promise<Extract<ServerEvent, { type: "sessions" }>["sessions"] | null> {
+    ensureControlSocket(get, set, workspaceId);
+    const ready = await waitForControlSession(get, workspaceId);
+    const sessionId = get().workspaceRuntimeById[workspaceId]?.controlSessionId;
+    if (!ready || !sessionId) return null;
+    return await withTimeout((resolve) => {
+      const unregister = registerWaiter(workspaceSessionWaiters, workspaceId, resolve);
+      const socket = RUNTIME.controlSockets.get(workspaceId);
+      if (!socket?.send({ type: "list_sessions", sessionId, scope: "workspace" })) {
+        resolveWorkspaceSessionWaiters(workspaceId, null);
+      }
+      return unregister;
+    });
+  }
+
+  async function requestSessionSnapshot(
+    get: StoreGet,
+    set: StoreSet,
+    workspaceId: string,
+    targetSessionId: string,
+  ): Promise<SessionSnapshot | null> {
+    ensureControlSocket(get, set, workspaceId);
+    const ready = await waitForControlSession(get, workspaceId);
+    const sessionId = get().workspaceRuntimeById[workspaceId]?.controlSessionId;
+    if (!ready || !sessionId) return null;
+    return await withTimeout((resolve) => {
+      const key = snapshotWaiterKey(workspaceId, targetSessionId);
+      const unregister = registerWaiter(sessionSnapshotWaiters, key, resolve);
+      const socket = RUNTIME.controlSockets.get(workspaceId);
+      if (!socket?.send({ type: "get_session_snapshot", sessionId, targetSessionId })) {
+        resolveSessionSnapshotWaiters(workspaceId, targetSessionId, null);
+      }
+      return unregister;
+    });
+  }
+
   return {
     ensureControlSocket,
     waitForControlSession,
     sendControl,
+    requestWorkspaceSessions,
+    requestSessionSnapshot,
+    __internal: {
+      getPendingWaiterCounts: () => ({
+        controlSessionWaiters: [...controlSessionWaiters.values()].reduce((total, waiters) => total + waiters.size, 0),
+        workspaceSessionWaiters: [...workspaceSessionWaiters.values()].reduce((total, waiters) => total + waiters.size, 0),
+        sessionSnapshotWaiters: [...sessionSnapshotWaiters.values()].reduce((total, waiters) => total + waiters.size, 0),
+      }),
+    },
   };
 }

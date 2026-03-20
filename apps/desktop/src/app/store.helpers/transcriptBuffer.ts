@@ -22,6 +22,8 @@ export function createTranscriptBuffer(deps: TranscriptBufferDeps) {
     const batch = transcriptBuffer;
     transcriptBuffer = [];
     transcriptTimer = null;
+    // Session snapshots are the long-term history source, but transcript JSONL
+    // still backs compatibility paths like offline fallback hydration and usage.
     void appendTranscriptBatch(batch);
   }
 

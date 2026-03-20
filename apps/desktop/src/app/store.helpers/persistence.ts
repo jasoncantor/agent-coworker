@@ -4,6 +4,7 @@ import { normalizePersistedProviderUiState } from "../providerUiState";
 import { normalizePersistedProviderState } from "../persistedProviderState";
 import type { AppStoreState } from "../store.helpers";
 import type { CachedDesktopUiState, PersistedState } from "../types";
+import { RUNTIME } from "./runtimeState";
 
 const PERSIST_DEBOUNCE_MS = 300;
 const DESKTOP_CACHE_DEBOUNCE_MS = 120;
@@ -11,17 +12,33 @@ const DESKTOP_CACHE_DEBOUNCE_MS = 120;
 let _persistTimer: ReturnType<typeof setTimeout> | null = null;
 let _desktopCacheTimer: ReturnType<typeof setTimeout> | null = null;
 
+/**
+ * Filters out draft threads from persistence.
+ *
+ * Draft threads (thread.draft === true) are ephemeral UI-only threads that
+ * exist until the first message is sent. They are NOT persisted to disk,
+ * so if the app crashes or closes before the first message, the draft is lost.
+ * This is intentional to avoid accumulating empty threads.
+ *
+ * Note: Draft threads can still be selected in the UI. The draft flag only
+ * affects persistence, not runtime behavior.
+ */
+function buildPersistableThreads(state: AppStoreState) {
+  return state.threads.filter((thread) => thread.draft !== true);
+}
+
 function buildPersistedState(state: AppStoreState): PersistedState {
   const providerState = normalizePersistedProviderState({
     statusByName: state.providerStatusByName,
     statusLastUpdatedAt: state.providerStatusLastUpdatedAt,
   });
   const providerUiState = normalizePersistedProviderUiState(state.providerUiState);
+  const threads = buildPersistableThreads(state);
 
   return {
     version: 2,
     workspaces: state.workspaces,
-    threads: state.threads,
+    threads,
     developerMode: state.developerMode,
     showHiddenFiles: state.showHiddenFiles,
     perWorkspaceSettings: state.perWorkspaceSettings,
@@ -32,9 +49,15 @@ function buildPersistedState(state: AppStoreState): PersistedState {
 }
 
 function buildCachedDesktopUiState(state: AppStoreState): CachedDesktopUiState {
+  const persistedThreadIds = new Set(buildPersistableThreads(state).map((thread) => thread.id));
+  const selectedThreadId =
+    state.selectedThreadId && persistedThreadIds.has(state.selectedThreadId)
+      ? state.selectedThreadId
+      : null;
+
   return {
     selectedWorkspaceId: state.selectedWorkspaceId,
-    selectedThreadId: state.selectedThreadId,
+    selectedThreadId,
     view: state.view,
     settingsPage: state.settingsPage,
     lastNonSettingsView: state.lastNonSettingsView,
@@ -49,9 +72,10 @@ function buildCachedDesktopUiState(state: AppStoreState): CachedDesktopUiState {
 function syncDesktopStateCacheState(state: AppStoreState): PersistedState {
   const persistedState = buildPersistedState(state);
   saveDesktopStateCache({
-    version: 1,
+    version: 2,
     persistedState,
     ui: buildCachedDesktopUiState(state),
+    sessionSnapshots: Object.fromEntries(RUNTIME.sessionSnapshots.entries()),
   });
   return persistedState;
 }

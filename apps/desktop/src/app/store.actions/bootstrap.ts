@@ -18,8 +18,8 @@ import {
   renamePath,
   trashPath,
 } from "../../lib/desktopCommands";
-import type { ProviderName } from "../../lib/wsProtocol";
 import type { ChildModelRoutingMode } from "../../lib/wsProtocol";
+import { safeParseServerEvent, type ProviderName } from "../../lib/wsProtocol";
 
 import {
   type AppStoreDataState,
@@ -56,6 +56,7 @@ import { deriveConnectedProviders, normalizePersistedProviderState } from "../pe
 import { deriveDefaultLmStudioUiEnabled, normalizePersistedProviderUiState } from "../providerUiState";
 import { normalizeWorkspaceProviderOptions } from "../openaiCompatibleProviderOptions";
 import {
+  type CachedSessionSnapshot,
   normalizeWorkspaceUserProfile,
   type CachedDesktopUiState,
   type PersistedOnboardingState,
@@ -206,18 +207,29 @@ const persistedThreadSchema = z.object({
   lastMessageAt: z.string(),
   status: normalizedThreadStatusSchema,
   sessionId: normalizedSessionIdSchema,
+  messageCount: normalizedLastEventSeqSchema,
   lastEventSeq: normalizedLastEventSeqSchema,
-}).passthrough().transform((thread): ThreadRecord => ({
-  id: thread.id,
-  workspaceId: thread.workspaceId,
-  title: thread.title,
-  titleSource: normalizeThreadTitleSource(thread.titleSource, thread.title),
-  createdAt: thread.createdAt,
-  lastMessageAt: thread.lastMessageAt,
-  status: thread.status,
-  sessionId: thread.sessionId,
-  lastEventSeq: thread.lastEventSeq,
-}));
+  legacyTranscriptId: normalizedSessionIdSchema.optional(),
+  draft: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()).optional(),
+}).passthrough().transform((thread): ThreadRecord => {
+  const id = thread.sessionId ?? thread.id;
+  return {
+    id,
+    workspaceId: thread.workspaceId,
+    title: thread.title,
+    titleSource: normalizeThreadTitleSource(thread.titleSource, thread.title),
+    createdAt: thread.createdAt,
+    lastMessageAt: thread.lastMessageAt,
+    status: thread.status,
+    sessionId: thread.sessionId,
+    messageCount: thread.messageCount,
+    lastEventSeq: thread.lastEventSeq,
+    legacyTranscriptId:
+      thread.legacyTranscriptId
+      ?? (thread.id !== id ? thread.id : null),
+    draft: thread.draft ?? false,
+  };
+});
 
 const persistedUiSchema = z.object({
   selectedWorkspaceId: normalizedNullableSelectionSchema.optional(),
@@ -297,9 +309,14 @@ function buildResolvedDesktopUiState(
     workspaceThreads.find((thread) => thread.status === "active")?.id ??
     workspaceThreads[0]?.id ??
     null;
+  const migratedSelectedThreadId = normalizedUi.selectedThreadId
+    ? workspaceThreads.find((thread) => thread.id === normalizedUi.selectedThreadId)?.id
+      ?? workspaceThreads.find((thread) => thread.legacyTranscriptId === normalizedUi.selectedThreadId)?.id
+      ?? null
+    : null;
   const selectedThreadId =
-    normalizedUi.selectedThreadId && workspaceThreads.some((thread) => thread.id === normalizedUi.selectedThreadId)
-      ? normalizedUi.selectedThreadId
+    migratedSelectedThreadId
+      ? migratedSelectedThreadId
       : fallbackSelectedThreadId;
   const fallbackLastNonSettingsView = normalizedUi.view === "settings" ? "chat" : normalizedUi.view ?? "chat";
   const lastNonSettingsView =
@@ -324,6 +341,7 @@ function buildResolvedDesktopUiState(
 function extractCachedDesktopState(value: unknown): {
   persistedState: unknown;
   ui: unknown;
+  sessionSnapshots?: unknown;
 } | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -334,12 +352,43 @@ function extractCachedDesktopState(value: unknown): {
     return {
       persistedState: record.persistedState,
       ui: record.ui,
+      sessionSnapshots: record.sessionSnapshots,
     };
   }
 
   return {
     persistedState: value,
     ui: record.ui,
+    sessionSnapshots: record.sessionSnapshots,
+  };
+}
+
+function normalizeCachedSessionSnapshot(sessionId: string, value: unknown): CachedSessionSnapshot | null {
+  if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+    return null;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const snapshot = (value as { snapshot?: unknown }).snapshot;
+  const parsed = safeParseServerEvent({
+    type: "session_snapshot",
+    sessionId: "__desktop_cache__",
+    targetSessionId: sessionId,
+    snapshot,
+  });
+  if (!parsed || parsed.type !== "session_snapshot" || parsed.snapshot.sessionId !== sessionId) {
+    return null;
+  }
+
+  return {
+    fingerprint: {
+      updatedAt: parsed.snapshot.updatedAt,
+      messageCount: parsed.snapshot.messageCount,
+      lastEventSeq: parsed.snapshot.lastEventSeq,
+    },
+    snapshot: parsed.snapshot,
   };
 }
 
@@ -366,6 +415,14 @@ export function buildCachedDesktopStateSeed(value: unknown): Partial<AppStoreDat
     }
 
     const state = hydratePersistedDesktopState(cached.persistedState);
+    RUNTIME.sessionSnapshots.clear();
+    if (cached.sessionSnapshots && typeof cached.sessionSnapshots === "object" && !Array.isArray(cached.sessionSnapshots)) {
+      for (const [sessionId, entry] of Object.entries(cached.sessionSnapshots as Record<string, unknown>)) {
+        const normalized = normalizeCachedSessionSnapshot(sessionId, entry);
+        if (!normalized) continue;
+        RUNTIME.sessionSnapshots.set(sessionId, normalized);
+      }
+    }
     const ui = buildResolvedDesktopUiState(state.workspaces, state.threads, cached.ui as CachedDesktopUiState | undefined);
     const connectedProviders = deriveConnectedProviders(state.providerState as PersistedProviderState | undefined);
     return {
