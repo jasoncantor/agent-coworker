@@ -7,13 +7,17 @@ import {
   JSONRPC_PROTOCOL_VERSION,
   parseInitializeParams,
   parseInitializedParams,
+  type JsonRpcLiteClientResponse,
   type JsonRpcLiteNotification,
   type JsonRpcLiteRequest,
 } from "./protocol";
 
 type DispatchJsonRpcMessageArgs = {
   ws: StartServerSocket;
-  message: JsonRpcLiteRequest | JsonRpcLiteNotification;
+  message: JsonRpcLiteRequest | JsonRpcLiteNotification | JsonRpcLiteClientResponse;
+  onRequest?: (message: JsonRpcLiteRequest) => void;
+  onNotification?: (message: JsonRpcLiteNotification) => void;
+  onResponse?: (message: JsonRpcLiteClientResponse) => void;
 };
 
 function sendJsonRpc(ws: StartServerSocket, payload: unknown) {
@@ -24,19 +28,32 @@ function sendJsonRpc(ws: StartServerSocket, payload: unknown) {
   }
 }
 
-function isJsonRpcRequest(message: JsonRpcLiteRequest | JsonRpcLiteNotification): message is JsonRpcLiteRequest {
-  return "id" in message;
+function isJsonRpcRequest(
+  message: JsonRpcLiteRequest | JsonRpcLiteNotification | JsonRpcLiteClientResponse,
+): message is JsonRpcLiteRequest {
+  return "id" in message && "method" in message;
 }
 
-export function dispatchJsonRpcMessage({ ws, message }: DispatchJsonRpcMessageArgs): void {
+function isJsonRpcResponse(
+  message: JsonRpcLiteRequest | JsonRpcLiteNotification | JsonRpcLiteClientResponse,
+): message is JsonRpcLiteClientResponse {
+  return "id" in message && !("method" in message);
+}
+
+export function dispatchJsonRpcMessage({ ws, message, onRequest, onNotification, onResponse }: DispatchJsonRpcMessageArgs): void {
   const rpc = ws.data.rpc;
   if (!rpc) {
-    if (isJsonRpcRequest(message)) {
+    if (isJsonRpcRequest(message) || isJsonRpcResponse(message)) {
       sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
         code: JSONRPC_ERROR_CODES.internalError,
         message: "Missing JSON-RPC connection state",
       }));
     }
+    return;
+  }
+
+  if (isJsonRpcResponse(message)) {
+    onResponse?.(message);
     return;
   }
 
@@ -123,10 +140,12 @@ export function dispatchJsonRpcMessage({ ws, message }: DispatchJsonRpcMessageAr
   }
 
   if (!isJsonRpcRequest(message)) {
-    sendJsonRpc(ws, buildJsonRpcErrorResponse(null, {
-      code: JSONRPC_ERROR_CODES.methodNotFound,
-      message: `Unknown notification: ${message.method}`,
-    }));
+    onNotification?.(message);
+    return;
+  }
+
+  if (onRequest) {
+    onRequest(message);
     return;
   }
 

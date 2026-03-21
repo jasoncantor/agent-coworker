@@ -36,7 +36,16 @@ export type JsonRpcLiteNotification = {
   params?: unknown;
 };
 
-export type JsonRpcLiteClientMessage = JsonRpcLiteRequest | JsonRpcLiteNotification;
+export type JsonRpcLiteClientResponse = {
+  id: JsonRpcLiteId;
+  result?: unknown;
+  error?: JsonRpcLiteError;
+};
+
+export type JsonRpcLiteClientMessage =
+  | JsonRpcLiteRequest
+  | JsonRpcLiteNotification
+  | JsonRpcLiteClientResponse;
 
 export type JsonRpcLiteResponse =
   | { id: JsonRpcLiteId; result: unknown }
@@ -80,6 +89,18 @@ const notificationEnvelopeSchema = z.object({
   method: nonEmptyTrimmedStringSchema,
   params: z.unknown().optional(),
 }).strict();
+
+const responseEnvelopeSchema = z.object({
+  id: jsonRpcIdSchema,
+  result: z.unknown().optional(),
+  error: z.object({
+    code: z.number().finite(),
+    message: z.string(),
+    data: z.unknown().optional(),
+  }).optional(),
+}).strict().refine((value) => value.result !== undefined || value.error !== undefined, {
+  message: "Response must include result or error",
+});
 
 export type ParseJsonRpcClientMessageResult =
   | { ok: true; message: JsonRpcLiteClientMessage }
@@ -132,6 +153,14 @@ export function parseJsonRpcClientMessage(raw: unknown): ParseJsonRpcClientMessa
     return {
       ok: true,
       message: notificationResult.data,
+    };
+  }
+
+  const responseResult = responseEnvelopeSchema.safeParse(parsedObject.data);
+  if (responseResult.success) {
+    return {
+      ok: true,
+      message: responseResult.data,
     };
   }
 

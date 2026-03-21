@@ -10,6 +10,11 @@ export type JsonRpcConnectionState = {
     experimentalApi: boolean;
     optOutNotificationMethods: string[];
   };
+  pendingServerRequests: Map<string | number, {
+    threadId: string;
+    type: "ask" | "approval";
+    requestId: string;
+  }>;
 };
 
 export type StartServerSocketData = {
@@ -17,12 +22,16 @@ export type StartServerSocketData = {
   resumeSessionId?: string;
   protocolMode?: WsProtocolMode;
   selectedSubprotocol?: string | null;
+  connectionId?: string;
   rpc?: JsonRpcConnectionState;
 };
 
 export type StartServerSocket = Bun.ServerWebSocket<StartServerSocketData>;
 
+export type SessionEventSink = (evt: import("../protocol").ServerEvent) => void;
+
 export type SessionBinding = {
   session: AgentSession | null;
   socket: StartServerSocket | null;
+  sinks: Map<string, SessionEventSink>;
 };

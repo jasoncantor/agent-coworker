@@ -109,12 +109,11 @@ describe("server JSON-RPC websocket mode", () => {
         method: "thread/list",
         params: {},
       }));
-      const methodNotFound = await waitForSingleMessage(ws);
-      expect(methodNotFound).toEqual({
+      const listedThreads = await waitForSingleMessage(ws);
+      expect(listedThreads).toEqual({
         id: 3,
-        error: {
-          code: -32601,
-          message: "Unknown method: thread/list",
+        result: {
+          threads: [],
         },
       });
       ws.close();

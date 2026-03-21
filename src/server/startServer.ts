@@ -31,6 +31,12 @@ import {
 } from "./protocol";
 import { decodeJsonRpcMessage } from "./jsonrpc/decodeJsonRpcMessage";
 import { dispatchJsonRpcMessage } from "./jsonrpc/dispatchJsonRpcMessage";
+import { createJsonRpcLegacyEventProjector } from "./jsonrpc/legacyEventProjector";
+import {
+  buildJsonRpcErrorResponse,
+  buildJsonRpcResultResponse,
+  JSONRPC_ERROR_CODES,
+} from "./jsonrpc/protocol";
 import { decodeClientMessage } from "./startServer/decodeClientMessage";
 import { dispatchClientMessage } from "./startServer/dispatchClientMessage";
 import { type SessionBinding, type StartServerSocketData } from "./startServer/types";
@@ -320,14 +326,22 @@ export async function startAgentServer(
 
   let agentControl: AgentControl;
 
+  const addBindingSink = (binding: SessionBinding, sinkId: string, sink: (evt: ServerEvent) => void) => {
+    binding.sinks.set(sinkId, sink);
+  };
+
+  const removeBindingSink = (binding: SessionBinding, sinkId: string) => {
+    binding.sinks.delete(sinkId);
+  };
+
   const buildSessionCommon = (binding: SessionBinding, sessionKind: SessionKind = "root") => {
     const emit = (evt: ServerEvent) => {
-      const socket = binding.socket;
-      if (!socket) return;
-      try {
-        socket.send(JSON.stringify(evt));
-      } catch {
-        // ignore
+      for (const sink of binding.sinks.values()) {
+        try {
+          sink(evt);
+        } catch {
+          // ignore individual sink failures
+        }
       }
     };
 
@@ -571,22 +585,24 @@ export async function startAgentServer(
     disposeBinding,
     emitParentAgentStatus: (parentSessionId, agent) => {
       const parentBinding = sessionBindings.get(parentSessionId);
-      const socket = parentBinding?.socket;
-      if (!socket) return;
-      try {
-        socket.send(JSON.stringify({ type: "agent_status", sessionId: parentSessionId, agent }));
-      } catch {
-        // ignore
+      if (!parentBinding) return;
+      for (const sink of parentBinding.sinks.values()) {
+        try {
+          sink({ type: "agent_status", sessionId: parentSessionId, agent });
+        } catch {
+          // ignore
+        }
       }
     },
     emitParentLog: (parentSessionId, line) => {
       const parentBinding = sessionBindings.get(parentSessionId);
-      const socket = parentBinding?.socket;
-      if (!socket) return;
-      try {
-        socket.send(JSON.stringify({ type: "log", sessionId: parentSessionId, line }));
-      } catch {
-        // ignore
+      if (!parentBinding) return;
+      for (const sink of parentBinding.sinks.values()) {
+        try {
+          sink({ type: "log", sessionId: parentSessionId, line });
+        } catch {
+          // ignore
+        }
       }
     },
   });
@@ -599,11 +615,13 @@ export async function startAgentServer(
         experimentalApi: false,
         optOutNotificationMethods: [],
       },
+      pendingServerRequests: new Map(),
     };
   };
 
   const openLegacySocket = (ws: Bun.ServerWebSocket<StartServerSocketData>) => {
     const resumeSessionId = ws.data.resumeSessionId;
+    const legacySinkId = `legacy:${ws.data.connectionId ?? "unknown"}`;
     const resumable =
       resumeSessionId && sessionBindings.has(resumeSessionId)
         ? sessionBindings.get(resumeSessionId)
@@ -624,6 +642,7 @@ export async function startAgentServer(
       binding = {
         session: null,
         socket: ws,
+        sinks: new Map(),
       };
       const built = buildSession(binding, resumeSessionId);
       session = built.session;
@@ -635,14 +654,13 @@ export async function startAgentServer(
 
     ws.data.session = session;
     ws.data.resumeSessionId = session.id;
-
-    const emitToCurrentSocket = (evt: ServerEvent) => {
+    addBindingSink(binding, legacySinkId, (evt) => {
       try {
         ws.send(JSON.stringify(evt));
       } catch {
         // ignore
       }
-    };
+    });
 
     const sessionInfo = session.getSessionInfoEvent();
     const hello: ServerEvent = {
@@ -723,7 +741,11 @@ export async function startAgentServer(
     void session.getSessionBackupState();
     if (isResume) {
       for (const evt of session.drainDisconnectedReplayEvents()) {
-        emitToCurrentSocket(evt);
+        try {
+          ws.send(JSON.stringify(evt));
+        } catch {
+          // ignore
+        }
       }
     }
     if (isResume) {
@@ -736,10 +758,453 @@ export async function startAgentServer(
     if (!session) return;
     const binding = sessionBindings.get(session.id);
     if (!binding) return;
+    removeBindingSink(binding, `legacy:${ws.data.connectionId ?? "unknown"}`);
 
     if (binding.socket === ws) {
       binding.socket = null;
+    }
+    if (binding.sinks.size === 0) {
       session.beginDisconnectedReplayBuffer();
+    }
+  };
+
+  const jsonRpcSubscriptionsByConnectionId = new Map<string, Map<string, { sinkId: string }>>();
+
+  const sendJsonRpc = (ws: Bun.ServerWebSocket<StartServerSocketData>, payload: unknown) => {
+    try {
+      ws.send(JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  };
+
+  const shouldSendJsonRpcNotification = (ws: Bun.ServerWebSocket<StartServerSocketData>, method: string) => (
+    !ws.data.rpc?.capabilities.optOutNotificationMethods.includes(method)
+  );
+
+  const buildJsonRpcThreadFromSession = (session: AgentSession) => {
+    const info = session.getSessionInfoEvent();
+    return {
+      id: session.id,
+      title: info.title,
+      preview: info.lastMessagePreview ?? session.getLatestAssistantText() ?? "",
+      modelProvider: info.provider,
+      model: info.model,
+      cwd: session.getWorkingDirectory(),
+      createdAt: info.createdAt,
+      updatedAt: info.updatedAt,
+      status: {
+        type: session.isBusy ? "running" : "loaded",
+      },
+    };
+  };
+
+  const buildJsonRpcThreadFromRecord = (record: PersistedSessionRecord) => ({
+    id: record.sessionId,
+    title: record.title,
+    preview: record.lastMessagePreview ?? "",
+    modelProvider: record.provider,
+    model: record.model,
+    cwd: record.workingDirectory,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    status: {
+      type: "notLoaded",
+    },
+  });
+
+  const ensureJsonRpcConnectionSubscriptions = (connectionId: string) => {
+    const existing = jsonRpcSubscriptionsByConnectionId.get(connectionId);
+    if (existing) return existing;
+    const created = new Map<string, { sinkId: string }>();
+    jsonRpcSubscriptionsByConnectionId.set(connectionId, created);
+    return created;
+  };
+
+  const loadThreadBinding = (threadId: string): SessionBinding | null => {
+    const existing = sessionBindings.get(threadId);
+    if (existing?.session) {
+      return existing;
+    }
+    const persisted = sessionDb.getSessionRecord(threadId);
+    if (!persisted) return null;
+    const binding: SessionBinding = { session: null, socket: null, sinks: new Map() };
+    const built = buildSession(binding, threadId);
+    binding.session = built.session;
+    sessionBindings.set(built.session.id, binding);
+    return binding;
+  };
+
+  const subscribeJsonRpcThread = (ws: Bun.ServerWebSocket<StartServerSocketData>, threadId: string): SessionBinding | null => {
+    const connectionId = ws.data.connectionId;
+    if (!connectionId) {
+      return null;
+    }
+
+    const binding = loadThreadBinding(threadId);
+    if (!binding?.session) {
+      return null;
+    }
+
+    const subscriptions = ensureJsonRpcConnectionSubscriptions(connectionId);
+    if (subscriptions.has(threadId)) {
+      return binding;
+    }
+
+    const shouldReplayBufferedEvents = !binding.socket && binding.sinks.size === 0;
+    const sinkId = `jsonrpc:${connectionId}:${threadId}`;
+    const projector = createJsonRpcLegacyEventProjector({
+      threadId,
+      send: (message) => sendJsonRpc(ws, message),
+      shouldSendNotification: (method) => shouldSendJsonRpcNotification(ws, method),
+      onServerRequest: (request) => {
+        ws.data.rpc?.pendingServerRequests.set(request.id, {
+          threadId: request.threadId,
+          type: request.type,
+          requestId: request.id,
+        });
+        sendJsonRpc(ws, {
+          id: request.id,
+          method: request.method,
+          params: request.params,
+        });
+      },
+    });
+
+    addBindingSink(binding, sinkId, (event) => projector.handle(event));
+    subscriptions.set(threadId, { sinkId });
+    if (shouldReplayBufferedEvents) {
+      for (const event of binding.session.drainDisconnectedReplayEvents()) {
+        projector.handle(event);
+      }
+    }
+    return binding;
+  };
+
+  const unsubscribeJsonRpcThread = (ws: Bun.ServerWebSocket<StartServerSocketData>, threadId: string) => {
+    const connectionId = ws.data.connectionId;
+    if (!connectionId) {
+      return "notSubscribed" as const;
+    }
+    const subscriptions = jsonRpcSubscriptionsByConnectionId.get(connectionId);
+    const subscription = subscriptions?.get(threadId);
+    if (!subscription) {
+      const existingBinding = sessionBindings.get(threadId);
+      return existingBinding?.session ? "notSubscribed" as const : "notLoaded" as const;
+    }
+
+    const binding = sessionBindings.get(threadId);
+    if (binding) {
+      removeBindingSink(binding, subscription.sinkId);
+      if (!binding.socket && binding.sinks.size === 0 && binding.session) {
+        binding.session.beginDisconnectedReplayBuffer();
+      }
+    }
+    subscriptions?.delete(threadId);
+    if (subscriptions && subscriptions.size === 0) {
+      jsonRpcSubscriptionsByConnectionId.delete(connectionId);
+    }
+    return "unsubscribed" as const;
+  };
+
+  const cleanupJsonRpcConnection = (ws: Bun.ServerWebSocket<StartServerSocketData>) => {
+    const connectionId = ws.data.connectionId;
+    if (!connectionId) {
+      return;
+    }
+    const subscriptions = jsonRpcSubscriptionsByConnectionId.get(connectionId);
+    if (!subscriptions) {
+      return;
+    }
+    for (const [threadId, subscription] of subscriptions) {
+      const binding = sessionBindings.get(threadId);
+      if (!binding) continue;
+      removeBindingSink(binding, subscription.sinkId);
+      if (!binding.socket && binding.sinks.size === 0 && binding.session) {
+        binding.session.beginDisconnectedReplayBuffer();
+      }
+    }
+    jsonRpcSubscriptionsByConnectionId.delete(connectionId);
+  };
+
+  const extractJsonRpcTextInput = (input: unknown): string => {
+    if (typeof input === "string") {
+      return input.trim();
+    }
+    if (!Array.isArray(input)) {
+      return "";
+    }
+    return input
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return "";
+        const record = entry as Record<string, unknown>;
+        if (record.type === "text" && typeof record.text === "string") {
+          return record.text;
+        }
+        if (record.type === "inputText" && typeof record.text === "string") {
+          return record.text;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  };
+
+  const readThreadSnapshot = (threadId: string) => {
+    const liveSnapshot = sessionBindings.get(threadId)?.session?.buildSessionSnapshot() ?? null;
+    if (liveSnapshot) return liveSnapshot;
+    const persisted = sessionDb.getSessionRecord(threadId);
+    if (!persisted) return null;
+    return loadInitialSessionSnapshot(persisted);
+  };
+
+  const routeJsonRpcResponse = (
+    ws: Bun.ServerWebSocket<StartServerSocketData>,
+    message: { id: string | number; result?: unknown; error?: { code: number; message: string } },
+  ) => {
+    const pending = ws.data.rpc?.pendingServerRequests.get(message.id);
+    if (!pending) {
+      sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+        code: JSONRPC_ERROR_CODES.invalidRequest,
+        message: `Unknown server request id: ${String(message.id)}`,
+      }));
+      return;
+    }
+
+    const binding = sessionBindings.get(pending.threadId);
+    const session = binding?.session;
+    if (!session) {
+      ws.data.rpc?.pendingServerRequests.delete(message.id);
+      sendJsonRpc(ws, {
+        method: "serverRequest/resolved",
+        params: {
+          threadId: pending.threadId,
+          requestId: pending.requestId,
+        },
+      });
+      return;
+    }
+
+    sendJsonRpc(ws, {
+      method: "serverRequest/resolved",
+      params: {
+        threadId: pending.threadId,
+        requestId: pending.requestId,
+      },
+    });
+
+    if (pending.type === "approval") {
+      const result = message.result as Record<string, unknown> | undefined;
+      const decision = typeof result?.decision === "string" ? result.decision : undefined;
+      const approved =
+        result?.approved === true
+        || decision === "accept"
+        || decision === "acceptForSession";
+      session.handleApprovalResponse(pending.requestId, approved);
+    } else {
+      const result = message.result as Record<string, unknown> | undefined;
+      const answer =
+        typeof result?.answer === "string"
+          ? result.answer
+          : Array.isArray(result?.content)
+            ? extractJsonRpcTextInput(result.content)
+            : "";
+      session.handleAskResponse(pending.requestId, answer);
+    }
+
+    ws.data.rpc?.pendingServerRequests.delete(message.id);
+  };
+
+  const routeJsonRpcRequest = async (
+    ws: Bun.ServerWebSocket<StartServerSocketData>,
+    message: { id: string | number; method: string; params?: unknown },
+  ) => {
+    const params = message.params && typeof message.params === "object"
+      ? message.params as Record<string, unknown>
+      : {};
+
+    switch (message.method) {
+      case "thread/start": {
+        const provider = typeof params.provider === "string" ? params.provider as AgentConfig["provider"] : undefined;
+        const model = typeof params.model === "string" ? params.model : undefined;
+        const cwd = typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : config.workingDirectory;
+        const binding: SessionBinding = { session: null, socket: null, sinks: new Map() };
+        const threadConfig: AgentConfig = {
+          ...config,
+          workingDirectory: cwd,
+          ...(provider ? { provider, runtime: defaultRuntimeNameForProvider(provider) } : {}),
+          ...(model ? { model } : {}),
+        };
+        const built = buildSession(binding, undefined, {
+          config: threadConfig,
+        });
+        binding.session = built.session;
+        sessionBindings.set(built.session.id, binding);
+        subscribeJsonRpcThread(ws, built.session.id);
+        const thread = buildJsonRpcThreadFromSession(built.session);
+        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, { thread }));
+        sendJsonRpc(ws, { method: "thread/started", params: { thread } });
+        return;
+      }
+      case "thread/resume": {
+        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
+        if (!threadId) {
+          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+            code: JSONRPC_ERROR_CODES.invalidParams,
+            message: "thread/resume requires threadId",
+          }));
+          return;
+        }
+        const binding = subscribeJsonRpcThread(ws, threadId);
+        if (!binding?.session) {
+          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+            code: JSONRPC_ERROR_CODES.invalidParams,
+            message: `Unknown thread: ${threadId}`,
+          }));
+          return;
+        }
+        const thread = buildJsonRpcThreadFromSession(binding.session);
+        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, { thread }));
+        sendJsonRpc(ws, { method: "thread/started", params: { thread } });
+        return;
+      }
+      case "thread/list": {
+        const cwd = typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : undefined;
+        const threads = new Map<string, ReturnType<typeof buildJsonRpcThreadFromRecord>>();
+        for (const record of sessionDb.listSessions({ ...(cwd ? { workingDirectory: cwd } : {}) })) {
+          const persisted = sessionDb.getSessionRecord(record.sessionId);
+          if (!persisted) continue;
+          threads.set(record.sessionId, buildJsonRpcThreadFromRecord(persisted));
+        }
+        for (const binding of sessionBindings.values()) {
+          const session = binding.session;
+          if (!session || session.sessionKind !== "root") continue;
+          if (cwd && session.getWorkingDirectory() !== cwd) continue;
+          threads.set(session.id, buildJsonRpcThreadFromSession(session));
+        }
+        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {
+          threads: [...threads.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+        }));
+        return;
+      }
+      case "thread/read": {
+        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
+        if (!threadId) {
+          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+            code: JSONRPC_ERROR_CODES.invalidParams,
+            message: "thread/read requires threadId",
+          }));
+          return;
+        }
+        const snapshot = readThreadSnapshot(threadId);
+        if (!snapshot) {
+          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+            code: JSONRPC_ERROR_CODES.invalidParams,
+            message: `Unknown thread: ${threadId}`,
+          }));
+          return;
+        }
+        const binding = sessionBindings.get(threadId);
+        const thread = binding?.session
+          ? buildJsonRpcThreadFromSession(binding.session)
+          : buildJsonRpcThreadFromRecord(sessionDb.getSessionRecord(threadId)!);
+        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {
+          thread: {
+            ...thread,
+            ...(params.includeTurns === true ? { turns: [] } : {}),
+          },
+          coworkSnapshot: snapshot,
+        }));
+        return;
+      }
+      case "thread/unsubscribe": {
+        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
+        if (!threadId) {
+          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+            code: JSONRPC_ERROR_CODES.invalidParams,
+            message: "thread/unsubscribe requires threadId",
+          }));
+          return;
+        }
+        const status = unsubscribeJsonRpcThread(ws, threadId);
+        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, { status }));
+        if (status === "unsubscribed") {
+          sendJsonRpc(ws, {
+            method: "thread/closed",
+            params: { threadId },
+          });
+        }
+        return;
+      }
+      case "turn/start": {
+        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
+        const text = extractJsonRpcTextInput(params.input);
+        if (!threadId || !text) {
+          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+            code: JSONRPC_ERROR_CODES.invalidParams,
+            message: "turn/start requires threadId and non-empty text input",
+          }));
+          return;
+        }
+        const binding = subscribeJsonRpcThread(ws, threadId);
+        if (!binding?.session) {
+          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+            code: JSONRPC_ERROR_CODES.invalidParams,
+            message: `Unknown thread: ${threadId}`,
+          }));
+          return;
+        }
+        void binding.session.sendUserMessage(text);
+        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {
+          turn: {
+            id: binding.session.activeTurnId,
+            threadId,
+            status: binding.session.isBusy ? "inProgress" : "completed",
+            items: [],
+          },
+        }));
+        return;
+      }
+      case "turn/steer": {
+        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
+        const text = extractJsonRpcTextInput(params.input);
+        const expectedTurnId = typeof params.turnId === "string" && params.turnId.trim()
+          ? params.turnId.trim()
+          : sessionBindings.get(threadId)?.session?.activeTurnId ?? "";
+        const session = sessionBindings.get(threadId)?.session;
+        if (!session || !text || !expectedTurnId) {
+          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+            code: JSONRPC_ERROR_CODES.invalidParams,
+            message: "turn/steer requires threadId, active turnId, and non-empty text input",
+          }));
+          return;
+        }
+        void session.sendSteerMessage(text, expectedTurnId);
+        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {
+          turnId: expectedTurnId,
+        }));
+        return;
+      }
+      case "turn/interrupt": {
+        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
+        const session = sessionBindings.get(threadId)?.session;
+        if (!session) {
+          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+            code: JSONRPC_ERROR_CODES.invalidParams,
+            message: `Unknown thread: ${threadId}`,
+          }));
+          return;
+        }
+        session.cancel();
+        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {}));
+        return;
+      }
+      default:
+        sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+          code: JSONRPC_ERROR_CODES.methodNotFound,
+          message: `Unknown method: ${message.method}`,
+        }));
     }
   };
 
@@ -765,6 +1230,7 @@ export async function startAgentServer(
               resumeSessionId,
               protocolMode: protocolResult.protocol.mode,
               selectedSubprotocol: protocolResult.protocol.selectedSubprotocol,
+              connectionId: crypto.randomUUID(),
             },
           });
           if (upgraded) return;
@@ -790,6 +1256,12 @@ export async function startAgentServer(
             dispatchJsonRpcMessage({
               ws,
               message: decoded.message,
+              onRequest: (message) => {
+                void routeJsonRpcRequest(ws, message);
+              },
+              onResponse: (message) => {
+                routeJsonRpcResponse(ws, message);
+              },
             });
             return;
           }
@@ -812,6 +1284,7 @@ export async function startAgentServer(
         },
         close(ws) {
           if (ws.data.protocolMode === "jsonrpc") {
+            cleanupJsonRpcConnection(ws);
             return;
           }
           closeLegacySocket(ws);
