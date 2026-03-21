@@ -169,7 +169,7 @@ const persistedWorkspaceSchema = z.object({
   path: nonEmptyStringSchema,
   createdAt: nonEmptyStringSchema,
   lastOpenedAt: nonEmptyStringSchema,
-  wsProtocol: z.enum(["legacy", "jsonrpc"]).optional(),
+  wsProtocol: z.preprocess(() => "jsonrpc", z.literal("jsonrpc")),
   defaultProvider: optionalNonEmptyStringSchema,
   defaultModel: optionalNonEmptyStringSchema,
   defaultPreferredChildModel: optionalNonEmptyStringSchema,

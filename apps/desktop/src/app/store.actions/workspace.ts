@@ -86,7 +86,7 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
         path: dir,
         createdAt: nowIso(),
         lastOpenedAt: nowIso(),
-        wsProtocol: "legacy",
+        wsProtocol: "jsonrpc",
         defaultProvider: "google",
         defaultModel: defaultModelForProvider("google"),
         defaultPreferredChildModel: defaultModelForProvider("google"),

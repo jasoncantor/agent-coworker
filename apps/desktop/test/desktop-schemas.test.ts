@@ -22,11 +22,30 @@ describe("desktop persisted-state schema defaults", () => {
 
     expect(parsed.workspaces[0]?.defaultEnableMcp).toBe(true);
     expect(parsed.workspaces[0]?.defaultBackupsEnabled).toBe(true);
-    expect(parsed.workspaces[0]?.wsProtocol).toBeUndefined();
+    expect(parsed.workspaces[0]?.wsProtocol).toBe("jsonrpc");
     expect(parsed.workspaces[0]?.defaultToolOutputOverflowChars).toBeUndefined();
     expect(parsed.workspaces[0]?.yolo).toBe(false);
     expect(parsed.developerMode).toBe(false);
     expect(parsed.showHiddenFiles).toBe(false);
+  });
+
+  test("normalizes legacy workspace protocol values to jsonrpc", () => {
+    const parsed = persistedStateInputSchema.parse({
+      version: 2,
+      workspaces: [
+        {
+          id: "ws_1",
+          name: "Workspace",
+          path: "/tmp/workspace",
+          createdAt: TS,
+          lastOpenedAt: TS,
+          wsProtocol: "legacy",
+        },
+      ],
+      threads: [],
+    });
+
+    expect(parsed.workspaces[0]?.wsProtocol).toBe("jsonrpc");
   });
 
   test("keeps explicit workspace booleans", () => {
