@@ -194,6 +194,20 @@ function makeSession(
         clearToolOutputOverflowChars?: boolean;
       }
     ) => Promise<void> | void;
+    readUserConfigImpl: () => Promise<{
+      awsBedrockProxyBaseUrl?: string;
+      openaiProxyBaseUrl?: string;
+    }> | {
+      awsBedrockProxyBaseUrl?: string;
+      openaiProxyBaseUrl?: string;
+    };
+    persistUserConfigPatchImpl: (patch: {
+      awsBedrockProxyBaseUrl?: string | null;
+      openaiProxyBaseUrl?: string | null;
+    }) => Promise<{
+      awsBedrockProxyBaseUrl?: string;
+      openaiProxyBaseUrl?: string;
+    }>;
     loadSystemPromptWithSkillsImpl: (config: AgentConfig) => Promise<{
       prompt: string;
       discoveredSkills: Array<{ name: string; description: string }>;
@@ -231,6 +245,8 @@ function makeSession(
     sessionBackupFactory,
     persistModelSelectionImpl: overrides?.persistModelSelectionImpl,
     persistProjectConfigPatchImpl: overrides?.persistProjectConfigPatchImpl,
+    readUserConfigImpl: overrides?.readUserConfigImpl,
+    persistUserConfigPatchImpl: overrides?.persistUserConfigPatchImpl,
     generateSessionTitleImpl: overrides?.generateSessionTitleImpl ?? mockGenerateSessionTitle,
     writePersistedSessionSnapshotImpl:
       overrides?.writePersistedSessionSnapshotImpl ?? mockWritePersistedSessionSnapshot,
@@ -1761,6 +1777,36 @@ describe("AgentSession", () => {
         expect(evt.methodId).toBe("oauth_cli");
         expect(evt.challenge.method).toBe("auto");
         expect(evt.challenge.url).toBeUndefined();
+      }
+    });
+  });
+
+  describe("user config actions", () => {
+    test("setUserConfig persists global user config when persistence impl is provided", async () => {
+      const persistUserConfigPatchImpl = mock(async (patch: {
+        awsBedrockProxyBaseUrl?: string | null;
+      }) => ({
+        awsBedrockProxyBaseUrl: patch.awsBedrockProxyBaseUrl ?? undefined,
+      }));
+      const { session, events } = makeSession({
+        persistUserConfigPatchImpl,
+      });
+
+      await session.setUserConfig({
+        awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+      });
+
+      expect(persistUserConfigPatchImpl).toHaveBeenCalledTimes(1);
+      expect(persistUserConfigPatchImpl).toHaveBeenCalledWith({
+        awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+      });
+      const resultEvent = events.find((evt) => evt.type === "user_config_result");
+      expect(resultEvent).toBeDefined();
+      if (resultEvent && resultEvent.type === "user_config_result") {
+        expect(resultEvent.ok).toBe(true);
+        expect(resultEvent.config).toEqual({
+          awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+        });
       }
     });
   });
