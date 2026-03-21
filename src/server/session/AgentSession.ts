@@ -53,7 +53,7 @@ import type {
   SessionInfoState,
   SessionRuntimeState,
 } from "./SessionContext";
-import type { SessionConfigPatch } from "../protocol";
+import type { SessionConfigPatch, UserConfigPatch } from "../protocol";
 import { SessionMetadataManager } from "./SessionMetadataManager";
 import { SessionRuntimeSupport } from "./SessionRuntimeSupport";
 import { SessionSnapshotProjector } from "./SessionSnapshotProjector";
@@ -1312,6 +1312,14 @@ export class AgentSession {
 
   emitProviderAuthMethods() {
     this.getProviderCatalogManager().emitProviderAuthMethods();
+  }
+
+  async emitUserConfig() {
+    await this.metadataManager.emitUserConfig();
+  }
+
+  async setUserConfig(patch: UserConfigPatch) {
+    await this.metadataManager.setUserConfig(patch);
   }
 
   async authorizeProviderAuth(providerRaw: AgentConfig["provider"], methodIdRaw: string) {

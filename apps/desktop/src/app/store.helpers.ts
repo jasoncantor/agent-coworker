@@ -117,6 +117,8 @@ type ProviderAuthMethodsEvent = Extract<ServerEvent, { type: "provider_auth_meth
 type ProviderAuthMethod = ProviderAuthMethodsEvent["methods"][string][number];
 type ProviderAuthChallengeEvent = Extract<ServerEvent, { type: "provider_auth_challenge" }>;
 type ProviderAuthResultEvent = Extract<ServerEvent, { type: "provider_auth_result" }>;
+type UserConfigEvent = Extract<ServerEvent, { type: "user_config" }>;
+type UserConfigResultEvent = Extract<ServerEvent, { type: "user_config_result" }>;
 
 function isProviderName(v: unknown): v is ProviderName {
   return typeof v === "string" && (PROVIDER_NAMES as readonly string[]).includes(v);
@@ -180,6 +182,9 @@ export type AppStoreState = {
   providerAuthMethodsByProvider: Record<string, ProviderAuthMethod[]>;
   providerLastAuthChallenge: ProviderAuthChallengeEvent | null;
   providerLastAuthResult: ProviderAuthResultEvent | null;
+  userConfig: UserConfigEvent["config"];
+  userConfigLastResult: UserConfigResultEvent | null;
+  pendingUserConfigSave: boolean;
   providerUiState: PersistedProviderUiState;
 
   composerText: string;
@@ -294,6 +299,8 @@ export type AppStoreState = {
   requestProviderCatalog: () => Promise<void>;
   requestProviderAuthMethods: () => Promise<void>;
   refreshProviderStatus: () => Promise<void>;
+  requestUserConfig: () => Promise<void>;
+  setGlobalOpenAiProxyBaseUrl: (baseUrl: string | null) => Promise<void>;
   setLmStudioEnabled: (enabled: boolean) => Promise<void>;
   setLmStudioModelVisible: (modelId: string, visible: boolean) => Promise<void>;
 
