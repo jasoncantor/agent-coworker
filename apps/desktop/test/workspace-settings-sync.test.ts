@@ -32,6 +32,7 @@ class MockAgentSocket {
 }
 
 const MOCK_SOCKETS: MockAgentSocket[] = [];
+const jsonRpcRequests: Array<{ method: string; params?: unknown }> = [];
 let mockedLoadedState: any = { version: 2, workspaces: [], threads: [] };
 const MOCK_SYSTEM_APPEARANCE = {
   platform: "linux",
@@ -51,6 +52,198 @@ const MOCK_UPDATE_STATE = {
   progress: null,
   error: null,
 };
+
+class MockJsonRpcSocket {
+  static instances: MockJsonRpcSocket[] = [];
+  readonly readyPromise = Promise.resolve();
+
+  constructor(public readonly opts: { onOpen?: () => void }) {
+    MockJsonRpcSocket.instances.push(this);
+  }
+
+  connect() {
+    this.opts.onOpen?.();
+  }
+
+  async request(method: string, params?: unknown) {
+    jsonRpcRequests.push({ method, params });
+
+    if (method === "thread/list") {
+      const cwd =
+        params && typeof params === "object" && typeof (params as { cwd?: unknown }).cwd === "string"
+          ? (params as { cwd: string }).cwd
+          : null;
+      const workspaceId =
+        cwd
+          ? mockedLoadedState.workspaces?.find((workspace: { path?: string; id?: string }) => workspace.path === cwd)?.id ?? null
+          : null;
+      const threads = workspaceId
+        ? (mockedLoadedState.threads ?? [])
+            .filter((thread: { workspaceId?: string; sessionId?: string | null }) =>
+              thread.workspaceId === workspaceId && typeof thread.sessionId === "string" && thread.sessionId.trim().length > 0,
+            )
+            .map((thread: {
+              title?: string;
+              sessionId: string;
+              createdAt?: string;
+              lastMessageAt?: string;
+            }) => ({
+              id: thread.sessionId,
+              title: thread.title ?? "Recovered thread",
+              modelProvider: "openai",
+              model: "gpt-5.2",
+              cwd: cwd ?? "/tmp/workspace",
+              createdAt: thread.createdAt ?? "2024-01-01T00:00:00.000Z",
+              updatedAt: thread.lastMessageAt ?? "2024-01-01T00:00:02.000Z",
+              status: { type: "loaded" },
+            }))
+        : [];
+      return { threads };
+    }
+
+    if (method === "thread/read") {
+      const threadId =
+        params && typeof params === "object" && typeof (params as { threadId?: unknown }).threadId === "string"
+          ? (params as { threadId: string }).threadId
+          : "thread-session";
+      const persistedThread = (mockedLoadedState.threads ?? []).find((thread: { sessionId?: string | null }) => thread.sessionId === threadId);
+      return {
+        coworkSnapshot: makeSessionSnapshot(threadId, {
+          title: persistedThread?.title ?? "Harness Snapshot Thread",
+        }),
+      };
+    }
+
+    if (method === "thread/resume") {
+      const threadId =
+        params && typeof params === "object" && typeof (params as { threadId?: unknown }).threadId === "string"
+          ? (params as { threadId: string }).threadId
+          : "thread-session";
+      const persistedThread = (mockedLoadedState.threads ?? []).find((thread: { sessionId?: string | null }) => thread.sessionId === threadId);
+      return {
+        thread: {
+          id: threadId,
+          title: persistedThread?.title ?? "Recovered thread",
+          modelProvider: "openai",
+          model: "gpt-5.2",
+          cwd: "/tmp/workspace",
+          createdAt: persistedThread?.createdAt ?? "2024-01-01T00:00:00.000Z",
+          updatedAt: persistedThread?.lastMessageAt ?? "2024-01-01T00:00:02.000Z",
+          status: { type: "loaded" },
+        },
+      };
+    }
+
+    if (method === "cowork/provider/catalog/read") {
+      return {
+        event: {
+          type: "provider_catalog",
+          sessionId: "jsonrpc-control",
+          all: [],
+          default: {},
+          connected: [],
+        },
+      };
+    }
+
+    if (method === "cowork/provider/authMethods/read") {
+      return {
+        event: {
+          type: "provider_auth_methods",
+          sessionId: "jsonrpc-control",
+          methods: {},
+        },
+      };
+    }
+
+    if (method === "cowork/provider/status/refresh") {
+      return {
+        event: {
+          type: "provider_status",
+          sessionId: "jsonrpc-control",
+          providers: [],
+        },
+      };
+    }
+
+    if (method === "cowork/mcp/servers/read") {
+      return {
+        event: {
+          type: "mcp_servers",
+          sessionId: "jsonrpc-control",
+          servers: [],
+          legacy: {
+            workspace: { path: "/tmp/workspace/.agent/mcp-servers.json", exists: false },
+            user: { path: "/tmp/.agent/mcp-servers.json", exists: false },
+          },
+          files: [],
+        },
+      };
+    }
+
+    if (method === "cowork/memory/list") {
+      return {
+        event: {
+          type: "memory_list",
+          sessionId: "jsonrpc-control",
+          memories: [],
+        },
+      };
+    }
+
+    if (method === "cowork/skills/catalog/read") {
+      return {
+        event: {
+          type: "skills_catalog",
+          sessionId: "jsonrpc-control",
+          catalog: { installations: [], sources: [], stats: { totalInstallations: 0, enabledInstallations: 0 } },
+          mutationBlocked: false,
+        },
+      };
+    }
+
+    if (method === "cowork/skills/list") {
+      return {
+        event: {
+          type: "skills_list",
+          sessionId: "jsonrpc-control",
+          skills: [],
+        },
+      };
+    }
+
+    if (method === "cowork/session/defaults/apply") {
+      return {
+        event: {
+          type: "session_config",
+          sessionId: "jsonrpc-control",
+          config: {
+            yolo: false,
+            observabilityEnabled: false,
+            backupsEnabled: true,
+            defaultBackupsEnabled: true,
+            enableMemory: true,
+            memoryRequireApproval: false,
+            preferredChildModel: "gpt-5.2",
+            childModelRoutingMode: "same-provider",
+            preferredChildModelRef: "openai:gpt-5.2",
+            allowedChildModelRefs: [],
+            maxSteps: 100,
+            toolOutputOverflowChars: 25000,
+          },
+        },
+      };
+    }
+
+    return {};
+  }
+
+  respond() {
+    return true;
+  }
+
+  close() {}
+}
 
 mock.module("../src/lib/desktopCommands", () => ({
   appendTranscriptBatch: async () => {},
@@ -90,6 +283,7 @@ mock.module("../src/lib/desktopCommands", () => ({
 
 mock.module("../src/lib/agentSocket", () => ({
   AgentSocket: MockAgentSocket,
+  JsonRpcSocket: MockJsonRpcSocket,
 }));
 
 const { useAppStore } = await import("../src/app/store");
@@ -214,9 +408,12 @@ describe("workspace settings sync", () => {
   beforeEach(() => {
     workspaceId = `ws-${crypto.randomUUID()}`;
     MOCK_SOCKETS.length = 0;
+    MockJsonRpcSocket.instances.length = 0;
+    jsonRpcRequests.length = 0;
     mockedLoadedState = { version: 2, workspaces: [], threads: [] };
     RUNTIME.controlSockets.clear();
     RUNTIME.threadSockets.clear();
+    RUNTIME.jsonRpcSockets.clear();
     RUNTIME.optimisticUserMessageIds.clear();
     RUNTIME.pendingThreadMessages.clear();
     RUNTIME.threadSelectionRequests.clear();
@@ -513,27 +710,10 @@ describe("workspace settings sync", () => {
     const state = useAppStore.getState();
     expect(state.selectedWorkspaceId).toBe("ws-load");
     expect(state.selectedThreadId).toBe("thread-session-persisted");
-
-    const controlSocket = socketByClient("desktop-control");
-    expect(controlSocket.opts.autoReconnect).toBe(true);
-    emitServerHello(controlSocket, "control-session");
-    await flushAsyncWork();
-    expect(controlSocket.sent).toContainEqual({
-      type: "get_session_snapshot",
-      sessionId: "control-session",
-      targetSessionId: "thread-session-persisted",
-    });
-    controlSocket.emit({
-      type: "session_snapshot",
-      sessionId: "control-session",
-      targetSessionId: "thread-session-persisted",
-      snapshot: makeSessionSnapshot("thread-session-persisted"),
-    });
-    await flushAsyncWork();
-
-    const threadSocket = socketByClient("desktop");
-    expect(threadSocket.opts.autoReconnect).toBe(true);
-    expect(threadSocket.opts.resumeSessionId).toBe("thread-session-persisted");
+    expect(RUNTIME.jsonRpcSockets.has("ws-load")).toBe(true);
+    expect(MockJsonRpcSocket.instances).toHaveLength(1);
+    expect(jsonRpcRequests.map((entry) => entry.method)).toContain("thread/read");
+    expect(jsonRpcRequests.map((entry) => entry.method)).toContain("thread/resume");
   });
 
   test("init prefers the most recently opened workspace when restoring a thread", async () => {
@@ -594,25 +774,10 @@ describe("workspace settings sync", () => {
     const state = useAppStore.getState();
     expect(state.selectedWorkspaceId).toBe("ws-new");
     expect(state.selectedThreadId).toBe("thread-session-new");
-
-    const controlSocket = socketByClient("desktop-control");
-    emitServerHello(controlSocket, "control-session");
-    await flushAsyncWork();
-    expect(controlSocket.sent).toContainEqual({
-      type: "get_session_snapshot",
-      sessionId: "control-session",
-      targetSessionId: "thread-session-new",
-    });
-    controlSocket.emit({
-      type: "session_snapshot",
-      sessionId: "control-session",
-      targetSessionId: "thread-session-new",
-      snapshot: makeSessionSnapshot("thread-session-new"),
-    });
-    await flushAsyncWork();
-
-    const threadSocket = socketByClient("desktop");
-    expect(threadSocket.opts.resumeSessionId).toBe("thread-session-new");
+    expect(RUNTIME.jsonRpcSockets.has("ws-new")).toBe(true);
+    expect(MockJsonRpcSocket.instances).toHaveLength(1);
+    expect(jsonRpcRequests.map((entry) => entry.method)).toContain("thread/read");
+    expect(jsonRpcRequests.map((entry) => entry.method)).toContain("thread/resume");
   });
 
   test("control session_config hydrates the workspace defaults from the harness", async () => {

@@ -369,8 +369,17 @@ describe("desktop JSON-RPC single connection path", () => {
     expect(RUNTIME.threadSockets.size).toBe(0);
     expect(jsonRpcRequests.map((entry) => entry.method)).toEqual([
       "thread/list",
+      "thread/list",
+      "cowork/provider/catalog/read",
+      "cowork/provider/authMethods/read",
+      "cowork/provider/status/refresh",
+      "cowork/mcp/servers/read",
+      "cowork/memory/list",
+      "cowork/skills/catalog/read",
+      "cowork/skills/list",
       "thread/start",
       "turn/start",
+      "thread/read",
     ]);
 
     const state = useAppStore.getState();
@@ -389,6 +398,14 @@ describe("desktop JSON-RPC single connection path", () => {
     expect(MockJsonRpcSocket.instances).toHaveLength(1);
     expect(jsonRpcRequests.map((entry) => entry.method)).toEqual([
       "thread/list",
+      "thread/list",
+      "cowork/provider/catalog/read",
+      "cowork/provider/authMethods/read",
+      "cowork/provider/status/refresh",
+      "cowork/mcp/servers/read",
+      "cowork/memory/list",
+      "cowork/skills/catalog/read",
+      "cowork/skills/list",
       "cowork/provider/catalog/read",
       "cowork/memory/list",
       "cowork/backups/workspace/read",
@@ -408,6 +425,14 @@ describe("desktop JSON-RPC single connection path", () => {
 
     expect(jsonRpcRequests.map((entry) => entry.method)).toEqual([
       "thread/list",
+      "thread/list",
+      "cowork/provider/catalog/read",
+      "cowork/provider/authMethods/read",
+      "cowork/provider/status/refresh",
+      "cowork/mcp/servers/read",
+      "cowork/memory/list",
+      "cowork/skills/catalog/read",
+      "cowork/skills/list",
       "cowork/mcp/servers/read",
       "cowork/skills/catalog/read",
       "cowork/skills/list",
@@ -438,8 +463,17 @@ describe("desktop JSON-RPC single connection path", () => {
 
     expect(jsonRpcRequests.map((entry) => entry.method)).toEqual([
       "thread/list",
+      "thread/list",
+      "cowork/provider/catalog/read",
+      "cowork/provider/authMethods/read",
+      "cowork/provider/status/refresh",
+      "cowork/mcp/servers/read",
+      "cowork/memory/list",
+      "cowork/skills/catalog/read",
+      "cowork/skills/list",
       "thread/start",
       "turn/start",
+      "thread/read",
       "cowork/session/title/set",
       "cowork/session/model/set",
       "cowork/session/usageBudget/set",

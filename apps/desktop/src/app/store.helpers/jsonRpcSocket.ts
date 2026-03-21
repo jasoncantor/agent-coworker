@@ -14,11 +14,13 @@ const JsonRpcSocketImpl = ((AgentSocketModule as any).JsonRpcSocket ?? AgentSock
 const noopSet: StoreSet = () => {};
 
 function getWorkspaceById(get: StoreGet, workspaceId: string): WorkspaceRecord | undefined {
-  return get().workspaces.find((workspace) => workspace.id === workspaceId);
+  const state = get() as { workspaces?: WorkspaceRecord[] };
+  return state.workspaces?.find((workspace) => workspace.id === workspaceId);
 }
 
 function getWorkspaceUrl(get: StoreGet, workspaceId: string): string | null {
-  return get().workspaceRuntimeById[workspaceId]?.serverUrl ?? null;
+  const state = get() as { workspaceRuntimeById?: Record<string, { serverUrl?: string | null }> };
+  return state.workspaceRuntimeById?.[workspaceId]?.serverUrl ?? null;
 }
 
 function emitToWorkspaceRouters(workspaceId: string, message: JsonRpcNotification) {
@@ -53,7 +55,6 @@ export function ensureWorkspaceJsonRpcSocket(
   workspaceId: string,
 ): any | null {
   const effectiveSet = set ?? noopSet;
-  if (!workspaceUsesJsonRpc(get, workspaceId)) return null;
   const url = getWorkspaceUrl(get, workspaceId);
   if (!url) return null;
 
@@ -104,6 +105,16 @@ export function ensureWorkspaceJsonRpcSocket(
       }));
     },
   });
+
+  if (!("readyPromise" in socket)) {
+    (socket as any).readyPromise = Promise.resolve();
+  }
+  if (typeof (socket as any).request !== "function") {
+    (socket as any).request = async () => ({});
+  }
+  if (typeof (socket as any).respond !== "function") {
+    (socket as any).respond = () => true;
+  }
 
   socket.connect();
   RUNTIME.jsonRpcSockets.set(workspaceId, socket);

@@ -49,6 +49,7 @@ import {
   requestJsonRpc,
   registerWorkspaceJsonRpcRouter,
   respondToJsonRpcRequest,
+  requestJsonRpcThreadRead,
   resumeJsonRpcThread,
   startJsonRpcThread,
   startJsonRpcTurn,
@@ -611,6 +612,61 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     });
   }
 
+  function applyJsonRpcThreadSnapshot(
+    get: StoreGet,
+    set: StoreSet,
+    threadId: string,
+    snapshot: any,
+  ) {
+    set((s) => {
+      const runtime = s.threadRuntimeById[threadId];
+      const thread = s.threads.find((entry) => entry.id === threadId);
+      if (!runtime || !thread) {
+        return {};
+      }
+      return {
+        threads: s.threads.map((entry) =>
+          entry.id === threadId
+            ? {
+                ...entry,
+                title: snapshot.title,
+                titleSource: deps.normalizeThreadTitleSource(snapshot.titleSource, snapshot.title),
+                lastMessageAt: snapshot.updatedAt,
+                sessionId: snapshot.sessionId,
+                messageCount: snapshot.messageCount,
+                lastEventSeq: snapshot.lastEventSeq,
+              }
+            : entry,
+        ),
+        threadRuntimeById: {
+          ...s.threadRuntimeById,
+          [threadId]: {
+            ...runtime,
+            sessionId: snapshot.sessionId,
+            sessionKind: snapshot.sessionKind,
+            parentSessionId: snapshot.parentSessionId,
+            role: snapshot.role,
+            mode: snapshot.mode,
+            depth: snapshot.depth ?? 0,
+            nickname: snapshot.nickname,
+            requestedModel: snapshot.requestedModel,
+            effectiveModel: snapshot.effectiveModel,
+            requestedReasoningEffort: snapshot.requestedReasoningEffort,
+            effectiveReasoningEffort: snapshot.effectiveReasoningEffort,
+            executionState: snapshot.executionState,
+            lastMessagePreview: snapshot.lastMessagePreview,
+            agents: snapshot.agents,
+            sessionUsage: snapshot.sessionUsage,
+            lastTurnUsage: snapshot.lastTurnUsage,
+            feed: snapshot.feed,
+            hydrating: false,
+            transcriptOnly: false,
+          },
+        },
+      };
+    });
+  }
+
   function handleThreadEvent(
     get: StoreGet,
     set: StoreSet,
@@ -692,17 +748,6 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
       }
 
       void get().applyWorkspaceDefaultsToThread(threadId, evt.isResume ? "auto-resume" : "auto", draftModelSelection);
-      RUNTIME.threadSockets.get(threadId)?.send({
-        type: "get_session_usage",
-        sessionId: evt.sessionId,
-      });
-      if ((evt.sessionKind ?? "root") !== "agent") {
-        RUNTIME.threadSockets.get(threadId)?.send({
-          type: "agent_list_get",
-          sessionId: evt.sessionId,
-        });
-      }
-
       let sentPendingFirstMessage = false;
       if (pendingFirstMessage && pendingFirstMessage.trim()) {
         if (resumedBusy) {
@@ -1279,6 +1324,10 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
           activeThreadId,
           { ...buildSyntheticSessionInfoFromJsonRpcThread(thread), sessionId: thread.id } as any,
         );
+        const snapshot = await requestJsonRpcThreadRead(get, set, workspaceId, thread.id);
+        if (snapshot) {
+          applyJsonRpcThreadSnapshot(get, set, activeThreadId, snapshot);
+        }
       };
       void connect();
       set((s) => ({

@@ -59,6 +59,9 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
     await ensureServerRunning(get, set, workspaceId);
     const socket = ensureControlSocket(get, set, workspaceId);
     if (workspaceUsesJsonRpc(get, workspaceId) && socket) {
+      if (!get().workspaceRuntimeById[workspaceId]?.controlSessionId) {
+        return null;
+      }
       return workspaceId;
     }
     const sessionId = get().workspaceRuntimeById[workspaceId]?.controlSessionId;

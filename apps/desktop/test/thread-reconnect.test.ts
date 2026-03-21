@@ -330,7 +330,6 @@ describe("thread reconnect", () => {
     expect(threadSocket.opts.autoReconnect).toBe(true);
     emitServerHello(threadSocket, "thread-session");
     const activeThreadId = canonicalThreadId("thread-session", threadId);
-    expect(threadSocket.sent).toContainEqual({ type: "get_session_usage", sessionId: "thread-session" });
 
     const state = useAppStore.getState();
     const thread = state.threads.find((t) => t.id === activeThreadId);

@@ -59,6 +59,42 @@ class MockAgentSocket {
   close() {}
 }
 
+class MockJsonRpcSocket {
+  static autoOpen = true;
+
+  readonly readyPromise: Promise<void>;
+  private resolveReady!: () => void;
+
+  constructor(public readonly opts: { onOpen?: () => void; onClose?: () => void }) {
+    this.readyPromise = new Promise((resolve) => {
+      this.resolveReady = resolve;
+    });
+  }
+
+  connect() {
+    if (!MockJsonRpcSocket.autoOpen) {
+      return;
+    }
+    this.resolveReady();
+    this.opts.onOpen?.();
+  }
+
+  async request(method: string) {
+    if (method === "thread/list") {
+      return { threads: [] };
+    }
+    return {};
+  }
+
+  respond() {
+    return true;
+  }
+
+  close() {
+    this.opts.onClose?.();
+  }
+}
+
 mock.module("../src/lib/desktopCommands", () => ({
   appendTranscriptBatch: async () => {},
   appendTranscriptEvent: async () => {},
@@ -106,6 +142,7 @@ mock.module("../src/lib/desktopCommands", () => ({
 
 mock.module("../src/lib/agentSocket", () => ({
   AgentSocket: MockAgentSocket,
+  JsonRpcSocket: MockJsonRpcSocket,
 }));
 
 const { useAppStore } = await import("../src/app/store");
@@ -133,6 +170,8 @@ describe("workspace startup flow", () => {
     RUNTIME.workspaceStartPromises.clear();
     RUNTIME.workspaceStartGenerations.clear();
     RUNTIME.modelStreamByThread.clear();
+    RUNTIME.jsonRpcSockets.clear();
+    MockJsonRpcSocket.autoOpen = true;
 
     useAppStore.setState({
       ready: true,
@@ -260,6 +299,7 @@ describe("workspace startup flow", () => {
 
   test("provider auth method refresh stays quiet while the control socket is still handshaking", async () => {
     const workspaceId = "ws-provider";
+    MockJsonRpcSocket.autoOpen = false;
     useAppStore.setState({
       workspaces: [
         {
@@ -268,6 +308,7 @@ describe("workspace startup flow", () => {
           path: "/tmp/workspace",
           createdAt: "2026-03-17T00:00:00.000Z",
           lastOpenedAt: "2026-03-17T00:00:00.000Z",
+          wsProtocol: "jsonrpc",
           defaultEnableMcp: true,
           yolo: false,
         },
@@ -285,6 +326,6 @@ describe("workspace startup flow", () => {
     expect(useAppStore.getState().notifications).toEqual([]);
     expect(useAppStore.getState().workspaceRuntimeById[workspaceId]?.controlSessionId).toBeNull();
     expect(useAppStore.getState().providerStatusRefreshing).toBeFalse();
-    expect(RUNTIME.controlSockets.has(workspaceId)).toBeTrue();
+    expect(RUNTIME.jsonRpcSockets.has(workspaceId)).toBeTrue();
   });
 });
