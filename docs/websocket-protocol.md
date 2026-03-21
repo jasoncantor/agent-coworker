@@ -103,6 +103,76 @@ Any request before the handshake completes is rejected with a JSON-RPC error:
 - `turn/steer`
 - `turn/interrupt`
 
+### Cowork JSON-RPC control namespace
+
+Cowork also exposes a workspace-scoped control namespace over the same JSON-RPC connection. These methods return a legacy-compatible event payload inside `{ "event": ... }` so existing UI reducers can adapt incrementally while the transport modernizes.
+
+Currently implemented `cowork/*` methods include:
+
+- session/thread controls
+  - `cowork/session/title/set`
+  - `cowork/session/model/set`
+  - `cowork/session/usageBudget/set`
+  - `cowork/session/config/set`
+  - `cowork/session/defaults/apply`
+  - `cowork/session/delete`
+- provider controls
+  - `cowork/provider/catalog/read`
+  - `cowork/provider/authMethods/read`
+  - `cowork/provider/status/refresh`
+  - `cowork/provider/auth/authorize`
+  - `cowork/provider/auth/logout`
+  - `cowork/provider/auth/callback`
+  - `cowork/provider/auth/setApiKey`
+  - `cowork/provider/auth/copyApiKey`
+- MCP controls
+  - `cowork/mcp/servers/read`
+  - `cowork/mcp/server/upsert`
+  - `cowork/mcp/server/delete`
+  - `cowork/mcp/server/validate`
+  - `cowork/mcp/server/auth/authorize`
+  - `cowork/mcp/server/auth/callback`
+  - `cowork/mcp/server/auth/setApiKey`
+  - `cowork/mcp/legacy/migrate`
+- skills controls
+  - `cowork/skills/catalog/read`
+  - `cowork/skills/list`
+  - `cowork/skills/read`
+  - `cowork/skills/disable`
+  - `cowork/skills/enable`
+  - `cowork/skills/delete`
+  - `cowork/skills/installation/read`
+  - `cowork/skills/install/preview`
+  - `cowork/skills/install`
+  - `cowork/skills/installation/enable`
+  - `cowork/skills/installation/disable`
+  - `cowork/skills/installation/delete`
+  - `cowork/skills/installation/update`
+  - `cowork/skills/installation/copy`
+  - `cowork/skills/installation/checkUpdate`
+- memory controls
+  - `cowork/memory/list`
+  - `cowork/memory/upsert`
+  - `cowork/memory/delete`
+- workspace backup controls
+  - `cowork/backups/workspace/read`
+  - `cowork/backups/workspace/delta/read`
+  - `cowork/backups/workspace/checkpoint`
+  - `cowork/backups/workspace/restore`
+  - `cowork/backups/workspace/deleteCheckpoint`
+  - `cowork/backups/workspace/deleteEntry`
+
+The desktop JSON-RPC path now uses this namespace so one workspace connection can drive:
+
+- thread lifecycle
+- message turns
+- approvals / asks
+- provider panels
+- skills management
+- MCP management
+- memories
+- workspace backups
+
 ### Core JSON-RPC notifications currently available
 
 - `thread/started`

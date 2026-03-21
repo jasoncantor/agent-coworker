@@ -1,6 +1,94 @@
 import { z } from "zod";
 
 const nonEmptyTrimmedStringSchema = z.string().trim().min(1);
+const optionalNonEmptyTrimmedStringSchema = nonEmptyTrimmedStringSchema.optional();
+const targetScopeSchema = z.enum(["project", "global"]);
+const workspaceMemoryScopeSchema = z.enum(["workspace", "user"]);
+const anyObjectSchema = z.record(z.string(), z.unknown());
+const legacyEventEnvelope = <T extends z.ZodTypeAny>(eventSchema: T) => z.object({ event: eventSchema }).strict();
+const providerCatalogEventSchema = z.object({
+  type: z.literal("provider_catalog"),
+  all: z.array(z.unknown()),
+  default: z.record(z.string(), z.string()),
+  connected: z.array(z.string()),
+}).passthrough();
+const providerAuthMethodsEventSchema = z.object({
+  type: z.literal("provider_auth_methods"),
+  methods: z.record(z.string(), z.array(z.unknown())),
+}).passthrough();
+const providerStatusEventSchema = z.object({
+  type: z.literal("provider_status"),
+  providers: z.array(z.unknown()),
+}).passthrough();
+const providerAuthChallengeEventSchema = z.object({
+  type: z.literal("provider_auth_challenge"),
+}).passthrough();
+const providerAuthResultEventSchema = z.object({
+  type: z.literal("provider_auth_result"),
+}).passthrough();
+const mcpServersEventSchema = z.object({
+  type: z.literal("mcp_servers"),
+  servers: z.array(z.unknown()),
+  files: z.array(z.unknown()),
+}).passthrough();
+const mcpValidationEventSchema = z.object({
+  type: z.literal("mcp_server_validation"),
+}).passthrough();
+const mcpAuthChallengeEventSchema = z.object({
+  type: z.literal("mcp_server_auth_challenge"),
+}).passthrough();
+const mcpAuthResultEventSchema = z.object({
+  type: z.literal("mcp_server_auth_result"),
+}).passthrough();
+const skillsCatalogEventSchema = z.object({
+  type: z.literal("skills_catalog"),
+}).passthrough();
+const skillsListEventSchema = z.object({
+  type: z.literal("skills_list"),
+  skills: z.array(z.unknown()),
+}).passthrough();
+const skillContentEventSchema = z.object({
+  type: z.literal("skill_content"),
+}).passthrough();
+const skillInstallationEventSchema = z.object({
+  type: z.literal("skill_installation"),
+}).passthrough();
+const skillInstallPreviewEventSchema = z.object({
+  type: z.literal("skill_install_preview"),
+}).passthrough();
+const skillInstallUpdateCheckEventSchema = z.object({
+  type: z.literal("skill_installation_update_check"),
+}).passthrough();
+const memoryListEventSchema = z.object({
+  type: z.literal("memory_list"),
+  memories: z.array(z.unknown()),
+}).passthrough();
+const workspaceBackupsEventSchema = z.object({
+  type: z.literal("workspace_backups"),
+  workspacePath: z.string(),
+  backups: z.array(z.unknown()),
+}).passthrough();
+const workspaceBackupDeltaEventSchema = z.object({
+  type: z.literal("workspace_backup_delta"),
+}).passthrough();
+const sessionInfoEventSchema = z.object({
+  type: z.literal("session_info"),
+  title: z.string(),
+}).passthrough();
+const configUpdatedEventSchema = z.object({
+  type: z.literal("config_updated"),
+  config: anyObjectSchema,
+}).passthrough();
+const sessionConfigEventSchema = z.object({
+  type: z.literal("session_config"),
+  config: anyObjectSchema,
+}).passthrough();
+const sessionUsageEventSchema = z.object({
+  type: z.literal("session_usage"),
+}).passthrough();
+const sessionDeletedEventSchema = z.object({
+  type: z.literal("session_deleted"),
+}).passthrough();
 
 export const jsonRpcInitializeParamsSchema = z.object({
   clientInfo: z.object({
@@ -55,6 +143,206 @@ export const jsonRpcRequestSchemas = {
   }).strict(),
   "turn/interrupt": z.object({
     threadId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/session/title/set": z.object({
+    threadId: nonEmptyTrimmedStringSchema,
+    title: z.string(),
+  }).strict(),
+  "cowork/session/model/set": z.object({
+    threadId: nonEmptyTrimmedStringSchema,
+    provider: optionalNonEmptyTrimmedStringSchema,
+    model: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/session/usageBudget/set": z.object({
+    threadId: nonEmptyTrimmedStringSchema,
+    warnAtUsd: z.number().nullable().optional(),
+    stopAtUsd: z.number().nullable().optional(),
+  }).strict(),
+  "cowork/session/config/set": z.object({
+    threadId: nonEmptyTrimmedStringSchema,
+    config: anyObjectSchema,
+  }).strict(),
+  "cowork/session/defaults/apply": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    provider: optionalNonEmptyTrimmedStringSchema,
+    model: optionalNonEmptyTrimmedStringSchema,
+    enableMcp: z.boolean().optional(),
+    config: anyObjectSchema.optional(),
+  }).strict(),
+  "cowork/session/delete": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    targetSessionId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/provider/catalog/read": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/provider/authMethods/read": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/provider/status/refresh": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/provider/auth/authorize": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    provider: nonEmptyTrimmedStringSchema,
+    methodId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/provider/auth/logout": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    provider: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/provider/auth/callback": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    provider: nonEmptyTrimmedStringSchema,
+    methodId: nonEmptyTrimmedStringSchema,
+    code: z.string().optional(),
+  }).strict(),
+  "cowork/provider/auth/setApiKey": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    provider: nonEmptyTrimmedStringSchema,
+    methodId: nonEmptyTrimmedStringSchema,
+    apiKey: z.string(),
+  }).strict(),
+  "cowork/provider/auth/copyApiKey": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    provider: nonEmptyTrimmedStringSchema,
+    sourceProvider: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/mcp/servers/read": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/mcp/server/upsert": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    server: anyObjectSchema,
+    previousName: z.string().optional(),
+  }).strict(),
+  "cowork/mcp/server/delete": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    name: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/mcp/server/validate": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    name: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/mcp/server/auth/authorize": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    name: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/mcp/server/auth/callback": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    name: nonEmptyTrimmedStringSchema,
+    code: z.string().optional(),
+  }).strict(),
+  "cowork/mcp/server/auth/setApiKey": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    name: nonEmptyTrimmedStringSchema,
+    apiKey: z.string(),
+  }).strict(),
+  "cowork/mcp/legacy/migrate": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    scope: z.enum(["workspace", "user"]),
+  }).strict(),
+  "cowork/skills/catalog/read": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/skills/list": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/skills/read": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    skillName: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/skills/disable": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    skillName: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/skills/enable": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    skillName: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/skills/delete": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    skillName: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/skills/installation/read": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    installationId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/skills/install/preview": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    sourceInput: z.string(),
+    targetScope: targetScopeSchema,
+  }).strict(),
+  "cowork/skills/install": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    sourceInput: z.string(),
+    targetScope: targetScopeSchema,
+  }).strict(),
+  "cowork/skills/installation/enable": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    installationId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/skills/installation/disable": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    installationId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/skills/installation/delete": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    installationId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/skills/installation/update": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    installationId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/skills/installation/copy": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    installationId: nonEmptyTrimmedStringSchema,
+    targetScope: targetScopeSchema,
+  }).strict(),
+  "cowork/skills/installation/checkUpdate": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    installationId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/memory/list": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    scope: workspaceMemoryScopeSchema.optional(),
+  }).strict(),
+  "cowork/memory/upsert": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    scope: workspaceMemoryScopeSchema,
+    id: z.string().optional(),
+    content: z.string(),
+  }).strict(),
+  "cowork/memory/delete": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    scope: workspaceMemoryScopeSchema,
+    id: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/backups/workspace/read": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/backups/workspace/delta/read": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    targetSessionId: nonEmptyTrimmedStringSchema,
+    checkpointId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/backups/workspace/checkpoint": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    targetSessionId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/backups/workspace/restore": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    targetSessionId: nonEmptyTrimmedStringSchema,
+    checkpointId: z.string().optional(),
+  }).strict(),
+  "cowork/backups/workspace/deleteCheckpoint": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    targetSessionId: nonEmptyTrimmedStringSchema,
+    checkpointId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/backups/workspace/deleteEntry": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
+    targetSessionId: nonEmptyTrimmedStringSchema,
   }).strict(),
 } as const;
 
@@ -177,6 +465,52 @@ export const jsonRpcResultSchemas = {
     turnId: nonEmptyTrimmedStringSchema,
   }).strict(),
   "turn/interrupt": z.object({}).strict(),
+  "cowork/session/title/set": legacyEventEnvelope(sessionInfoEventSchema),
+  "cowork/session/model/set": legacyEventEnvelope(configUpdatedEventSchema),
+  "cowork/session/usageBudget/set": legacyEventEnvelope(sessionUsageEventSchema),
+  "cowork/session/config/set": legacyEventEnvelope(sessionConfigEventSchema),
+  "cowork/session/defaults/apply": legacyEventEnvelope(sessionConfigEventSchema),
+  "cowork/session/delete": legacyEventEnvelope(sessionDeletedEventSchema),
+  "cowork/provider/catalog/read": legacyEventEnvelope(providerCatalogEventSchema),
+  "cowork/provider/authMethods/read": legacyEventEnvelope(providerAuthMethodsEventSchema),
+  "cowork/provider/status/refresh": legacyEventEnvelope(providerStatusEventSchema),
+  "cowork/provider/auth/authorize": legacyEventEnvelope(z.union([providerAuthChallengeEventSchema, providerAuthResultEventSchema])),
+  "cowork/provider/auth/logout": legacyEventEnvelope(providerAuthResultEventSchema),
+  "cowork/provider/auth/callback": legacyEventEnvelope(providerAuthResultEventSchema),
+  "cowork/provider/auth/setApiKey": legacyEventEnvelope(providerAuthResultEventSchema),
+  "cowork/provider/auth/copyApiKey": legacyEventEnvelope(providerAuthResultEventSchema),
+  "cowork/mcp/servers/read": legacyEventEnvelope(mcpServersEventSchema),
+  "cowork/mcp/server/upsert": legacyEventEnvelope(mcpServersEventSchema),
+  "cowork/mcp/server/delete": legacyEventEnvelope(mcpServersEventSchema),
+  "cowork/mcp/server/validate": legacyEventEnvelope(mcpValidationEventSchema),
+  "cowork/mcp/server/auth/authorize": legacyEventEnvelope(z.union([mcpAuthChallengeEventSchema, mcpAuthResultEventSchema])),
+  "cowork/mcp/server/auth/callback": legacyEventEnvelope(mcpAuthResultEventSchema),
+  "cowork/mcp/server/auth/setApiKey": legacyEventEnvelope(mcpAuthResultEventSchema),
+  "cowork/mcp/legacy/migrate": legacyEventEnvelope(mcpServersEventSchema),
+  "cowork/skills/catalog/read": legacyEventEnvelope(skillsCatalogEventSchema),
+  "cowork/skills/list": legacyEventEnvelope(skillsListEventSchema),
+  "cowork/skills/read": legacyEventEnvelope(skillContentEventSchema),
+  "cowork/skills/disable": legacyEventEnvelope(skillsListEventSchema),
+  "cowork/skills/enable": legacyEventEnvelope(skillsListEventSchema),
+  "cowork/skills/delete": legacyEventEnvelope(skillsListEventSchema),
+  "cowork/skills/installation/read": legacyEventEnvelope(skillInstallationEventSchema),
+  "cowork/skills/install/preview": legacyEventEnvelope(skillInstallPreviewEventSchema),
+  "cowork/skills/install": legacyEventEnvelope(skillsCatalogEventSchema),
+  "cowork/skills/installation/enable": legacyEventEnvelope(skillsCatalogEventSchema),
+  "cowork/skills/installation/disable": legacyEventEnvelope(skillsCatalogEventSchema),
+  "cowork/skills/installation/delete": legacyEventEnvelope(skillsCatalogEventSchema),
+  "cowork/skills/installation/update": legacyEventEnvelope(skillsCatalogEventSchema),
+  "cowork/skills/installation/copy": legacyEventEnvelope(skillsCatalogEventSchema),
+  "cowork/skills/installation/checkUpdate": legacyEventEnvelope(skillInstallUpdateCheckEventSchema),
+  "cowork/memory/list": legacyEventEnvelope(memoryListEventSchema),
+  "cowork/memory/upsert": legacyEventEnvelope(memoryListEventSchema),
+  "cowork/memory/delete": legacyEventEnvelope(memoryListEventSchema),
+  "cowork/backups/workspace/read": legacyEventEnvelope(workspaceBackupsEventSchema),
+  "cowork/backups/workspace/delta/read": legacyEventEnvelope(workspaceBackupDeltaEventSchema),
+  "cowork/backups/workspace/checkpoint": legacyEventEnvelope(workspaceBackupsEventSchema),
+  "cowork/backups/workspace/restore": legacyEventEnvelope(workspaceBackupsEventSchema),
+  "cowork/backups/workspace/deleteCheckpoint": legacyEventEnvelope(workspaceBackupsEventSchema),
+  "cowork/backups/workspace/deleteEntry": legacyEventEnvelope(workspaceBackupsEventSchema),
 } as const;
 
 export const jsonRpcSchemaBundle = {
