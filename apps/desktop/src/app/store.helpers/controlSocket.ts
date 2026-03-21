@@ -11,6 +11,14 @@ type ProviderStatusEvent = Extract<ServerEvent, { type: "provider_status" }>;
 type ProviderStatus = ProviderStatusEvent["providers"][number];
 type ProviderAuthChallengeEvent = Extract<ServerEvent, { type: "provider_auth_challenge" }>;
 
+function controlSendErrorDetail(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (message) return message;
+  }
+  return String(error);
+}
+
 function sanitizeProviderAuthChallenge(evt: ProviderAuthChallengeEvent): ProviderAuthChallengeEvent {
   if (evt.provider !== "codex-cli" || evt.methodId !== "oauth_cli" || !evt.challenge.url) {
     return evt;
@@ -47,6 +55,13 @@ export function createControlSocketHelpers(
   const workspaceSessionWaiters = new Map<string, Set<(sessions: Extract<ServerEvent, { type: "sessions" }>["sessions"] | null) => void>>();
   const sessionSnapshotWaiters = new Map<string, Set<(snapshot: SessionSnapshot | null) => void>>();
   const requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+
+  function sendControlMessage(socket: AgentSocket, message: ClientMessage) {
+    const ok = socket.send(message);
+    if (ok === false) {
+      throw new Error(`Unable to send ${message.type}.`);
+    }
+  }
 
   function resolveControlSessionWaiters(workspaceId: string, sessionId: string | null) {
     const waiters = controlSessionWaiters.get(workspaceId);
@@ -373,23 +388,52 @@ export function createControlSocketHelpers(
           resolveControlSessionWaiters(workspaceId, evt.sessionId);
 
           try {
-            socket.send({ type: "skills_catalog_get", sessionId: evt.sessionId });
-            socket.send({ type: "list_skills", sessionId: evt.sessionId });
+            sendControlMessage(socket, { type: "skills_catalog_get", sessionId: evt.sessionId });
+            sendControlMessage(socket, { type: "list_skills", sessionId: evt.sessionId });
             const selected = get().workspaceRuntimeById[workspaceId]?.selectedSkillName;
-            if (selected) socket.send({ type: "read_skill", sessionId: evt.sessionId, skillName: selected });
+            if (selected) {
+              sendControlMessage(socket, { type: "read_skill", sessionId: evt.sessionId, skillName: selected });
+            }
             const selectedInstallationId = get().workspaceRuntimeById[workspaceId]?.selectedSkillInstallationId;
             if (selectedInstallationId) {
-              socket.send({ type: "skill_installation_get", sessionId: evt.sessionId, installationId: selectedInstallationId });
+              sendControlMessage(socket, {
+                type: "skill_installation_get",
+                sessionId: evt.sessionId,
+                installationId: selectedInstallationId,
+              });
             }
-            socket.send({ type: "list_sessions", sessionId: evt.sessionId, scope: "workspace" });
-            socket.send({ type: "provider_catalog_get", sessionId: evt.sessionId });
-            socket.send({ type: "provider_auth_methods_get", sessionId: evt.sessionId });
-            socket.send({ type: "user_config_get", sessionId: evt.sessionId });
-            socket.send({ type: "refresh_provider_status", sessionId: evt.sessionId });
-            socket.send({ type: "mcp_servers_get", sessionId: evt.sessionId });
-            socket.send({ type: "memory_list", sessionId: evt.sessionId });
-          } catch {
-            // ignore
+            sendControlMessage(socket, { type: "list_sessions", sessionId: evt.sessionId, scope: "workspace" });
+            sendControlMessage(socket, { type: "provider_catalog_get", sessionId: evt.sessionId });
+            sendControlMessage(socket, { type: "provider_auth_methods_get", sessionId: evt.sessionId });
+            sendControlMessage(socket, { type: "user_config_get", sessionId: evt.sessionId });
+            sendControlMessage(socket, { type: "refresh_provider_status", sessionId: evt.sessionId });
+            sendControlMessage(socket, { type: "mcp_servers_get", sessionId: evt.sessionId });
+            sendControlMessage(socket, { type: "memory_list", sessionId: evt.sessionId });
+          } catch (error) {
+            const detail = controlSendErrorDetail(error);
+            console.error("Failed to initialize desktop control session", error);
+            set((s) => {
+              const workspaceRuntime = s.workspaceRuntimeById[workspaceId];
+              return {
+                providerStatusRefreshing: false,
+                notifications: deps.pushNotification(s.notifications, {
+                  id: deps.makeId(),
+                  ts: deps.nowIso(),
+                  kind: "error",
+                  title: "Control session sync failed",
+                  detail,
+                }),
+                workspaceRuntimeById: {
+                  ...s.workspaceRuntimeById,
+                  [workspaceId]: {
+                    ...workspaceRuntime,
+                    memoriesLoading: false,
+                    skillCatalogLoading: false,
+                    skillCatalogError: workspaceRuntime.skillCatalogLoading ? detail : workspaceRuntime.skillCatalogError,
+                  },
+                },
+              };
+            });
           }
           return;
         }
@@ -859,10 +903,21 @@ export function createControlSocketHelpers(
 
           set(() => ({ providerStatusRefreshing: true }));
           try {
-            socket.send({ type: "refresh_provider_status", sessionId: sid });
-            socket.send({ type: "provider_catalog_get", sessionId: sid });
-          } catch {
-            set(() => ({ providerStatusRefreshing: false }));
+            sendControlMessage(socket, { type: "refresh_provider_status", sessionId: sid });
+            sendControlMessage(socket, { type: "provider_catalog_get", sessionId: sid });
+          } catch (error) {
+            const detail = controlSendErrorDetail(error);
+            console.error(`Failed to refresh provider status after auth for ${evt.provider}`, error);
+            set((s) => ({
+              providerStatusRefreshing: false,
+              notifications: deps.pushNotification(s.notifications, {
+                id: deps.makeId(),
+                ts: deps.nowIso(),
+                kind: "error",
+                title: `Provider refresh failed: ${evt.provider}`,
+                detail,
+              }),
+            }));
           }
           return;
         }

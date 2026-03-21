@@ -618,8 +618,8 @@ export async function startAgentServer(
   const getConnectedProviders = async (parentConfig: AgentConfig): Promise<AgentConfig["provider"][]> => (
     await getProviderCatalog({
       homedir: resolveAuthHomeDir(parentConfig, opts.homedir),
+      config: parentConfig,
       providerOptions: parentConfig.providerOptions,
-      awsBedrockProxyBaseUrl: parentConfig.awsBedrockProxyBaseUrl,
     })
   ).connected as AgentConfig["provider"][];
 

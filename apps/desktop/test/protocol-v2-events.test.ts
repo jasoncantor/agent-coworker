@@ -295,6 +295,47 @@ describe("desktop protocol v2 mapping", () => {
     });
   });
 
+  test("server_hello init send failures are logged and clear bootstrap loading state", async () => {
+    const consoleErrors: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => {
+      consoleErrors.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      await useAppStore.getState().newThread({ workspaceId, mode: "session" });
+      useAppStore.setState({
+        ...useAppStore.getState(),
+        view: "skills",
+      });
+      await useAppStore.getState().requestWorkspaceMemories(workspaceId);
+      await flushAsyncWork();
+
+      const controlSocket = socketByClient("desktop-control");
+      controlSocket.send = (message?: any) => {
+        controlSocket.sent.push(message);
+        if (message?.type === "provider_catalog_get") {
+          throw new Error("socket write failed");
+        }
+        return true;
+      };
+
+      emitServerHello(controlSocket, "control-session");
+
+      const state = useAppStore.getState();
+      const runtime = state.workspaceRuntimeById[workspaceId];
+      expect(state.providerStatusRefreshing).toBe(false);
+      expect(runtime?.memoriesLoading).toBe(false);
+      expect(runtime?.skillCatalogLoading).toBe(false);
+      expect(runtime?.skillCatalogError).toBe("socket write failed");
+      expect(state.notifications.at(-1)?.title).toBe("Control session sync failed");
+      expect(state.notifications.at(-1)?.detail).toBe("socket write failed");
+      expect(consoleErrors.some((entry) => entry.includes("Failed to initialize desktop control session"))).toBe(true);
+    } finally {
+      console.error = realError;
+    }
+  });
+
   test("requestWorkspaceMemories waits for the initial control hello before surfacing not connected", async () => {
     const requestPromise = useAppStore.getState().requestWorkspaceMemories(workspaceId);
     await flushAsyncWork();
@@ -1056,6 +1097,44 @@ describe("desktop protocol v2 mapping", () => {
     const notification = useAppStore.getState().notifications.at(-1);
     expect(notification?.title).toBe("Provider disconnected: codex-cli");
     expect(notification?.detail).toBe("Codex OAuth credentials cleared.");
+  });
+
+  test("provider auth refresh send failures are logged and clear the refresh flag", async () => {
+    const consoleErrors: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => {
+      consoleErrors.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      await useAppStore.getState().newThread({ workspaceId, mode: "session" });
+      const controlSocket = socketByClient("desktop-control");
+      emitServerHello(controlSocket, "control-session");
+      controlSocket.send = (message?: any) => {
+        controlSocket.sent.push(message);
+        if (message?.type === "refresh_provider_status") {
+          throw new Error("refresh write failed");
+        }
+        return true;
+      };
+
+      controlSocket.emit({
+        type: "provider_auth_result",
+        sessionId: "control-session",
+        provider: "codex-cli",
+        methodId: "oauth_cli",
+        ok: true,
+        message: "Connected.",
+      });
+
+      const state = useAppStore.getState();
+      expect(state.providerStatusRefreshing).toBe(false);
+      expect(state.notifications.at(-1)?.title).toBe("Provider refresh failed: codex-cli");
+      expect(state.notifications.at(-1)?.detail).toBe("refresh write failed");
+      expect(consoleErrors.some((entry) => entry.includes("Failed to refresh provider status after auth for codex-cli"))).toBe(true);
+    } finally {
+      console.error = realError;
+    }
   });
 
   test("approval prompt keeps required reasonCode", async () => {
