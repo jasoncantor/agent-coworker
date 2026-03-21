@@ -3246,6 +3246,243 @@
             "type"
           ],
           "additionalProperties": {}
+        },
+        "cowork/session/steerAccepted": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "steer_accepted"
+            },
+            "turnId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string"
+            },
+            "clientMessageId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "type",
+            "turnId",
+            "text"
+          ],
+          "additionalProperties": {}
+        },
+        "cowork/session/turnUsage": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "turn_usage"
+            },
+            "turnId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "type",
+            "turnId"
+          ],
+          "additionalProperties": {}
+        },
+        "cowork/session/budgetWarning": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "budget_warning"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "message"
+          ],
+          "additionalProperties": {}
+        },
+        "cowork/session/budgetExceeded": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "budget_exceeded"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "message"
+          ],
+          "additionalProperties": {}
+        },
+        "cowork/session/backupState": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "session_backup_state"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": {}
+        },
+        "cowork/session/harnessContext": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "harness_context"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": {}
+        },
+        "cowork/session/agentList": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "agent_list"
+            },
+            "agents": {
+              "type": "array",
+              "items": {}
+            }
+          },
+          "required": [
+            "type",
+            "agents"
+          ],
+          "additionalProperties": {}
+        },
+        "cowork/session/agentSpawned": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "agent_spawned"
+            },
+            "agent": {}
+          },
+          "required": [
+            "type",
+            "agent"
+          ],
+          "additionalProperties": {}
+        },
+        "cowork/session/agentStatus": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "agent_status"
+            },
+            "agent": {}
+          },
+          "required": [
+            "type",
+            "agent"
+          ],
+          "additionalProperties": {}
+        },
+        "cowork/session/agentWaitResult": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "agent_wait_result"
+            },
+            "agentIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "agents": {
+              "type": "array",
+              "items": {}
+            }
+          },
+          "required": [
+            "type",
+            "agentIds",
+            "agents"
+          ],
+          "additionalProperties": {}
+        },
+        "cowork/log": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "log"
+            },
+            "line": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "line"
+          ],
+          "additionalProperties": {}
+        },
+        "cowork/todos": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "todos"
+            },
+            "todos": {
+              "type": "array",
+              "items": {}
+            }
+          },
+          "required": [
+            "type",
+            "todos"
+          ],
+          "additionalProperties": {}
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "error"
+            },
+            "message": {
+              "type": "string"
+            },
+            "code": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "message",
+            "code",
+            "source"
+          ],
+          "additionalProperties": {}
         }
       },
       "required": [
@@ -3260,7 +3497,20 @@
         "cowork/session/info",
         "cowork/session/configUpdated",
         "cowork/session/config",
-        "cowork/session/usage"
+        "cowork/session/usage",
+        "cowork/session/steerAccepted",
+        "cowork/session/turnUsage",
+        "cowork/session/budgetWarning",
+        "cowork/session/budgetExceeded",
+        "cowork/session/backupState",
+        "cowork/session/harnessContext",
+        "cowork/session/agentList",
+        "cowork/session/agentSpawned",
+        "cowork/session/agentStatus",
+        "cowork/session/agentWaitResult",
+        "cowork/log",
+        "cowork/todos",
+        "error"
       ],
       "additionalProperties": false
     },

@@ -242,6 +242,36 @@ export function createJsonRpcLegacyEventProjector(opts: CreateJsonRpcLegacyEvent
         case "session_usage":
           sendNotification("cowork/session/usage", event);
           return;
+        case "steer_accepted":
+          sendNotification("cowork/session/steerAccepted", event);
+          return;
+        case "turn_usage":
+          sendNotification("cowork/session/turnUsage", event);
+          return;
+        case "budget_warning":
+          sendNotification("cowork/session/budgetWarning", event);
+          return;
+        case "budget_exceeded":
+          sendNotification("cowork/session/budgetExceeded", event);
+          return;
+        case "session_backup_state":
+          sendNotification("cowork/session/backupState", event);
+          return;
+        case "harness_context":
+          sendNotification("cowork/session/harnessContext", event);
+          return;
+        case "agent_list":
+          sendNotification("cowork/session/agentList", event);
+          return;
+        case "agent_spawned":
+          sendNotification("cowork/session/agentSpawned", event);
+          return;
+        case "agent_status":
+          sendNotification("cowork/session/agentStatus", event);
+          return;
+        case "agent_wait_result":
+          sendNotification("cowork/session/agentWaitResult", event);
+          return;
         case "ask":
           handleAsk(event);
           return;
@@ -249,26 +279,13 @@ export function createJsonRpcLegacyEventProjector(opts: CreateJsonRpcLegacyEvent
           handleApproval(event);
           return;
         case "log":
-          sendNotification("cowork/log", {
-            threadId: opts.threadId,
-            line: event.line,
-          });
+          sendNotification("cowork/log", event);
           return;
         case "todos":
-          sendNotification("cowork/todos", {
-            threadId: opts.threadId,
-            todos: event.todos,
-          });
+          sendNotification("cowork/todos", event);
           return;
         case "error":
-          sendNotification("error", {
-            threadId: opts.threadId,
-            error: {
-              message: event.message,
-              code: event.code,
-              source: event.source,
-            },
-          });
+          sendNotification("error", event);
           return;
         default:
           return;

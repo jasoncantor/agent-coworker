@@ -15,6 +15,7 @@ function makeItemId(prefix: string, seed: string): string {
 export function createThreadJournalProjector(opts: CreateThreadJournalProjectorOptions) {
   let activeTurnId: string | null = null;
   let lastUserMessageText: string | null = null;
+  let lastUserMessageClientMessageId: string | null = null;
   const agentTextByTurn = new Map<string, string>();
   const agentItemIdByTurn = new Map<string, string>();
 
@@ -49,6 +50,7 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
       switch (event.type) {
         case "user_message":
           lastUserMessageText = event.text;
+          lastUserMessageClientMessageId = typeof event.clientMessageId === "string" ? event.clientMessageId : null;
           return;
         case "session_busy":
           if (event.busy) {
@@ -68,6 +70,7 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
                 id: itemId,
                 type: "userMessage",
                 content: [{ type: "text", text: lastUserMessageText }],
+                ...(lastUserMessageClientMessageId ? { clientMessageId: lastUserMessageClientMessageId } : {}),
               };
               emit("item/started", {
                 threadId: opts.threadId,
@@ -80,6 +83,7 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
                 item,
               }, { turnId: activeTurnId, itemId });
               lastUserMessageText = null;
+              lastUserMessageClientMessageId = null;
             }
             return;
           }

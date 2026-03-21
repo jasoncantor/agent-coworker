@@ -193,6 +193,19 @@ The desktop JSON-RPC path now uses this namespace so one workspace connection ca
 - `cowork/session/configUpdated`
 - `cowork/session/config`
 - `cowork/session/usage`
+- `cowork/session/steerAccepted`
+- `cowork/session/turnUsage`
+- `cowork/session/budgetWarning`
+- `cowork/session/budgetExceeded`
+- `cowork/session/backupState`
+- `cowork/session/harnessContext`
+- `cowork/session/agentList`
+- `cowork/session/agentSpawned`
+- `cowork/session/agentStatus`
+- `cowork/session/agentWaitResult`
+- `cowork/log`
+- `cowork/todos`
+- `error`
 
 ### Server-initiated JSON-RPC requests currently available
 

@@ -58,6 +58,26 @@ import {
 } from "./jsonRpcSocket";
 
 const MAX_FEED_ITEMS = 2000;
+const JSONRPC_THREAD_EVENT_METHODS = new Set([
+  "cowork/session/settings",
+  "cowork/session/info",
+  "cowork/session/configUpdated",
+  "cowork/session/config",
+  "cowork/session/usage",
+  "cowork/session/steerAccepted",
+  "cowork/session/turnUsage",
+  "cowork/session/budgetWarning",
+  "cowork/session/budgetExceeded",
+  "cowork/session/backupState",
+  "cowork/session/harnessContext",
+  "cowork/session/agentList",
+  "cowork/session/agentSpawned",
+  "cowork/session/agentStatus",
+  "cowork/session/agentWaitResult",
+  "cowork/log",
+  "cowork/todos",
+  "error",
+]);
 
 function sortAgentSummaries(agents: ThreadAgentSummary[]): ThreadAgentSummary[] {
   return [...agents].sort((left, right) => {
@@ -176,28 +196,11 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
         ?? params.sessionId
         ?? mappedThreadId;
 
-      if (message.method === "cowork/session/settings") {
-        handleThreadEvent(get, set, mappedThreadId, params as ServerEvent);
-        return;
-      }
-
-      if (message.method === "cowork/session/info") {
-        handleThreadEvent(get, set, mappedThreadId, params as ServerEvent);
-        return;
-      }
-
-      if (message.method === "cowork/session/configUpdated") {
-        handleThreadEvent(get, set, mappedThreadId, params as ServerEvent);
-        return;
-      }
-
-      if (message.method === "cowork/session/config") {
-        handleThreadEvent(get, set, mappedThreadId, params as ServerEvent);
-        return;
-      }
-
-      if (message.method === "cowork/session/usage") {
-        handleThreadEvent(get, set, mappedThreadId, params as ServerEvent);
+      if (JSONRPC_THREAD_EVENT_METHODS.has(message.method) && typeof params.type === "string") {
+        handleThreadEvent(get, set, mappedThreadId, {
+          ...(params as Record<string, unknown>),
+          sessionId: typeof params.sessionId === "string" ? params.sessionId : mappedSessionId,
+        } as ServerEvent);
         return;
       }
 

@@ -92,6 +92,61 @@ const sessionSettingsEventSchema = z.object({
 const sessionUsageEventSchema = z.object({
   type: z.literal("session_usage"),
 }).passthrough();
+const steerAcceptedEventSchema = z.object({
+  type: z.literal("steer_accepted"),
+  turnId: nonEmptyTrimmedStringSchema,
+  text: z.string(),
+  clientMessageId: nonEmptyTrimmedStringSchema.optional(),
+}).passthrough();
+const turnUsageEventSchema = z.object({
+  type: z.literal("turn_usage"),
+  turnId: nonEmptyTrimmedStringSchema,
+}).passthrough();
+const budgetWarningEventSchema = z.object({
+  type: z.literal("budget_warning"),
+  message: z.string(),
+}).passthrough();
+const budgetExceededEventSchema = z.object({
+  type: z.literal("budget_exceeded"),
+  message: z.string(),
+}).passthrough();
+const sessionBackupStateEventSchema = z.object({
+  type: z.literal("session_backup_state"),
+}).passthrough();
+const harnessContextEventSchema = z.object({
+  type: z.literal("harness_context"),
+}).passthrough();
+const agentListEventSchema = z.object({
+  type: z.literal("agent_list"),
+  agents: z.array(z.unknown()),
+}).passthrough();
+const agentSpawnedEventSchema = z.object({
+  type: z.literal("agent_spawned"),
+  agent: z.unknown(),
+}).passthrough();
+const agentStatusEventSchema = z.object({
+  type: z.literal("agent_status"),
+  agent: z.unknown(),
+}).passthrough();
+const agentWaitResultEventSchema = z.object({
+  type: z.literal("agent_wait_result"),
+  agentIds: z.array(z.string()),
+  agents: z.array(z.unknown()),
+}).passthrough();
+const todosEventSchema = z.object({
+  type: z.literal("todos"),
+  todos: z.array(z.unknown()),
+}).passthrough();
+const logEventSchema = z.object({
+  type: z.literal("log"),
+  line: z.string(),
+}).passthrough();
+const errorEventSchema = z.object({
+  type: z.literal("error"),
+  message: z.string(),
+  code: z.string(),
+  source: z.string(),
+}).passthrough();
 const sessionDeletedEventSchema = z.object({
   type: z.literal("session_deleted"),
 }).passthrough();
@@ -411,6 +466,19 @@ export const jsonRpcNotificationSchemas = {
   "cowork/session/configUpdated": configUpdatedEventSchema,
   "cowork/session/config": sessionConfigEventSchema,
   "cowork/session/usage": sessionUsageEventSchema,
+  "cowork/session/steerAccepted": steerAcceptedEventSchema,
+  "cowork/session/turnUsage": turnUsageEventSchema,
+  "cowork/session/budgetWarning": budgetWarningEventSchema,
+  "cowork/session/budgetExceeded": budgetExceededEventSchema,
+  "cowork/session/backupState": sessionBackupStateEventSchema,
+  "cowork/session/harnessContext": harnessContextEventSchema,
+  "cowork/session/agentList": agentListEventSchema,
+  "cowork/session/agentSpawned": agentSpawnedEventSchema,
+  "cowork/session/agentStatus": agentStatusEventSchema,
+  "cowork/session/agentWaitResult": agentWaitResultEventSchema,
+  "cowork/log": logEventSchema,
+  "cowork/todos": todosEventSchema,
+  error: errorEventSchema,
 } as const;
 
 export const jsonRpcServerRequestSchemas = {
