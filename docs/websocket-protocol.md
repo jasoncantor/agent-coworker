@@ -4,8 +4,10 @@ Canonical protocol contract for `agent-coworker` WebSocket clients.
 
 Cowork now supports **two WebSocket protocols** on the same `/ws` endpoint:
 
-- **Legacy Cowork event protocol** — default today; fully backward compatible with existing desktop / CLI / TUI clients.
+- **Legacy Cowork event protocol** — default today on the server; fully backward compatible with existing CLI / TUI / custom clients.
 - **Codex-style JSON-RPC-lite protocol** — additive protocol for multiplexed thread control, thread replay, and server-initiated requests.
+
+The Electron desktop app now uses the JSON-RPC mode exclusively for live workspace control and thread traffic. Existing persisted desktop workspaces are normalized to `jsonrpc` on load, but the harness still keeps the legacy protocol available for non-desktop clients.
 
 ## Connection
 
@@ -206,7 +208,7 @@ Clients should treat this as retryable and use backoff with jitter.
 
 ## Legacy protocol reference
 
-The remainder of this document describes the **legacy Cowork protocol**, which remains the default transport for existing clients.
+The remainder of this document describes the **legacy Cowork protocol**, which remains available for non-desktop clients and still defaults on the server unless explicitly overridden.
 
 ## Table of Contents
 
