@@ -15,6 +15,7 @@ import { resolveAuthHomeDir } from "../utils/authHome";
 import {
   awsBedrockProxyForcedHeaders,
   resolveAwsBedrockProxyApiKey,
+  resolveAwsBedrockProxyBaseUrl,
 } from "./awsBedrockProxyShared";
 
 type HeaderMap = Record<string, string>;
@@ -130,10 +131,15 @@ export function createNvidiaModelAdapter(modelId: string, savedKey?: string): Pr
 }
 
 export function createAwsBedrockProxyModelAdapter(
-  _config: AgentConfig,
+  config: AgentConfig,
   modelId: string,
   savedKey?: string,
 ): ProviderModelAdapter {
+  const baseUrl = resolveAwsBedrockProxyBaseUrl({
+    config,
+    providerOptions: config.providerOptions,
+    env: process.env,
+  });
   return createModelAdapter(modelId, "aws-bedrock-proxy.completions", async () => {
     const key = resolveAwsBedrockProxyApiKey({
       savedKey,
@@ -146,7 +152,7 @@ export function createAwsBedrockProxyModelAdapter(
       headers.authorization = `Bearer ${key}`;
     }
     return headers;
-  });
+  }, baseUrl);
 }
 
 function createOpenCodeModelAdapter(
