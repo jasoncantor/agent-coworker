@@ -43,10 +43,11 @@ import {
   sendUserMessageToThread,
   normalizeThreadTitleSource,
   truncateTitle,
+  waitForControlSession,
 } from "../store.helpers";
 import type { ThreadRecord, WorkspaceRecord } from "../types";
 
-export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "connectProvider" | "setProviderApiKey" | "copyProviderApiKey" | "authorizeProviderAuth" | "logoutProviderAuth" | "callbackProviderAuth" | "requestProviderCatalog" | "requestProviderAuthMethods" | "refreshProviderStatus" | "setLmStudioEnabled" | "setLmStudioModelVisible"> {
+export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "connectProvider" | "setProviderApiKey" | "copyProviderApiKey" | "authorizeProviderAuth" | "logoutProviderAuth" | "callbackProviderAuth" | "requestProviderCatalog" | "requestProviderAuthMethods" | "refreshProviderStatus" | "requestUserConfig" | "setGlobalOpenAiProxyBaseUrl" | "setLmStudioEnabled" | "setLmStudioModelVisible"> {
   const resolveProviderWorkspaceId = (): string | null =>
     get().selectedWorkspaceId ?? get().workspaces[0]?.id ?? null;
 
@@ -56,8 +57,9 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
 
     await ensureServerRunning(get, set, workspaceId);
     const socket = ensureControlSocket(get, set, workspaceId);
+    const ready = await waitForControlSession(get, workspaceId);
     const sessionId = get().workspaceRuntimeById[workspaceId]?.controlSessionId;
-    if (!socket || !sessionId) {
+    if (!socket || !ready || !sessionId) {
       return null;
     }
 
@@ -387,8 +389,26 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
         }));
       }
     },
-  
 
+    requestUserConfig: async () => {
+      const workspaceId = await ensureProviderControlReady();
+      if (!workspaceId) return;
+
+      const ok = sendControl(get, workspaceId, (sessionId) => ({ type: "user_config_get", sessionId }));
+      if (!ok) {
+        set((s) => ({
+          notifications: pushNotification(s.notifications, {
+            id: makeId(),
+            ts: nowIso(),
+            kind: "error",
+            title: "Not connected",
+            detail: "Unable to request global user config.",
+          }),
+        }));
+      }
+    },
+
+  
     refreshProviderStatus: async () => {
       const workspaceId = await ensureProviderControlReady();
       if (!workspaceId) return;
@@ -405,10 +425,42 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
         sock.send({ type: "refresh_provider_status", sessionId: sid });
         sock.send({ type: "provider_catalog_get", sessionId: sid });
         sock.send({ type: "provider_auth_methods_get", sessionId: sid });
+        sock.send({ type: "user_config_get", sessionId: sid });
       } catch {
         set((s) => ({
           providerStatusRefreshing: false,
           notifications: pushNotification(s.notifications, { id: makeId(), ts: nowIso(), kind: "error", title: "Not connected", detail: "Unable to refresh provider status." }),
+        }));
+      }
+    },
+
+    setGlobalOpenAiProxyBaseUrl: async (baseUrl) => {
+      const workspaceId = await ensureProviderControlReady();
+      if (!workspaceId) return;
+
+      const normalizedBaseUrl = typeof baseUrl === "string" ? baseUrl.trim() : "";
+      set(() => ({
+        pendingUserConfigSave: true,
+        userConfigLastResult: null,
+      }));
+
+      const ok = sendControl(get, workspaceId, (sessionId) => ({
+        type: "user_config_set",
+        sessionId,
+        config: {
+          awsBedrockProxyBaseUrl: normalizedBaseUrl ? normalizedBaseUrl : null,
+        },
+      }));
+      if (!ok) {
+        set((s) => ({
+          pendingUserConfigSave: false,
+          notifications: pushNotification(s.notifications, {
+            id: makeId(),
+            ts: nowIso(),
+            kind: "error",
+            title: "Not connected",
+            detail: "Unable to update global user config.",
+          }),
         }));
       }
     },

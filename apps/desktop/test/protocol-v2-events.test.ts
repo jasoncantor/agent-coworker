@@ -212,6 +212,9 @@ describe("desktop protocol v2 mapping", () => {
       providerAuthMethodsByProvider: {},
       providerLastAuthChallenge: null,
       providerLastAuthResult: null,
+      userConfig: {},
+      userConfigLastResult: null,
+      pendingUserConfigSave: false,
       view: "chat",
       startupError: null,
       ready: true,
@@ -231,6 +234,7 @@ describe("desktop protocol v2 mapping", () => {
     const sentTypes = controlSocket.sent.map((msg) => msg?.type).filter(Boolean);
     expect(sentTypes).toContain("provider_catalog_get");
     expect(sentTypes).toContain("provider_auth_methods_get");
+    expect(sentTypes).toContain("user_config_get");
     expect(sentTypes).toContain("refresh_provider_status");
     expect(sentTypes).toContain("mcp_servers_get");
   });

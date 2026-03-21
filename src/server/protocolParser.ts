@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { parseMCPServerConfig, parseMCPServersDocument } from "../mcp/configRegistry";
 import { resolveProviderAuthMethod } from "../providers/authRegistry";
+import { resolveAwsBedrockProxyBaseUrl } from "../providers/awsBedrockProxyShared";
 import {
   AWS_BEDROCK_PROXY_PROMPT_CACHING_TTL_VALUES,
   CODEX_WEB_SEARCH_BACKEND_VALUES,
@@ -397,6 +398,7 @@ const sessionOnlyTypes = [
   "refresh_provider_status",
   "provider_catalog_get",
   "provider_auth_methods_get",
+  "user_config_get",
   "mcp_servers_get",
   "harness_context_get",
   "session_backup_get",
@@ -645,6 +647,69 @@ const providerAuthCopyApiKeySchema = schemaWithType("provider_auth_copy_api_key"
 const setEnableMcpSchema = schemaWithType("set_enable_mcp", {
   sessionId: requiredSessionId("set_enable_mcp"),
   enableMcp: requiredBoolean("set_enable_mcp missing/invalid enableMcp"),
+});
+
+const userConfigSetPayloadSchema = z.object({
+  awsBedrockProxyBaseUrl: z.string().nullable().optional(),
+  openaiProxyBaseUrl: z.string().nullable().optional(),
+}).strict();
+
+const userConfigSetSchema = schemaWithType("user_config_set", {
+  sessionId: requiredSessionId("user_config_set"),
+  config: z.unknown().optional(),
+}).superRefine((value, ctx) => {
+  if (!recordSchema.safeParse(value.config).success) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["config"],
+      message: "user_config_set missing/invalid config",
+    });
+    return;
+  }
+
+  const parsedConfig = userConfigSetPayloadSchema.safeParse(value.config);
+  if (!parsedConfig.success) {
+    const issue = parsedConfig.error.issues[0];
+    const path = issue?.path.map((part) => String(part));
+    const [field] = path ?? [];
+    if (issue?.code === "unrecognized_keys") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["config"],
+        message: "user_config_set config only supports awsBedrockProxyBaseUrl (legacy openaiProxyBaseUrl also accepted)",
+      });
+      return;
+    }
+    if (field === "awsBedrockProxyBaseUrl" || field === "openaiProxyBaseUrl") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["config"],
+        message: "user_config_set config.awsBedrockProxyBaseUrl must be string or null",
+      });
+      return;
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["config"],
+      message: "user_config_set missing/invalid config",
+    });
+    return;
+  }
+
+  const rawBaseUrl =
+    parsedConfig.data.awsBedrockProxyBaseUrl !== undefined
+      ? parsedConfig.data.awsBedrockProxyBaseUrl
+      : parsedConfig.data.openaiProxyBaseUrl;
+  if (typeof rawBaseUrl === "string" && rawBaseUrl.trim().length > 0) {
+    const normalized = resolveAwsBedrockProxyBaseUrl({ baseUrl: rawBaseUrl, env: {} });
+    if (!normalized) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["config"],
+        message: "user_config_set config.awsBedrockProxyBaseUrl must be a valid http(s) URL",
+      });
+    }
+  }
 });
 
 const skillInstallPreviewSchema = schemaWithType("skill_install_preview", {
@@ -954,6 +1019,7 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   providerAuthSetApiKeySchema,
   providerAuthCopyApiKeySchema,
   setEnableMcpSchema,
+  userConfigSetSchema,
   skillInstallPreviewSchema,
   skillInstallSchema,
   skillInstallationCopySchema,
@@ -1117,6 +1183,24 @@ function normalizeClientMessage(parsed: ParsedClientMessage): ClientMessage {
         sessionId,
         provider: parsed.provider,
         sourceProvider: parsed.sourceProvider,
+      };
+    }
+    case "user_config_set": {
+      const sessionId = parsed.sessionId as string;
+      const parsedConfig = userConfigSetPayloadSchema.safeParse(parsed.config);
+      if (!parsedConfig.success) {
+        throw new Error("user_config_set missing/invalid config");
+      }
+      const normalizedBaseUrl =
+        parsedConfig.data.awsBedrockProxyBaseUrl !== undefined
+          ? parsedConfig.data.awsBedrockProxyBaseUrl
+          : parsedConfig.data.openaiProxyBaseUrl;
+      return {
+        type: "user_config_set",
+        sessionId,
+        config: {
+          ...(normalizedBaseUrl !== undefined ? { awsBedrockProxyBaseUrl: normalizedBaseUrl } : {}),
+        },
       };
     }
     case "mcp_server_upsert": {
