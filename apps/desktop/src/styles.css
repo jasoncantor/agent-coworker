@@ -1,45 +1,11 @@
 @import "tailwindcss";
 @import "./styles/tokens.css";
+@import "./styles/theme-bridge.css";
+@import "./styles/platform/darwin.css";
+@import "./styles/platform/win32.css";
+@import "./styles/platform/linux.css";
 
 @source "../node_modules/streamdown/dist/*.js";
-
-@theme inline {
-  --font-sans: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-
-  --color-background: var(--app-bg);
-  --color-foreground: var(--text);
-
-  --color-sidebar: var(--sidebar-bg);
-  --color-panel: var(--panel-bg);
-
-  --color-card: color-mix(in srgb, var(--panel-bg) 88%, var(--app-bg));
-  --color-card-foreground: var(--text);
-
-  --color-popover: var(--panel-bg);
-  --color-popover-foreground: var(--text);
-
-  --color-primary: var(--accent);
-  --color-primary-foreground: #ffffff;
-
-  --color-secondary: color-mix(in srgb, var(--accent) 16%, var(--panel-bg));
-  --color-secondary-foreground: var(--text);
-  --color-accent: color-mix(in srgb, var(--accent) 18%, var(--panel-bg));
-  --color-accent-foreground: var(--text);
-
-  --color-muted: color-mix(in srgb, var(--text) 6%, transparent);
-  --color-muted-foreground: var(--muted);
-
-  --color-border: var(--border);
-  --color-input: var(--border);
-  --color-ring: var(--accent);
-
-  --color-destructive: var(--danger);
-  --color-destructive-foreground: #ffffff;
-
-  --radius-sm: calc(var(--radius) - 0.25rem);
-  --radius-md: var(--radius);
-  --radius-lg: calc(var(--radius) + 0.125rem);
-}
 
 html,
 body,
@@ -99,6 +65,10 @@ body {
   -webkit-app-region: drag;
 }
 
+.app-topbar--frame {
+  height: 3rem;
+}
+
 .app-topbar__controls {
   -webkit-app-region: no-drag;
 }
@@ -108,8 +78,9 @@ body {
   z-index: 1;
 }
 
-.app-topbar__inline-sidebar-toggle {
-  z-index: 2;
+.app-topbar__title {
+  z-index: 1;
+  line-height: 1;
 }
 
 .app-topbar__toolbar-button {
@@ -120,17 +91,18 @@ body {
   color: var(--text);
 }
 
-.app-topbar__sidebar-toggle-button {
-  border: 1px solid color-mix(in srgb, var(--glass-border) 88%, transparent);
-  background: color-mix(in srgb, var(--sidebar-surface) 78%, transparent);
-  box-shadow:
-    0 1px 2px color-mix(in srgb, var(--text) 10%, transparent),
-    inset 0 1px 0 color-mix(in srgb, white 35%, transparent);
-  backdrop-filter: blur(calc(var(--titlebar-blur) + 2px));
+.app-topbar__inline-sidebar-toggle {
+  z-index: 2;
 }
 
-.app-topbar__sidebar-toggle-button:hover {
-  background: color-mix(in srgb, var(--sidebar-surface) 90%, transparent);
+.app-sidebar-collapse-control {
+  display: none;
+}
+
+.app-topbar__sidebar-toggle-button {
+  background: transparent;
+  box-shadow: none;
+  border: 0;
 }
 
 .app-topbar__sidebar-fill {
@@ -140,7 +112,7 @@ body {
   left: 0;
   pointer-events: none;
   z-index: 0;
-  background: var(--sidebar-surface);
+  background: var(--sidebar-pane-surface);
   border-right-style: solid;
   border-right-color: var(--glass-border);
   backdrop-filter: blur(var(--sidebar-titlebar-blur));
@@ -158,28 +130,6 @@ body {
   backdrop-filter: blur(var(--titlebar-blur));
 }
 
-:root[data-platform="darwin"] .app-topbar__inline-sidebar-toggle {
-  left: 5.4rem;
-}
-
-:root[data-platform="darwin"] .app-topbar__toolbar--right {
-  padding-right: 0.125rem;
-}
-
-:root[data-platform="darwin"] .app-topbar__toolbar--right .app-topbar__toolbar-button {
-  color: var(--text);
-  filter: drop-shadow(0 1px 0.75px color-mix(in srgb, var(--panel-bg) 72%, transparent));
-}
-
-:root[data-platform="win32"] .app-topbar__inline-sidebar-toggle {
-  left: auto;
-  right: 8.75rem;
-}
-
-:root[data-platform="win32"] .app-topbar {
-  padding-right: 12rem; /* Prevent overlap with the sidebar toggle and native Windows controls */
-}
-
 .app-shell {
   position: relative;
   background: var(--shell-bg);
@@ -189,51 +139,36 @@ body {
   background: var(--shell-bg);
 }
 
+.app-shell--chat {
+  min-height: 0;
+}
+
+.app-chat-main-column {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+}
+
 .app-main-content {
   background: var(--glass-fill);
   border-left: 1px solid var(--glass-border);
 }
 
-:root[data-platform="darwin"] .app-window-drag-strip,
-:root[data-platform="win32"] .app-window-drag-strip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 0.625rem;
-  z-index: 60;
-  -webkit-app-region: drag;
-}
-
-:root[data-platform="darwin"] .settings-shell__nav,
-:root[data-platform="win32"] .settings-shell__nav {
-  padding-top: 2.75rem;
-}
-
-:root[data-platform="darwin"] .settings-shell__back-button,
-:root[data-platform="win32"] .settings-shell__back-button {
-  margin-top: 0;
-}
-
-:root[data-platform="darwin"] .settings-shell__drag-zone,
-:root[data-platform="win32"] .settings-shell__drag-zone {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2.75rem;
-  z-index: 80;
-  -webkit-app-region: drag;
-}
-
 .app-left-sidebar-pane {
   border-right-color: var(--glass-border);
-  background: var(--sidebar-surface);
+  background: var(--sidebar-pane-surface);
   backdrop-filter: blur(var(--sidebar-blur));
 }
 
 .app-right-sidebar-pane {
   background: var(--glass-fill);
+}
+
+/* Inline gridTemplateColumns on desktop; collapse to one column at small widths */
+@media (max-width: 960px) {
+  .settings-shell {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
 }
 
 .settings-shell__main {
@@ -410,12 +345,16 @@ body.app-resizing-sidebars .app-right-sidebar-pane {
   transition: none;
 }
 
+body.app-resizing-sidebars .app-left-sidebar-pane {
+  backdrop-filter: none;
+}
+
 body.app-resizing-sidebars .app-topbar__sidebar-fill,
 body.app-resizing-sidebars .app-topbar__content-fill {
   transition: none;
 }
 
-body.app-resizing-sidebars .app-left-sidebar-pane {
+body.app-resizing-sidebars .app-topbar__sidebar-fill {
   backdrop-filter: none;
 }
 

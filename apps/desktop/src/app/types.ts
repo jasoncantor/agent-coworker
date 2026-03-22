@@ -294,6 +294,9 @@ export type ThreadRuntime = {
   feed: FeedItem[];
   hydrating?: boolean;
   transcriptOnly: boolean;
+  /** Draft-thread composer model (no session yet). Cleared on server_hello. */
+  draftComposerProvider?: ProviderName | null;
+  draftComposerModel?: string | null;
 };
 
 export type HydratedTranscriptSnapshot = {

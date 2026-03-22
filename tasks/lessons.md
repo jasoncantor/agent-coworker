@@ -80,6 +80,7 @@
 - For packaged desktop releases, inspect the built app bundle and runtime launcher together; do not assume `extraResources` alone guarantees the correct pinned sidecar binary is the one actually shipped and executed.
 - For Electron main-process dependencies that publish CommonJS, do not use named ESM imports in packaged code paths; load them through CommonJS interop (`createRequire` or equivalent) and verify packaged startup before shipping a release.
 - When the user asks to remove a broken platform from a release, do not assume they want CI packaging changed too; separate public release asset cleanup from the build matrix unless they explicitly ask to stop building it.
+- On Windows ARM64 machines in this repo, do not invoke `electron-vite` through its Node shebang from Bun-managed scripts; Node may be x64 while Bun installed ARM64-native optional deps, so pin desktop scripts to `bun --bun .../electron-vite.js` to keep Rollup’s native package resolution aligned with the installed architecture.
 - For Codex auth bugs, verify the entire acquisition stack end to end; removing a broken OAuth link is not enough if `connect.ts` still uses a different custom flow than the PI-native Codex login the runtime expects.
 - When the user wants Cowork to own the Codex OAuth handoff, remove pasted-code/manual callback branches from the product flow and start the browser/login exchange through the in-app auto OAuth path instead.
 - For desktop auth regressions, clear stale `provider_auth_challenge` UI state when the live flow changes; an old cached challenge URL can keep surfacing a dead `Open link` even after the server-side OAuth path is fixed.
@@ -146,6 +147,8 @@
 - When a tool requires session-only runtime control, hide it from non-session tool registries and update any raw-loop prompt fixtures in the same pass; otherwise scripted coverage drifts from the live `spawnAgent` contract.
 - When the user broadens PR follow-up scope from specific review threads to "every comment that needs work," sweep both unresolved review threads and newer top-level review/comment bodies on the latest commit before declaring PR feedback handled.
 - When the user explicitly asks for subagent verification first, spawn the requested subagents before editing, use their issue-by-issue findings to drive the fix plan, and then confirm the same conclusions locally before patching.
+- When making a live-session control read-only in desktop chat, verify whether draft threads still need that control to seed the first session config; do not remove draft-only setup selectors just because active sessions should be locked.
+- For draft-thread first sends in desktop chat, never flush the queued first message while `pendingWorkspaceDefaultApplyByThread` still holds the selected draft model; send the first `user_message` only after the draft override has been pushed with `apply_session_defaults`, or the session will start on the workspace default model.
 - When the desktop app is meant to feel native, do not ship renderer-wide ::-webkit-scrollbar skins; let Electron fall back to OS scrollbars and focus styling only on layout/containers.
 - For desktop steering UX in this repo, do not stop at store/runtime support; the chat composer itself must stay editable during busy turns, route non-empty busy submits through `busyPolicy: "steer"`, and only show the stop control when the composer is empty.
 - When desktop steering is user-visible, distinguish `steer ready` from `steer pending` in the composer itself; a generic send icon is not enough once the draft is targeting the active run.
@@ -164,6 +167,7 @@
 - For shared workspace/session path comparisons, never rely on raw resolved-string equality across platforms; Windows workspace identity must case-fold after lexical normalization, and the helper should expose deterministic test coverage for `win32` semantics from non-Windows CI.
 - When the user asks to fix CI or review feedback in this repo, keep verification scoped to the failing checks unless they explicitly ask for build/package validation; do not default to the desktop build matrix.
 - When a CI failure only reproduces on GitHub Actions, treat the runner environment as authoritative: compare the workflow OS/runtime to the local machine immediately and harden the failing test against environment-sensitive module/mock behavior instead of waiting for a local repro.
+- When a desktop Linux smoke run shows a blank renderer or `Render frame was disposed` errors, do not treat native window chrome or menu interactivity alone as proof the UI is healthy; debug the renderer failure and visible content before signing off.
 
 ## 2026-03-18 Tool Output Overflow Audit
 

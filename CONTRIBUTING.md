@@ -20,19 +20,20 @@ git clone <repo-url> && cd agent-coworker
 bun install                     # installs root + apps/desktop deps
 
 # Run in different modes:
-bun run start                   # TUI (default) -- starts server automatically
+bun run start                   # Desktop app (default) -- starts server automatically
 bun run cli                     # CLI REPL -- connects to server via WebSocket
 bun run serve                   # Standalone WebSocket server
-bun run tui                     # TUI standalone -- connect to existing server
+bun run desktop:dev             # Desktop development mode
 bun run dev                     # Watch mode (rebuilds on src/ changes)
+bun run tui                     # Archived TUI -- no longer maintained
 ```
 
 ## Architecture Overview
 
-The project follows a **WebSocket-first** pattern. The server manages sessions and agent turns; clients (TUI, CLI REPL, desktop app, or custom clients) are thin consumers of WebSocket events.
+The project follows a **WebSocket-first** pattern. The server manages sessions and agent turns; clients (desktop app, CLI REPL, or custom clients) are thin consumers of WebSocket events.
 
 ```
-Client (TUI / CLI / Desktop / Portal)
+Client (Desktop / CLI / Custom)
   |  WebSocket
   v
 Server (src/server/)  -->  AgentSession  -->  runTurn()  -->  AI SDK + Tools
@@ -42,15 +43,15 @@ Key modules:
 
 | Module | Purpose |
 |---|---|
-| `src/agent.ts` | Core agent loop. `createRunTurn()` factory returns `runTurn()` which calls the Vercel AI SDK `generateText()`. |
+| `src/agent.ts` | Core agent loop. `createRunTurn()` builds the effective turn prompt/tool set and delegates execution to the configured runtime. |
 | `src/server/` | WebSocket server, session management, protocol types, model streaming. |
 | `src/tools/` | Tool factories. Each tool is a file exporting a `create*Tool(ctx)` function. |
 | `src/providers/` | Provider registry (`google`, `openai`, `anthropic`, `codex-cli`). Each exports `defaultModel`, `keyCandidates`, `createModel()`. |
 | `src/config.ts` | Config loading with three-tier merge and env var overrides. |
 | `src/mcp/` | MCP server config registry, OAuth provider, auth store. |
 | `src/skills/` | Skill discovery and trigger extraction. |
-| `apps/TUI/` | Default TUI built with OpenTUI + Solid.js (not React). |
-| `apps/desktop/` | Tauri desktop app wrapper. |
+| `apps/TUI/` | Archived TUI built with OpenTUI + Solid.js. No longer maintained. |
+| `apps/desktop/` | Electron desktop app. |
 | `src/cli/` | CLI REPL client. |
 
 ## Directory Structure
@@ -60,7 +61,7 @@ src/
   agent.ts              # Agent turn logic (createRunTurn factory)
   config.ts             # Config loading + deep merge
   connect.ts            # Path resolution for .agent / .cowork directories
-  index.ts              # Main entry point (routes to TUI or CLI)
+  index.ts              # Main entry point (routes to CLI or archived TUI)
   prompt.ts             # System prompt construction
   types.ts              # Shared TypeScript types
   server/               # WebSocket server, sessions, protocol
@@ -74,8 +75,8 @@ src/
   observability/        # OpenTelemetry + Langfuse integration
   utils/                # Shared utilities
 apps/
-  TUI/                  # OpenTUI + Solid.js terminal UI
-  desktop/              # Tauri desktop app
+  TUI/                  # Archived: OpenTUI + Solid.js terminal UI
+  desktop/              # Electron desktop app
 config/
   defaults.json         # Built-in default configuration
   mcp-servers.json      # System-level MCP server definitions
@@ -159,7 +160,7 @@ Follow these four steps whenever you add a new client message or server event:
 
 1. **Add the type** to `ClientMessage` or `ServerEvent` in `src/server/protocol.ts`.
 2. **Add validation** in `safeParseClientMessage()` (same file) if it is a client message.
-3. **Add the handler** in `src/server/startServer.ts` (message routing) and/or `src/server/session.ts` (session logic).
+3. **Add the handler** in `src/server/startServer/dispatchClientMessage.ts` (message routing) and/or the appropriate manager under `src/server/session/` (session logic).
 4. **Update `docs/websocket-protocol.md`** with the new message format, fields, example JSON, and where it fits in the flow.
 
 The protocol doc is the source of truth for anyone building an alternative UI.
@@ -234,6 +235,6 @@ Key testing patterns:
 ## Useful References
 
 - [`docs/websocket-protocol.md`](docs/websocket-protocol.md) -- WebSocket message format and flow
+- [`docs/harness/index.md`](docs/harness/index.md) -- Harness docs map
 - [`docs/session-storage-architecture.md`](docs/session-storage-architecture.md) -- Session persistence design
 - [`CLAUDE.md`](CLAUDE.md) -- Repository assistant notes and architecture context
-- [`apps/TUI/docs/opentui.md`](apps/TUI/docs/opentui.md) -- OpenTUI framework documentation

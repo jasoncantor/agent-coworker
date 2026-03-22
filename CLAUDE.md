@@ -4,7 +4,7 @@ This file provides repository context for coding agents working with this reposi
 
 ## What This Is
 
-`agent-coworker` is a terminal-first AI coworker agent built on Bun + Vercel AI SDK. It provides three interfaces: a TUI (OpenTUI + Solid.js, default), a plain CLI REPL, and a headless WebSocket server. It ships a built-in toolbelt (file ops, shell, web, code exploration) with a command approval system for risky operations.
+`agent-coworker` is an AI coworker agent built on Bun + TypeScript with pluggable runtime adapters. It provides two primary interfaces: a desktop app (Electron) and a plain CLI REPL, plus a headless WebSocket server. An archived TUI (OpenTUI + Solid.js) is available but no longer maintained. It ships a built-in toolbelt (file ops, shell, web, code exploration) with a command approval system for risky operations.
 
 ## Commands
 
@@ -12,11 +12,11 @@ This file provides repository context for coding agents working with this reposi
 bun install              # Install dependencies
 bun test                 # Run all tests
 bun test test/agent      # Run tests matching a pattern (e.g. agent, tools, session)
-bun run start            # Run TUI (starts server automatically)
-bun run tui              # Run TUI standalone (connect to existing server)
+bun run start            # Run desktop app (starts server automatically)
 bun run cli              # Run CLI REPL
 bun run serve            # Run WebSocket server standalone
 bun run dev              # Watch mode (rebuilds on src/ changes)
+bun run tui              # Run archived TUI (connect to existing server)
 ```
 
 There is no linter or formatter configured. TypeScript strict mode is the primary code quality check (`tsc --noEmit` via tsconfig).
@@ -25,22 +25,21 @@ There is no linter or formatter configured. TypeScript strict mode is the primar
 
 ### Entry Points
 
-- `src/index.ts` — Main entry; routes to TUI or CLI based on `--cli` flag.
-- `apps/TUI/index.tsx` — TUI entry (OpenTUI + Solid.js). Default TUI. Can also run standalone with `bun run tui`.
+- `src/index.ts` — Main entry; routes to CLI or archived TUI based on flags. Default (`bun run start`) launches the desktop app.
 - `src/server/index.ts` — Standalone WebSocket server
 - `src/cli/repl.ts` — CLI REPL (connects to server via WebSocket)
 
 ### Core Loop
 
-`src/agent.ts` contains the agent turn logic. `createRunTurn()` is a factory that accepts injectable dependencies (for testing) and returns `runTurn()`. Each turn calls `generateText()` from the Vercel AI SDK with the model, system prompt, message history, and tools.
+`src/agent.ts` contains the agent turn logic. `createRunTurn()` is a factory that accepts injectable dependencies (for testing) and returns `runTurn()`. Each turn assembles the effective tool set, injects turn-scoped context (including harness context), and delegates model execution to the configured runtime.
 
 ### Server & Protocol
 
-`src/server/session.ts` — `AgentSession` manages per-session state: message history, turn execution, and pending ask/approval requests via deferred promises. The WebSocket protocol is defined in `src/server/protocol.ts` with typed `ClientMessage` and `ServerEvent` unions.
+`src/server/session/AgentSession.ts` — `AgentSession` manages per-session state: message history, turn execution, backups, harness context, and pending ask/approval requests via deferred promises. The WebSocket protocol is defined in `src/server/protocol.ts` with typed `ClientMessage` and `ServerEvent` unions.
 
 ### Provider System
 
-`src/providers/index.ts` — Registry of `ProviderDefinition` objects. Each provider (`google`, `openai`, `anthropic`, `codex-cli`) exports `defaultModel`, `keyCandidates`, and `createModel()`. Provider selection flows through config with env var override (`AGENT_PROVIDER`).
+`src/providers/` — Provider/runtime integrations plus provider catalog/auth helpers. Provider selection flows through config with env var override (`AGENT_PROVIDER`).
 
 ### Tool System
 
@@ -52,9 +51,11 @@ Three-tier hierarchy (each overrides the previous): built-in (`config/defaults.j
 
 The same three-tier pattern applies to skills (`skills/` directories), memory (`memory/` directories), and MCP server configs (`mcp-servers.json` files).
 
-### TUI (`apps/TUI/`)
+### TUI (`apps/TUI/`) — Archived
 
-The default TUI is built with OpenTUI + Solid.js (not React). It has its own `tsconfig.json` that overrides `jsxImportSource` to `@opentui/solid`. Key structure:
+> **Note**: The TUI is archived and no longer maintained. It may be removed in a future release.
+
+The TUI was built with OpenTUI + Solid.js (not React). It has its own `tsconfig.json` that overrides `jsxImportSource` to `@opentui/solid`. Key structure:
 
 - `apps/TUI/index.tsx` — Entry point, provider stack, `runTui()` export
 - `apps/TUI/app.tsx` — Route switch (Home vs Session) + dialog overlay
@@ -78,16 +79,17 @@ The `SyncProvider` bridges the existing `AgentSocket` WebSocket client into Soli
 
 ## WebSocket-First Development Rule
 
-**All new features and capabilities MUST be built on top of the CLI/core logic and exposed via WebSocket controls.** The server + protocol layer is the canonical interface that every UI (TUI, CLI REPL, or any future frontend) consumes. Never build logic directly into a specific UI — wire it through the server so any client can use it.
+**All new features and capabilities MUST be built on top of the CLI/core logic and exposed via WebSocket controls.** The server + protocol layer is the canonical interface that every UI (desktop app, CLI REPL, or any future frontend) consumes. Never build logic directly into a specific UI — wire it through the server so any client can use it.
 
 When adding a new WebSocket message type or event:
 
 1. Add the type to `ClientMessage` or `ServerEvent` in `src/server/protocol.ts`.
 2. Add validation in `safeParseClientMessage()` if it's a client message.
-3. Add the handler in `src/server/startServer.ts` (message routing) and/or `src/server/session.ts` (session logic).
+3. Add the handler in `src/server/startServer/dispatchClientMessage.ts` (message routing) and/or the appropriate manager under `src/server/session/` (session logic).
 4. **Update `docs/websocket-protocol.md`** with the new message format, fields, example JSON, and where it fits in the flow.
 
 The protocol doc (`docs/websocket-protocol.md`) is the source of truth for anyone building an alternative UI. Keep it accurate and complete.
+The harness docs index (`docs/harness/index.md`) is the system-of-record map for harness behavior, context, and runbook guidance.
 
 ## Testing
 
