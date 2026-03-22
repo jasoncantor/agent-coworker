@@ -1541,6 +1541,37 @@ describe("safeParseClientMessage", () => {
       }
     });
 
+    test("valid set_config accepts aws-bedrock-proxy provider options with a valid baseUrl", () => {
+      const msg = expectOk(
+        JSON.stringify({
+          type: "set_config",
+          sessionId: "s1",
+          config: {
+            providerOptions: {
+              "aws-bedrock-proxy": {
+                baseUrl: "https://proxy.example.com/v1",
+                promptCaching: {
+                  enabled: true,
+                  ttl: "5m",
+                },
+              },
+            },
+          },
+        }),
+      );
+
+      expect(msg.type).toBe("set_config");
+      if (msg.type === "set_config") {
+        expect(msg.config.providerOptions?.["aws-bedrock-proxy"]).toEqual({
+          baseUrl: "https://proxy.example.com/v1",
+          promptCaching: {
+            enabled: true,
+            ttl: "5m",
+          },
+        });
+      }
+    });
+
     test("valid set_config accepts Gemini native tool provider options", () => {
       const msg = expectOk(
         JSON.stringify({
@@ -1653,6 +1684,42 @@ describe("safeParseClientMessage", () => {
       expect(
         expectErr(JSON.stringify({ type: "set_config", sessionId: "s1", config: { providerOptions: "nope" } })),
       ).toBe("set_config config.providerOptions must be an object");
+      expect(
+        expectErr(
+          JSON.stringify({
+            type: "set_config",
+            sessionId: "s1",
+            config: { providerOptions: { "aws-bedrock-proxy": { baseUrl: "htps://proxy.example.com/v1" } } },
+          }),
+        ),
+      ).toBe("set_config config.providerOptions.aws-bedrock-proxy.baseUrl must be a valid http(s) URL");
+      expect(
+        expectErr(
+          JSON.stringify({
+            type: "set_config",
+            sessionId: "s1",
+            config: { providerOptions: { "aws-bedrock-proxy": { baseUrl: "httpx://proxy.example.com/v1" } } },
+          }),
+        ),
+      ).toBe("set_config config.providerOptions.aws-bedrock-proxy.baseUrl must be a valid http(s) URL");
+      expect(
+        expectErr(
+          JSON.stringify({
+            type: "set_config",
+            sessionId: "s1",
+            config: { providerOptions: { "aws-bedrock-proxy": { baseUrl: "https://proxy.example.com/v1?tenant=a" } } },
+          }),
+        ),
+      ).toBe("set_config config.providerOptions.aws-bedrock-proxy.baseUrl must be a valid http(s) URL");
+      expect(
+        expectErr(
+          JSON.stringify({
+            type: "set_config",
+            sessionId: "s1",
+            config: { providerOptions: { "aws-bedrock-proxy": { baseUrl: "https://proxy.example.com/v1#frag" } } },
+          }),
+        ),
+      ).toBe("set_config config.providerOptions.aws-bedrock-proxy.baseUrl must be a valid http(s) URL");
       expect(
         expectErr(
           JSON.stringify({
