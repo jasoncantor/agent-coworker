@@ -26,6 +26,7 @@ export type ThreadModelStreamRuntime = {
   reasoningItemIdByStream: Map<string, string>;
   reasoningTextByStream: Map<string, string>;
   reasoningTextsSeenInTurn: Set<string>;
+  reasoningTextHistoryInTurn: string[];
   reasoningTurns: Set<string>;
   toolItemIdByKey: Map<string, string>;
   latestToolKeyByTurnAndName: Map<string, string>;
@@ -157,6 +158,7 @@ export function createThreadModelStreamRuntime(): ThreadModelStreamRuntime {
     reasoningItemIdByStream: new Map(),
     reasoningTextByStream: new Map(),
     reasoningTextsSeenInTurn: new Set(),
+    reasoningTextHistoryInTurn: [],
     reasoningTurns: new Set(),
     toolItemIdByKey: new Map(),
     latestToolKeyByTurnAndName: new Map(),
@@ -171,6 +173,7 @@ export function clearThreadModelStreamRuntime(runtime: ThreadModelStreamRuntime)
   runtime.activeTurnId = null;
   clearStepLocalModelStreamRuntime(runtime, { snapshotReasoning: false });
   runtime.reasoningTextsSeenInTurn.clear();
+  runtime.reasoningTextHistoryInTurn = [];
   runtime.reasoningTurns.clear();
   runtime.toolItemIdByKey.clear();
   runtime.latestToolKeyByTurnAndName.clear();
@@ -184,12 +187,16 @@ function normalizeReasoningText(text: string): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function rememberStreamedReasoningText(runtime: ThreadModelStreamRuntime, text: string) {
+  const normalized = normalizeReasoningText(text);
+  if (!normalized) return;
+  runtime.reasoningTextsSeenInTurn.add(normalized);
+  runtime.reasoningTextHistoryInTurn.push(normalized);
+}
+
 function rememberStreamedReasoningTexts(runtime: ThreadModelStreamRuntime) {
   for (const text of runtime.reasoningTextByStream.values()) {
-    const normalized = normalizeReasoningText(text);
-    if (normalized) {
-      runtime.reasoningTextsSeenInTurn.add(normalized);
-    }
+    rememberStreamedReasoningText(runtime, text);
   }
 }
 
@@ -221,6 +228,16 @@ export function hasMatchingStreamedReasoningText(
     if (normalizeReasoningText(current) === normalized) {
       return true;
     }
+  }
+
+  const aggregate = normalizeTranscriptReplayText([
+    ...runtime.reasoningTextHistoryInTurn,
+    ...[...runtime.reasoningTextByStream.values()]
+      .map((current) => normalizeReasoningText(current))
+      .filter((current): current is string => current !== null),
+  ].join("\n\n"));
+  if (aggregate && aggregate === normalizeTranscriptReplayText(normalized)) {
+    return true;
   }
   return false;
 }
@@ -501,7 +518,6 @@ export function reasoningInsertBeforeAssistantAfterStreamReplay(
 ): string | null {
   const turnId = stream.lastAssistantTurnId;
   if (!turnId) return null;
-  if (!stream.replay.rawBackedTurns.has(turnId)) return null;
 
   const assistantKey = stream.lastAssistantStreamKeyByTurn.get(turnId);
   if (!assistantKey) return null;

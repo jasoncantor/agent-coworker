@@ -10,15 +10,12 @@ import {
 } from "../src/app/store.feedMapping";
 
 describe("desktop transcript feed mapping", () => {
-  test("does not move live reasoning ahead of assistant output", () => {
+  test("anchors late final reasoning before streamed assistant output", () => {
     const runtime = createThreadModelStreamRuntime();
     runtime.lastAssistantTurnId = "turn-live";
     runtime.lastAssistantStreamKeyByTurn.set("turn-live", "assistant:turn-live");
     runtime.assistantItemIdByStream.set("assistant:turn-live", "assistant-item-1");
 
-    expect(reasoningInsertBeforeAssistantAfterStreamReplay(runtime)).toBeNull();
-
-    runtime.replay.rawBackedTurns.add("turn-live");
     expect(reasoningInsertBeforeAssistantAfterStreamReplay(runtime)).toBe("assistant-item-1");
   });
 
@@ -254,6 +251,110 @@ describe("desktop transcript feed mapping", () => {
     expect(tools.map((tool) => tool.args)).toEqual([{ query: "NVIDIA GTC 2026" }, { query: "NVIDIA GTC 2027" }]);
     expect(tools.map((tool) => tool.result)).toEqual(["result", "result-2"]);
     expect(feed.map((item) => item.kind)).toEqual(["message", "reasoning", "tool", "reasoning", "tool", "message"]);
+  });
+
+  test("dedupes aggregate final reasoning across streamed steps on normalized turns", () => {
+    const transcript: TranscriptEvent[] = [
+      {
+        ts: "2024-01-01T00:00:00.000Z",
+        threadId: "thread-1",
+        direction: "client",
+        payload: { type: "user_message", text: "what changed?" },
+      },
+      {
+        ts: "2024-01-01T00:00:01.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-agg-1",
+          index: 0,
+          provider: "opencode-zen",
+          model: "minimax-m2.5-free",
+          partType: "start",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:02.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-agg-1",
+          index: 1,
+          provider: "opencode-zen",
+          model: "minimax-m2.5-free",
+          partType: "reasoning_delta",
+          part: { id: "s0", mode: "reasoning", text: "First check." },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:03.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-agg-1",
+          index: 2,
+          provider: "opencode-zen",
+          model: "minimax-m2.5-free",
+          partType: "start",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:04.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-agg-1",
+          index: 3,
+          provider: "opencode-zen",
+          model: "minimax-m2.5-free",
+          partType: "reasoning_delta",
+          part: { id: "s1", mode: "reasoning", text: "Second check." },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:05.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-agg-1",
+          index: 4,
+          provider: "opencode-zen",
+          model: "minimax-m2.5-free",
+          partType: "text_delta",
+          part: { id: "a0", text: "Final answer." },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:06.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: { type: "reasoning", kind: "reasoning", text: "First check.\n\nSecond check." },
+      },
+      {
+        ts: "2024-01-01T00:00:07.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: { type: "assistant_message", text: "Final answer." },
+      },
+    ];
+
+    const feed = mapTranscriptToFeed(transcript);
+    const reasoning = feed.filter((item) => item.kind === "reasoning");
+
+    expect(reasoning.map((item) => item.text)).toEqual(["First check.", "Second check."]);
+    expect(feed.map((item) => item.kind)).toEqual(["message", "reasoning", "reasoning", "message"]);
   });
 
   test("allows final reasoning after a repeated start when the latest step had no streamed reasoning", () => {

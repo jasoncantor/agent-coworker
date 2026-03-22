@@ -1,5 +1,18 @@
 # Task Plan
 
+## Fix Steer Replay Reasoning Ordering
+
+- [x] Reproduce the persisted normalized streamed-turn shape from `~/.cowork/sessions.db` and confirm the bad ordering only happened because the late-reasoning replay guard was raw-backed only.
+- [x] Update both the desktop transcript feed mapper and the server snapshot projector to dedupe aggregate final reasoning across streamed steps and anchor any remaining late final reasoning before the streamed assistant item.
+- [x] Add focused regression coverage for the normalized streamed-turn case and rerun the affected desktop/server verification plus typecheck.
+
+## Fix Steer Replay Reasoning Ordering Review
+
+- `apps/desktop/src/app/store.feedMapping.ts` now keeps ordered streamed-reasoning history for the current turn, suppresses final reasoning that is just the aggregate of earlier streamed steps, and anchors any remaining late final reasoning before the streamed assistant item even on normalized-only turns.
+- `src/server/session/SessionSnapshotProjector.ts` mirrors the same reasoning-history, aggregate-dedup, and late-reasoning anchoring rules so persisted snapshots match the live desktop feed.
+- `apps/desktop/test/store-feed-mapping.test.ts` and `test/sessionSnapshotProjector.test.ts` now cover the exact multi-step normalized-turn shape that produced the duplicate reasoning-after-answer artifact in the SQLite session.
+- Verification passed with `bun test apps/desktop/test/store-feed-mapping.test.ts`, `bun test test/sessionSnapshotProjector.test.ts`, `bun test apps/desktop/test/protocol-v2-events.test.ts`, and `bun run typecheck`.
+
 ## Stream Reasoning Before First Tool Call
 
 - [x] Confirm the missing live reasoning was caused by JSON-RPC projector buffering rather than the desktop chat renderer.
