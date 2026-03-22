@@ -1755,7 +1755,8 @@ export async function startAgentServer(
         const event = await captureSessionEvent(
           binding,
           async () => await session.deleteSession(targetSessionId),
-          (event): event is Extract<ServerEvent, { type: "session_deleted" }> => event.type === "session_deleted",
+          (event): event is Extract<ServerEvent, { type: "session_deleted" }> =>
+            event.type === "session_deleted" && event.targetSessionId === targetSessionId,
         );
         emitControlResult(ws, message.id, event);
         return;
