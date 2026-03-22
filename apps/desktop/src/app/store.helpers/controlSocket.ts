@@ -838,10 +838,8 @@ export function createControlSocketHelpers(
       void Promise.allSettled([
         requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/status/refresh", { cwd }),
         requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/catalog/read", { cwd }),
-      ]).then((results) => {
-        if (!results.every((result) => result.status === "fulfilled" && result.value)) {
-          set(() => ({ providerStatusRefreshing: false }));
-        }
+      ]).then(() => {
+        set(() => ({ providerStatusRefreshing: false }));
       });
       return;
     }

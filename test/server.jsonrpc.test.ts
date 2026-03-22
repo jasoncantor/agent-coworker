@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { WebSocket as NodeWebSocket } from "ws";
 
 import { startAgentServer } from "../src/server/startServer";
 import { makeTmpProject, serverOpts } from "./helpers/wsHarness";
@@ -14,6 +15,34 @@ function waitForOpen(ws: WebSocket): Promise<void> {
       clearTimeout(timer);
       reject(new Error(`WebSocket error: ${event}`));
     };
+  });
+}
+
+function waitForNodeWsOpen(ws: NodeWebSocket): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out waiting for websocket open")), 5_000);
+    ws.once("open", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    ws.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function waitForNodeWsJson(ws: NodeWebSocket): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out waiting for websocket message")), 5_000);
+    ws.once("message", (data) => {
+      clearTimeout(timer);
+      resolve(JSON.parse(typeof data === "string" ? data : data.toString("utf8")));
+    });
+    ws.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
   });
 }
 
@@ -138,6 +167,61 @@ describe("server JSON-RPC websocket mode", () => {
         params: {
           clientInfo: {
             name: "subprotocol-client",
+          },
+        },
+      }));
+      const response = await waitForSingleMessage(ws);
+      expect(response.id).toBe(1);
+      expect(response.result.serverInfo.subprotocol).toBe("cowork.jsonrpc.v1");
+      ws.close();
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("multi-offer websocket clients receive the negotiated JSON-RPC subprotocol on the wire", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const ws = new NodeWebSocket(url, ["foo", "cowork.jsonrpc.v1"]);
+      await waitForNodeWsOpen(ws);
+      expect(ws.protocol).toBe("cowork.jsonrpc.v1");
+
+      ws.send(JSON.stringify({
+        id: 1,
+        method: "initialize",
+        params: {
+          clientInfo: {
+            name: "multi-offer-client",
+          },
+        },
+      }));
+      const response = await waitForNodeWsJson(ws);
+      expect(response.id).toBe(1);
+      expect(response.result.serverInfo.subprotocol).toBe("cowork.jsonrpc.v1");
+      ws.close();
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("multi-offer websocket clients receive the negotiated subprotocol on the wire", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const ws = new WebSocket(url, ["foo", "cowork.jsonrpc.v1"]);
+      await waitForOpen(ws);
+      await expectNoMessage(ws);
+      expect(ws.protocol).toBe("cowork.jsonrpc.v1");
+
+      ws.send(JSON.stringify({
+        id: 1,
+        method: "initialize",
+        params: {
+          clientInfo: {
+            name: "multi-offer-client",
           },
         },
       }));

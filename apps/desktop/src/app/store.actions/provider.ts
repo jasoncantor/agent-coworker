@@ -66,18 +66,21 @@ export async function refreshProviderStatusForWorkspace(
     deps.requestJsonRpcControlEvent(deps.get, deps.set, workspaceId, "cowork/provider/catalog/read", { cwd: path }),
     deps.requestJsonRpcControlEvent(deps.get, deps.set, workspaceId, "cowork/provider/authMethods/read", { cwd: path }),
   ]);
-  if (!results.every((result) => result.status === "fulfilled" && result.value)) {
-    deps.set((s) => ({
-      providerStatusRefreshing: false,
-      notifications: deps.pushNotification(s.notifications, {
-        id: deps.makeId(),
-        ts: deps.nowIso(),
-        kind: "error",
-        title: "Not connected",
-        detail: "Unable to refresh provider status.",
-      }),
-    }));
-  }
+  const allSucceeded = results.every((result) => result.status === "fulfilled" && result.value);
+  deps.set((s) => ({
+    providerStatusRefreshing: false,
+    ...(!allSucceeded
+      ? {
+          notifications: deps.pushNotification(s.notifications, {
+            id: deps.makeId(),
+            ts: deps.nowIso(),
+            kind: "error",
+            title: "Not connected",
+            detail: "Unable to refresh provider status.",
+          }),
+        }
+      : {}),
+  }));
 }
 
 export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "connectProvider" | "setProviderApiKey" | "copyProviderApiKey" | "authorizeProviderAuth" | "logoutProviderAuth" | "callbackProviderAuth" | "requestProviderCatalog" | "requestProviderAuthMethods" | "refreshProviderStatus" | "setLmStudioEnabled" | "setLmStudioModelVisible"> {

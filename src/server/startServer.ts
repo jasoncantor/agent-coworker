@@ -2214,6 +2214,11 @@ export async function startAgentServer(
             return new Response(protocolResult.error, { status: 400 });
           }
           const upgraded = srv.upgrade(req, {
+            headers: protocolResult.protocol.selectedSubprotocol
+              ? {
+                  "Sec-WebSocket-Protocol": protocolResult.protocol.selectedSubprotocol,
+                }
+              : undefined,
             data: {
               resumeSessionId,
               protocolMode: protocolResult.protocol.mode,
