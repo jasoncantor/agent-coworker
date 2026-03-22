@@ -509,57 +509,60 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     if (!workspaceId) {
       return false;
     }
+    const beginWorkspaceRequest = (run: () => Promise<unknown>): boolean => {
+      if (!ensureWorkspaceJsonRpcSocket(get, undefined, workspaceId)) {
+        return false;
+      }
+      void run().catch(() => {
+        // Surface "not connected" through the caller's existing false-path/UI state
+        // instead of leaking unhandled async rejections from fire-and-forget actions.
+      });
+      return true;
+    };
     const sessionId = get().threadRuntimeById[threadId]?.sessionId ?? threadId;
     const message = build(sessionId);
     if (message.type === "cancel") {
-      void interruptJsonRpcTurn(get, undefined, workspaceId, sessionId);
-      return true;
+      return beginWorkspaceRequest(() => interruptJsonRpcTurn(get, undefined, workspaceId, sessionId));
     }
     if (message.type === "session_close") {
       forgetThreadForReconnect(workspaceId, threadId);
-      void unsubscribeJsonRpcThread(get, undefined, workspaceId, sessionId);
-      return true;
+      return beginWorkspaceRequest(() => unsubscribeJsonRpcThread(get, undefined, workspaceId, sessionId));
     }
     if (message.type === "set_session_title") {
-      void requestJsonRpc(get, undefined, workspaceId, "cowork/session/title/set", {
+      return beginWorkspaceRequest(() => requestJsonRpc(get, undefined, workspaceId, "cowork/session/title/set", {
         threadId: sessionId,
         title: message.title,
-      });
-      return true;
+      }));
     }
     if (message.type === "set_model") {
-      void requestJsonRpc(get, undefined, workspaceId, "cowork/session/model/set", {
+      return beginWorkspaceRequest(() => requestJsonRpc(get, undefined, workspaceId, "cowork/session/model/set", {
         threadId: sessionId,
         provider: message.provider,
         model: message.model,
-      });
-      return true;
+      }));
     }
     if (message.type === "set_session_usage_budget") {
-      void requestJsonRpc(get, undefined, workspaceId, "cowork/session/usageBudget/set", {
+      return beginWorkspaceRequest(() => requestJsonRpc(get, undefined, workspaceId, "cowork/session/usageBudget/set", {
         threadId: sessionId,
         ...(message.warnAtUsd !== undefined ? { warnAtUsd: message.warnAtUsd } : {}),
         ...(message.stopAtUsd !== undefined ? { stopAtUsd: message.stopAtUsd } : {}),
-      });
-      return true;
+      }));
     }
     if (message.type === "set_config") {
-      void requestJsonRpc(get, undefined, workspaceId, "cowork/session/config/set", {
+      return beginWorkspaceRequest(() => requestJsonRpc(get, undefined, workspaceId, "cowork/session/config/set", {
         threadId: sessionId,
         config: message.config,
-      });
-      return true;
+      }));
     }
     if (message.type === "apply_session_defaults") {
-      void requestJsonRpc(get, undefined, workspaceId, "cowork/session/defaults/apply", {
+      return beginWorkspaceRequest(() => requestJsonRpc(get, undefined, workspaceId, "cowork/session/defaults/apply", {
         threadId: sessionId,
         cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,
         ...(message.provider !== undefined ? { provider: message.provider } : {}),
         ...(message.model !== undefined ? { model: message.model } : {}),
         ...(message.enableMcp !== undefined ? { enableMcp: message.enableMcp } : {}),
         ...(message.config !== undefined ? { config: message.config } : {}),
-      });
-      return true;
+      }));
     }
     if (message.type === "ask_response") {
       return respondToJsonRpcRequest(workspaceId, message.requestId, { answer: message.answer });
