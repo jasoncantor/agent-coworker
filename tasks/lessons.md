@@ -14,6 +14,7 @@
 - When the user expands a bugfix to include verification failures found during the lane, treat every concrete error you surfaced as in-scope work instead of stopping after the original fix.
 - When a bugfix run exposes both a touched-area coverage gap and unrelated red tests in the repo verification lane, do not stop at the local fix; add the missing regression and clear the full failing lane before closing the task.
 - For expensive environment-backed CI in this repo, never leave the heavy job gated only on `event_name != 'pull_request'`; explicitly scope it to the intended branch or manual dispatch so ordinary `main` pushes do not burn the testing environment.
+- For default remote MCP CI in this repo, keep the smoke test in the default lane, but add transient upstream 5xx retry around the live tool call; the heavier `runTurn + remote MCP` path must stay behind `RUN_REMOTE_MCP_AGENT_TESTS`.
 - For automated PR review bots in this repo, optimize for unresolved findings only: cancel in-flight review runs when a PR closes, skip drafts, disable public session-share noise, and never post long “everything looks good now” summaries.
 - When finishing PR review work in this repo, do not stop at local code/test changes; reply on each completed GitHub review thread and resolve it in the PR in the same pass.
 - Before telling the user a review comment is already fixed, re-check the exact current branch code path the comment points at; unresolved PR findings can stay live even when nearby related work landed earlier in the branch.
