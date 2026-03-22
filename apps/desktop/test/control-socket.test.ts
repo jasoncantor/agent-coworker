@@ -168,6 +168,7 @@ describe("control socket helpers over JSON-RPC", () => {
     MockJsonRpcSocket.instances.length = 0;
     MockJsonRpcSocket.deferClose = false;
     RUNTIME.jsonRpcSockets.clear();
+    RUNTIME.workspaceJsonRpcSocketGenerations.clear();
     RUNTIME.skillInstallWaiters.clear();
     RUNTIME.sessionSnapshots.clear();
     RUNTIME.providerStatusRefreshGeneration = 0;
@@ -335,6 +336,7 @@ describe("control socket helpers over JSON-RPC", () => {
 
     expect(secondSocket).not.toBe(firstSocket);
     expect(firstSocket.closed).toBe(true);
+    expect(RUNTIME.jsonRpcSockets.get(workspaceId)).toBe(secondSocket);
     expect(state.workspaceRuntimeById[workspaceId].controlSessionId).toBe(`jsonrpc:${workspaceId}`);
 
     firstSocket.emitDeferredClose();

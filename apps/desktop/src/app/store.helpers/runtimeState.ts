@@ -37,6 +37,7 @@ export type SkillInstallWaiter = {
 
 export type RuntimeMaps = {
   jsonRpcSockets: Map<string, JsonRpcSocket>;
+  workspaceJsonRpcSocketGenerations: Map<string, number>;
   /** Latest in-flight skill install per workspace; resolved when `skills_catalog` completes the matching pending key. */
   skillInstallWaiters: Map<string, SkillInstallWaiter>;
   optimisticUserMessageIds: Map<string, Set<string>>;
@@ -56,6 +57,7 @@ export type RuntimeMaps = {
 
 export const RUNTIME: RuntimeMaps = {
   jsonRpcSockets: new Map(),
+  workspaceJsonRpcSocketGenerations: new Map(),
   skillInstallWaiters: new Map(),
   optimisticUserMessageIds: new Map(),
   pendingThreadMessages: new Map(),
@@ -270,6 +272,20 @@ export function defaultThreadRuntime(): ThreadRuntime {
     hydrating: false,
     transcriptOnly: false,
   };
+}
+
+export function getWorkspaceJsonRpcSocketGeneration(workspaceId: string): number {
+  return RUNTIME.workspaceJsonRpcSocketGenerations.get(workspaceId) ?? 0;
+}
+
+export function bumpWorkspaceJsonRpcSocketGeneration(workspaceId: string): number {
+  const next = getWorkspaceJsonRpcSocketGeneration(workspaceId) + 1;
+  RUNTIME.workspaceJsonRpcSocketGenerations.set(workspaceId, next);
+  return next;
+}
+
+export function clearWorkspaceJsonRpcSocketGeneration(workspaceId: string): void {
+  RUNTIME.workspaceJsonRpcSocketGenerations.delete(workspaceId);
 }
 
 export function getWorkspaceStartGeneration(workspaceId: string): number {

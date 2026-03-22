@@ -7,7 +7,10 @@ const jsonRpcHandlers = new Map<string, (params?: any) => any | Promise<any>>();
 
 class MockJsonRpcSocket {
   static instances: MockJsonRpcSocket[] = [];
+  static deferClose = false;
   readonly readyPromise = Promise.resolve();
+  closed = false;
+  private closeDeferred = false;
 
   constructor(public readonly opts: { onOpen?: () => void; onClose?: () => void }) {
     MockJsonRpcSocket.instances.push(this);
@@ -31,6 +34,17 @@ class MockJsonRpcSocket {
   }
 
   close() {
+    this.closed = true;
+    if (MockJsonRpcSocket.deferClose) {
+      this.closeDeferred = true;
+      return;
+    }
+    this.opts.onClose?.();
+  }
+
+  emitDeferredClose() {
+    if (!this.closeDeferred) return;
+    this.closeDeferred = false;
     this.opts.onClose?.();
   }
 
@@ -399,9 +413,11 @@ describe("thread reconnect over shared JSON-RPC socket", () => {
     jsonRpcRequests.length = 0;
     jsonRpcHandlers.clear();
     MockJsonRpcSocket.instances.length = 0;
+    MockJsonRpcSocket.deferClose = false;
     readTranscriptCalls.length = 0;
     deleteTranscriptCalls.length = 0;
     RUNTIME.jsonRpcSockets.clear();
+    RUNTIME.workspaceJsonRpcSocketGenerations.clear();
     RUNTIME.sessionSnapshots.clear();
     RUNTIME.pendingThreadMessages.clear();
     RUNTIME.pendingWorkspaceDefaultApplyByThread.clear();
@@ -527,5 +543,46 @@ describe("thread reconnect over shared JSON-RPC socket", () => {
     const resumedThreadId = canonicalThreadId("session-1", threadId);
     expect(useAppStore.getState().threadRuntimeById[resumedThreadId]?.connected).toBe(true);
     expect(useAppStore.getState().threads.find((thread) => thread.id === resumedThreadId)?.status).toBe("active");
+  });
+
+  test("stale shared JsonRpcSocket close after a serverUrl swap does not disconnect tracked threads", async () => {
+    const { threadId, workspaceId } = seedStore();
+
+    await useAppStore.getState().reconnectThread(threadId);
+    await flushAsyncWork();
+
+    const firstSocket = MockJsonRpcSocket.instances[0];
+    expect(firstSocket).toBeDefined();
+    expect(useAppStore.getState().threadRuntimeById[threadId]?.connected).toBe(true);
+    expect(useAppStore.getState().threads.find((thread) => thread.id === threadId)?.status).toBe("active");
+
+    MockJsonRpcSocket.deferClose = true;
+    useAppStore.setState((state) => ({
+      workspaceRuntimeById: {
+        ...state.workspaceRuntimeById,
+        [workspaceId]: {
+          ...state.workspaceRuntimeById[workspaceId],
+          serverUrl: "ws://changed",
+        },
+      },
+    }));
+
+    await useAppStore.getState().reconnectThread(threadId);
+    await flushAsyncWork();
+
+    const secondSocket = MockJsonRpcSocket.instances[1];
+    expect(secondSocket).toBeDefined();
+    expect(secondSocket).not.toBe(firstSocket);
+    expect((firstSocket as MockJsonRpcSocket).closed).toBe(true);
+    expect(RUNTIME.jsonRpcSockets.get(workspaceId)).toBe(secondSocket);
+    expect(useAppStore.getState().threadRuntimeById[threadId]?.connected).toBe(true);
+    expect(useAppStore.getState().threads.find((thread) => thread.id === threadId)?.status).toBe("active");
+
+    (firstSocket as MockJsonRpcSocket).emitDeferredClose();
+    await flushAsyncWork();
+
+    expect(RUNTIME.jsonRpcSockets.get(workspaceId)).toBe(secondSocket);
+    expect(useAppStore.getState().threadRuntimeById[threadId]?.connected).toBe(true);
+    expect(useAppStore.getState().threads.find((thread) => thread.id === threadId)?.status).toBe("active");
   });
 });

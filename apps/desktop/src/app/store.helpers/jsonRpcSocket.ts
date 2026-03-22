@@ -1,7 +1,11 @@
 import { JsonRpcSocket } from "../../lib/agentSocket";
 import type { StoreGet, StoreSet } from "../store.helpers";
 import type { ThreadRuntime, WorkspaceRecord } from "../types";
-import { RUNTIME } from "./runtimeState";
+import {
+  RUNTIME,
+  bumpWorkspaceJsonRpcSocketGeneration,
+  getWorkspaceJsonRpcSocketGeneration,
+} from "./runtimeState";
 import { JSONRPC_SOCKET_OVERRIDE_KEY } from "./jsonRpcSocketOverride";
 
 type JsonRpcNotification =
@@ -25,6 +29,7 @@ type JsonRpcSocketConstructor = new (...args: any[]) => any;
 type WorkspaceJsonRpcSocket = JsonRpcSocket & {
   __coworkOpened?: boolean;
   __coworkUrl?: string;
+  __coworkGeneration?: number;
 };
 
 function resolveJsonRpcSocketImpl(): JsonRpcSocketConstructor {
@@ -88,8 +93,11 @@ function syncWorkspaceSocketState(workspaceId: string, isOpen: boolean) {
   emitWorkspaceLifecycle(workspaceId, isOpen ? "open" : "close");
 }
 
-function isCurrentWorkspaceJsonRpcSocket(workspaceId: string, socket: WorkspaceJsonRpcSocket): boolean {
-  return RUNTIME.jsonRpcSockets.get(workspaceId) === socket;
+function isActiveWorkspaceJsonRpcSocketGeneration(
+  workspaceId: string,
+  generation: number | undefined,
+): boolean {
+  return generation !== undefined && getWorkspaceJsonRpcSocketGeneration(workspaceId) === generation;
 }
 
 export function registerWorkspaceJsonRpcRouter(workspaceId: string, router: WorkspaceNotificationRouter): () => void {
@@ -129,10 +137,11 @@ export function ensureWorkspaceJsonRpcSocket(
   const url = getWorkspaceUrl(get, workspaceId);
   if (!url) return null;
 
+  let socketGeneration = getWorkspaceJsonRpcSocketGeneration(workspaceId);
   const existing = RUNTIME.jsonRpcSockets.get(workspaceId) as WorkspaceJsonRpcSocket | undefined;
   if (existing) {
     if (existing.__coworkUrl && existing.__coworkUrl !== url) {
-      RUNTIME.jsonRpcSockets.delete(workspaceId);
+      socketGeneration = bumpWorkspaceJsonRpcSocketGeneration(workspaceId);
       try {
         existing.close?.();
       } catch {
@@ -146,6 +155,9 @@ export function ensureWorkspaceJsonRpcSocket(
       }
       return existing;
     }
+  }
+  if (socketGeneration === 0) {
+    socketGeneration = bumpWorkspaceJsonRpcSocketGeneration(workspaceId);
   }
 
   const JsonRpcSocketImpl = resolveJsonRpcSocketImpl();
@@ -161,9 +173,15 @@ export function ensureWorkspaceJsonRpcSocket(
     openTimeoutMs: DESKTOP_JSONRPC_OPEN_TIMEOUT_MS,
     handshakeTimeoutMs: DESKTOP_JSONRPC_HANDSHAKE_TIMEOUT_MS,
     onNotification: (message: any) => {
+      if (!isActiveWorkspaceJsonRpcSocketGeneration(workspaceId, socket.__coworkGeneration)) {
+        return;
+      }
       emitToWorkspaceRouters(workspaceId, { kind: "notification", method: message.method, params: message.params });
     },
     onServerRequest: (message: any) => {
+      if (!isActiveWorkspaceJsonRpcSocketGeneration(workspaceId, socket.__coworkGeneration)) {
+        return;
+      }
       emitToWorkspaceRouters(workspaceId, {
         kind: "request",
         id: message.id,
@@ -173,14 +191,14 @@ export function ensureWorkspaceJsonRpcSocket(
     },
     onOpen: () => {
       socket.__coworkOpened = true;
-      if (!isCurrentWorkspaceJsonRpcSocket(workspaceId, socket)) {
+      if (!isActiveWorkspaceJsonRpcSocketGeneration(workspaceId, socket.__coworkGeneration)) {
         return;
       }
       syncWorkspaceSocketState(workspaceId, true);
     },
     onClose: () => {
       socket.__coworkOpened = false;
-      if (!isCurrentWorkspaceJsonRpcSocket(workspaceId, socket)) {
+      if (!isActiveWorkspaceJsonRpcSocketGeneration(workspaceId, socket.__coworkGeneration)) {
         return;
       }
       syncWorkspaceSocketState(workspaceId, false);
@@ -198,6 +216,7 @@ export function ensureWorkspaceJsonRpcSocket(
   }
   socket.__coworkOpened = false;
   socket.__coworkUrl = url;
+  socket.__coworkGeneration = socketGeneration;
 
   RUNTIME.jsonRpcSockets.set(workspaceId, socket);
   socket.connect();

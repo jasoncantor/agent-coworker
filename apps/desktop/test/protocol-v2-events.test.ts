@@ -281,6 +281,7 @@ describe("desktop JSON-RPC event mapping", () => {
     jsonRpcHandlers.clear();
     MockJsonRpcSocket.instances.length = 0;
     RUNTIME.jsonRpcSockets.clear();
+    RUNTIME.workspaceJsonRpcSocketGenerations.clear();
     RUNTIME.sessionSnapshots.clear();
     RUNTIME.pendingThreadMessages.clear();
     RUNTIME.pendingThreadSteers.clear();
@@ -701,6 +702,86 @@ describe("desktop JSON-RPC event mapping", () => {
       },
       expectedResponse: { decision: "accept" },
       answer: () => useAppStore.getState().answerApproval(threadId, "approval-1", true),
+    });
+  });
+
+  test("retired shared JSON-RPC sockets do not route late notifications or server requests after a serverUrl swap", async () => {
+    const firstSocket = await reconnectThreadAndGetSocket();
+
+    useAppStore.setState((state) => ({
+      workspaceRuntimeById: {
+        ...state.workspaceRuntimeById,
+        [workspaceId]: {
+          ...state.workspaceRuntimeById[workspaceId],
+          serverUrl: "ws://changed",
+        },
+      },
+    }));
+    await useAppStore.getState().reconnectThread(threadId);
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const secondSocket = MockJsonRpcSocket.instances[1];
+    expect(secondSocket).toBeDefined();
+    expect(secondSocket).not.toBe(firstSocket);
+    expect(RUNTIME.jsonRpcSockets.get(workspaceId)).toBe(secondSocket);
+
+    firstSocket.notify("cowork/log", {
+      type: "log",
+      sessionId,
+      line: "stale retired log line",
+    });
+    firstSocket.requestFromServer("ask-stale", "item/tool/requestUserInput", {
+      threadId: sessionId,
+      turnId: "turn-stale",
+      itemId: "item-stale",
+      question: "Ignore me?",
+      options: ["Yes", "No"],
+    });
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    expect(useAppStore.getState().promptModal).toBeNull();
+    expect(firstSocket.responses).toEqual([]);
+    expect(secondSocket.responses).toEqual([]);
+    expect(useAppStore.getState().threadRuntimeById[threadId]?.feed.some((item) =>
+      item.kind === "log" && item.line === "stale retired log line"
+    )).toBe(false);
+
+    secondSocket.notify("cowork/log", {
+      type: "log",
+      sessionId,
+      line: "fresh replacement log line",
+    });
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    expect(useAppStore.getState().threadRuntimeById[threadId]?.feed.some((item) =>
+      item.kind === "log" && item.line === "fresh replacement log line"
+    )).toBe(true);
+
+    await expectPromptRequestToStayOnRequestPath({
+      socket: secondSocket,
+      requestId: "ask-fresh",
+      method: "item/tool/requestUserInput",
+      params: {
+        threadId: sessionId,
+        turnId: "turn-fresh",
+        itemId: "item-fresh",
+        question: "Continue on replacement?",
+        options: ["Yes", "No"],
+      },
+      expectedModal: {
+        kind: "ask",
+        threadId,
+        prompt: {
+          requestId: "ask-fresh",
+          question: "Continue on replacement?",
+          options: ["Yes", "No"],
+        },
+      },
+      expectedResponse: { answer: "Yes" },
+      answer: () => useAppStore.getState().answerAsk(threadId, "ask-fresh", "Yes"),
     });
   });
 

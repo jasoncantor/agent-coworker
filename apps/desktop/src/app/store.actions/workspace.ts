@@ -24,9 +24,11 @@ import {
   RUNTIME,
   appendThreadTranscript,
   basename,
+  bumpWorkspaceJsonRpcSocketGeneration,
   bumpWorkspaceStartGeneration,
   buildContextPreamble,
   clearPendingThreadSteers,
+  clearWorkspaceJsonRpcSocketGeneration,
   clearWorkspaceStartState,
   ensureControlSocket,
   ensureServerRunning,
@@ -108,6 +110,7 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
 
     removeWorkspace: async (workspaceId: string) => {
       bumpWorkspaceStartGeneration(workspaceId);
+      bumpWorkspaceJsonRpcSocketGeneration(workspaceId);
 
       for (const thread of get().threads) {
         if (thread.workspaceId !== workspaceId) continue;
@@ -127,6 +130,7 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
         // ignore
       }
       RUNTIME.jsonRpcSockets.delete(workspaceId);
+      clearWorkspaceJsonRpcSocketGeneration(workspaceId);
 
       try {
         await stopWorkspaceServer({ workspaceId });
@@ -193,6 +197,7 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
 
     restartWorkspaceServer: async (workspaceId) => {
       bumpWorkspaceStartGeneration(workspaceId);
+      bumpWorkspaceJsonRpcSocketGeneration(workspaceId);
 
       for (const thread of get().threads) {
         if (thread.workspaceId !== workspaceId) continue;

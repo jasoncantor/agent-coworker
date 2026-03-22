@@ -30,7 +30,9 @@ import { createControlSocketHelpers } from "./store.helpers/controlSocket";
 import { persist, persistNow, syncDesktopStateCache, syncDesktopStateCacheNow } from "./store.helpers/persistence";
 import {
   RUNTIME,
+  bumpWorkspaceJsonRpcSocketGeneration,
   bumpWorkspaceStartGeneration,
+  clearWorkspaceJsonRpcSocketGeneration,
   clearWorkspaceStartState,
   defaultThreadRuntime,
   defaultWorkspaceRuntime,
@@ -40,6 +42,7 @@ import {
   beginThreadSelectionRequest,
   ensureThreadRuntime,
   ensureWorkspaceRuntime,
+  getWorkspaceJsonRpcSocketGeneration,
   hasPendingThreadSteer,
   isCurrentThreadSelectionRequest,
   getWorkspaceStartGeneration,
@@ -438,7 +441,9 @@ async function ensureServerRunning(
 
 export {
   RUNTIME,
+  bumpWorkspaceJsonRpcSocketGeneration,
   bumpWorkspaceStartGeneration,
+  clearWorkspaceJsonRpcSocketGeneration,
   clearWorkspaceStartState,
   nowIso,
   makeId,
@@ -458,6 +463,7 @@ export {
   clearThreadSelectionRequest,
   ensureWorkspaceRuntime,
   ensureThreadRuntime,
+  getWorkspaceJsonRpcSocketGeneration,
   hasPendingThreadSteer,
   isCurrentThreadSelectionRequest,
   mapTranscriptToFeed,

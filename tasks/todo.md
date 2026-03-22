@@ -164,3 +164,19 @@
 - Revalidated transport coverage passed with `bun test test/server.jsonrpc.test.ts` and `bun test test/server.jsonrpc.flow.test.ts`.
 - Revalidated desktop/socket coverage passed with `bun test --cwd apps/desktop test/control-socket.test.ts test/thread-reconnect.test.ts`.
 - Typecheck passed with `bun run typecheck`.
+
+## Harden Workspace JSON-RPC Socket Replacement
+
+- [x] Add monotonic per-workspace JSON-RPC socket generation bookkeeping in desktop runtime state.
+- [x] Gate shared workspace socket lifecycle and JSON-RPC routing callbacks on the active workspace generation instead of socket map entry identity.
+- [x] Bump socket generation before retiring a workspace control socket for URL swaps and other explicit workspace-socket retirement paths.
+- [x] Extend desktop regressions for stale retired-socket close, stale thread disconnect, and stale notification/request routing.
+- [x] Run the requested focused desktop verification slice and capture the result.
+
+## Harden Workspace JSON-RPC Socket Replacement Review
+
+- `apps/desktop/src/app/store.helpers/runtimeState.ts` now tracks a monotonic active JSON-RPC socket generation per workspace, alongside helpers that mirror the repo’s existing generation-based stale-result guards.
+- `apps/desktop/src/app/store.helpers/jsonRpcSocket.ts` now stamps each shared workspace socket with its generation, gates `onOpen`, `onClose`, `onNotification`, and `onServerRequest` on the active generation, and bumps generation before retiring a URL-swapped socket instead of depending on `RUNTIME.jsonRpcSockets.get(workspaceId) === socket`.
+- `apps/desktop/src/app/store.actions/workspace.ts` now also bumps socket generation before restart/remove retirement so a late close from the old active socket cannot disconnect threads or clear control state after explicit workspace socket teardown.
+- `apps/desktop/test/control-socket.test.ts`, `apps/desktop/test/thread-reconnect.test.ts`, and `apps/desktop/test/protocol-v2-events.test.ts` now lock down stale retired-socket close, stale disconnect, and stale notification/server-request routing behavior while confirming the replacement socket still handles live events normally.
+- Verification passed with `bun test apps/desktop/test/control-socket.test.ts apps/desktop/test/thread-reconnect.test.ts apps/desktop/test/protocol-v2-events.test.ts`.
