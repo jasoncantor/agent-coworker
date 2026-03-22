@@ -49,6 +49,10 @@ type BufferedToolState = {
   started: boolean;
 };
 
+function occurrenceItemId(baseId: string, occurrence: number): string {
+  return occurrence <= 1 ? baseId : `${baseId}:${occurrence}`;
+}
+
 function makeItemId(prefix: string, seed: string): string {
   return `${prefix}:${seed}`;
 }
@@ -105,9 +109,11 @@ export function createJsonRpcLegacyEventProjector(opts: CreateJsonRpcLegacyEvent
   const agentItemIdByTurn = new Map<string, string>();
   const agentTextByTurn = new Map<string, string>();
   const reasoningByKey = new Map<string, BufferedReasoningState>();
+  const reasoningOccurrenceByKey = new Map<string, number>();
   const reasoningTextsSeenInTurn = new Set<string>();
   const reasoningTextHistoryInTurn: string[] = [];
   const toolByKey = new Map<string, BufferedToolState>();
+  const toolOccurrenceByKey = new Map<string, number>();
   const replayRuntime: ModelStreamReplayRuntime = createModelStreamReplayRuntime();
   if (activeTurnId) {
     agentItemIdByTurn.set(activeTurnId, makeItemId("agentMessage", activeTurnId));
@@ -182,8 +188,14 @@ export function createJsonRpcLegacyEventProjector(opts: CreateJsonRpcLegacyEvent
       existing.mode = reasoningModeFromPart(part);
       return { key, state: existing };
     }
+    const streamId = readPartString(part, "id") ?? "default";
+    const nextOccurrence = (reasoningOccurrenceByKey.get(key) ?? 0) + 1;
+    reasoningOccurrenceByKey.set(key, nextOccurrence);
     const next: BufferedReasoningState = {
-      itemId: makeItemId("reasoning", `${turnId}:${readPartString(part, "id") ?? crypto.randomUUID()}`),
+      itemId: occurrenceItemId(
+        makeItemId("reasoning", `${turnId}:${streamId}`),
+        nextOccurrence,
+      ),
       mode: reasoningModeFromPart(part),
       text: "",
       started: false,
@@ -266,12 +278,22 @@ export function createJsonRpcLegacyEventProjector(opts: CreateJsonRpcLegacyEvent
         reasoningByKey.delete(key);
       }
     }
+    for (const key of reasoningOccurrenceByKey.keys()) {
+      if (key.startsWith(`${turnId}:`)) {
+        reasoningOccurrenceByKey.delete(key);
+      }
+    }
   };
 
   const clearToolStateForTurn = (turnId: string) => {
     for (const key of toolByKey.keys()) {
       if (key.startsWith(`${turnId}:`)) {
         toolByKey.delete(key);
+      }
+    }
+    for (const key of toolOccurrenceByKey.keys()) {
+      if (key.startsWith(`${turnId}:`)) {
+        toolOccurrenceByKey.delete(key);
       }
     }
   };
@@ -282,7 +304,9 @@ export function createJsonRpcLegacyEventProjector(opts: CreateJsonRpcLegacyEvent
       clearToolStateForTurn(turnId);
     } else {
       reasoningByKey.clear();
+      reasoningOccurrenceByKey.clear();
       toolByKey.clear();
+      toolOccurrenceByKey.clear();
     }
     reasoningTextsSeenInTurn.clear();
     reasoningTextHistoryInTurn.length = 0;
@@ -325,8 +349,13 @@ export function createJsonRpcLegacyEventProjector(opts: CreateJsonRpcLegacyEvent
       existing.name = name;
       return { fullKey, state: existing };
     }
+    const nextOccurrence = (toolOccurrenceByKey.get(fullKey) ?? 0) + 1;
+    toolOccurrenceByKey.set(fullKey, nextOccurrence);
     const next: BufferedToolState = {
-      itemId: makeItemId("toolCall", `${turnId}:${key}`),
+      itemId: occurrenceItemId(
+        makeItemId("toolCall", `${turnId}:${key}`),
+        nextOccurrence,
+      ),
       name,
       inputText: "",
       started: false,

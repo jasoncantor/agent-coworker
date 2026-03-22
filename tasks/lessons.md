@@ -1,5 +1,6 @@
 # Lessons
 
+- For JSON-RPC transcript replay in this repo, do not assume stream ids are unique for the whole turn; PI/OpenCode providers can reuse ids like `s0` or fallback tool ids across steps, so projector and thread-read item ids must be occurrence-stable within the turn or later reasoning/tool entries will collapse onto earlier ones.
 - For desktop transcript/render bugs in this repo, do not stop at `session_snapshots`; inspect `thread_journal_events` and the JSON-RPC projector/reducer path too, because a session snapshot can be correct while the live/journal adapter still drops Gemini tool items or appends final reasoning after assistant deltas.
 - For desktop warm-start work in this repo, keep renderer-local cache strictly local and treat harness-owned `.cowork` or other shared config/session state as authoritative; never let desktop-only cache or shell state overwrite cross-client defaults just because it loaded first.
 - When the user upgrades a review comment into a contract change, implement the stronger wire contract end-to-end: server payload, schema, generated artifacts, and consumer preference for wire data all need to move together.

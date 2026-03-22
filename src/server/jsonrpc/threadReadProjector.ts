@@ -6,8 +6,21 @@ type ProjectedTurn = {
   items: Array<Record<string, unknown>>;
 };
 
+type ProjectedTurnState = {
+  id: string;
+  status: string;
+  items: Map<string, Record<string, unknown>>;
+  itemOrder: string[];
+  currentProjectedIdByRawId: Map<string, string>;
+  seenOccurrencesByRawId: Map<string, number>;
+};
+
+function occurrenceItemId(baseId: string, occurrence: number): string {
+  return occurrence <= 1 ? baseId : `${baseId}:${occurrence}`;
+}
+
 export function createThreadTurnProjector() {
-  const turns = new Map<string, { id: string; status: string; items: Map<string, Record<string, unknown>> }>();
+  const turns = new Map<string, ProjectedTurnState>();
   const order: string[] = [];
 
   const ensureTurn = (turnId: string) => {
@@ -17,10 +30,28 @@ export function createThreadTurnProjector() {
       id: turnId,
       status: "inProgress",
       items: new Map(),
+      itemOrder: [],
+      currentProjectedIdByRawId: new Map(),
+      seenOccurrencesByRawId: new Map(),
     };
     turns.set(turnId, turn);
     order.push(turnId);
     return turn;
+  };
+
+  const projectStartedItemId = (turn: ProjectedTurnState, rawId: string): string => {
+    const nextOccurrence = (turn.seenOccurrencesByRawId.get(rawId) ?? 0) + 1;
+    turn.seenOccurrencesByRawId.set(rawId, nextOccurrence);
+    const projectedId = occurrenceItemId(rawId, nextOccurrence);
+    turn.currentProjectedIdByRawId.set(rawId, projectedId);
+    if (!turn.items.has(projectedId)) {
+      turn.itemOrder.push(projectedId);
+    }
+    return projectedId;
+  };
+
+  const currentProjectedItemId = (turn: ProjectedTurnState, rawId: string): string => {
+    return turn.currentProjectedIdByRawId.get(rawId) ?? rawId;
   };
 
   const handle = (event: PersistedThreadJournalEvent) => {
@@ -37,17 +68,27 @@ export function createThreadTurnProjector() {
         const turnId = typeof payload.turnId === "string" ? payload.turnId : event.turnId;
         const item = payload.item as Record<string, unknown> | undefined;
         if (!turnId || !item || typeof item.id !== "string") return;
-        ensureTurn(turnId).items.set(item.id, { ...item });
+        const turn = ensureTurn(turnId);
+        const rawId = item.id;
+        const projectedId =
+          event.eventType === "item/started"
+            ? projectStartedItemId(turn, rawId)
+            : currentProjectedItemId(turn, rawId);
+        turn.items.set(projectedId, { ...item, id: projectedId });
         break;
       }
       case "item/agentMessage/delta": {
         const turnId = typeof payload.turnId === "string" ? payload.turnId : event.turnId;
-        const itemId = typeof payload.itemId === "string" ? payload.itemId : event.itemId;
+        const rawItemId = typeof payload.itemId === "string" ? payload.itemId : event.itemId;
         const delta = typeof payload.delta === "string" ? payload.delta : "";
-        if (!turnId || !itemId) return;
+        if (!turnId || !rawItemId) return;
         const turn = ensureTurn(turnId);
+        const itemId = currentProjectedItemId(turn, rawItemId);
         const existing = turn.items.get(itemId) ?? { id: itemId, type: "agentMessage", text: "" };
         const currentText = typeof existing.text === "string" ? existing.text : "";
+        if (!turn.items.has(itemId)) {
+          turn.itemOrder.push(itemId);
+        }
         turn.items.set(itemId, {
           ...existing,
           text: `${currentText}${delta}`,
@@ -56,13 +97,17 @@ export function createThreadTurnProjector() {
       }
       case "item/reasoning/delta": {
         const turnId = typeof payload.turnId === "string" ? payload.turnId : event.turnId;
-        const itemId = typeof payload.itemId === "string" ? payload.itemId : event.itemId;
+        const rawItemId = typeof payload.itemId === "string" ? payload.itemId : event.itemId;
         const delta = typeof payload.delta === "string" ? payload.delta : "";
         const mode = payload.mode === "summary" ? "summary" : "reasoning";
-        if (!turnId || !itemId) return;
+        if (!turnId || !rawItemId) return;
         const turn = ensureTurn(turnId);
+        const itemId = currentProjectedItemId(turn, rawItemId);
         const existing = turn.items.get(itemId) ?? { id: itemId, type: "reasoning", mode, text: "" };
         const currentText = typeof existing.text === "string" ? existing.text : "";
+        if (!turn.items.has(itemId)) {
+          turn.itemOrder.push(itemId);
+        }
         turn.items.set(itemId, {
           ...existing,
           type: "reasoning",
@@ -88,7 +133,7 @@ export function createThreadTurnProjector() {
     return {
       id: turn.id,
       status: turn.status,
-      items: [...turn.items.values()],
+      items: turn.itemOrder.map((itemId) => turn.items.get(itemId)!).filter(Boolean),
     };
   });
 
