@@ -21,6 +21,13 @@ export function createWorkspaceMemoryActions(
       await ensureServerRunning(get, set, workspaceId);
       const socket = ensureControlSocket(get, set, workspaceId);
 
+      const waitingForInitialControlSession =
+        Boolean(socket)
+        && !get().workspaceRuntimeById[workspaceId]?.controlSessionId;
+      if (waitingForInitialControlSession) {
+        return;
+      }
+
       set((s) => ({
         workspaceRuntimeById: {
           ...s.workspaceRuntimeById,
@@ -30,13 +37,6 @@ export function createWorkspaceMemoryActions(
           },
         },
       }));
-
-      const waitingForInitialControlSession =
-        Boolean(socket)
-        && !get().workspaceRuntimeById[workspaceId]?.controlSessionId;
-      if (waitingForInitialControlSession) {
-        return;
-      }
 
       const ok = await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/memory/list", {
         cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,

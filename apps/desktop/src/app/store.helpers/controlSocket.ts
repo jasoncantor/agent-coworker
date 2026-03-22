@@ -1,4 +1,4 @@
-import type { ClientMessage, ProviderName, ServerEvent } from "../../lib/wsProtocol";
+import type { ProviderName, ServerEvent } from "../../lib/wsProtocol";
 import type { StoreGet, StoreSet } from "../store.helpers";
 import { normalizeWorkspaceProviderOptions } from "../openaiCompatibleProviderOptions";
 import { normalizeWorkspaceUserProfile } from "../types";
@@ -43,7 +43,6 @@ type ControlSocketHelperOptions = {
 };
 
 const REQUEST_TIMEOUT_MS = 5_000;
-const noopSet: StoreSet = () => {};
 
 export function createControlSocketHelpers(
   deps: ControlSocketDeps,
@@ -52,6 +51,7 @@ export function createControlSocketHelpers(
   const requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
   const jsonRpcLifecycleCleanupByWorkspace = new Map<string, () => void>();
   const jsonRpcBootstrapPromises = new Map<string, Promise<void>>();
+  const controlStoreSettersByWorkspace = new Map<string, StoreSet>();
 
   function upsertWorkspaceThreads(
     allThreads: ThreadRecord[],
@@ -257,255 +257,46 @@ export function createControlSocketHelpers(
     void deps.persist(get);
   }
 
+  function rememberControlStoreSet(workspaceId: string, set: StoreSet) {
+    controlStoreSettersByWorkspace.set(workspaceId, set);
+  }
+
+  function getControlStoreSet(workspaceId: string): StoreSet | null {
+    return controlStoreSettersByWorkspace.get(workspaceId) ?? null;
+  }
+
   function ensureJsonRpcControlLifecycle(get: StoreGet, set: StoreSet, workspaceId: string) {
+    rememberControlStoreSet(workspaceId, set);
     if (jsonRpcLifecycleCleanupByWorkspace.has(workspaceId)) {
       return;
     }
     const cleanup = registerWorkspaceJsonRpcLifecycle(workspaceId, {
       onOpen: () => {
-        void bootstrapJsonRpcControlStateOnce(get, set, workspaceId);
+        const currentSet = getControlStoreSet(workspaceId);
+        if (!currentSet) return;
+        void bootstrapJsonRpcControlStateOnce(get, currentSet, workspaceId);
       },
       onClose: () => {
-        clearWorkspaceControlRuntime(get, set, workspaceId);
+        const currentSet = getControlStoreSet(workspaceId);
+        if (!currentSet) return;
+        clearWorkspaceControlRuntime(get, currentSet, workspaceId);
       },
     });
     jsonRpcLifecycleCleanupByWorkspace.set(workspaceId, cleanup);
   }
 
   function ensureControlSocket(get: StoreGet, set: StoreSet, workspaceId: string) {
+    rememberControlStoreSet(workspaceId, set);
     ensureJsonRpcControlLifecycle(get, set, workspaceId);
     return ensureWorkspaceJsonRpcSocket(get, set, workspaceId);
   }
 
-  async function waitForControlSession(get: StoreGet, workspaceId: string, timeoutMs = 3_000): Promise<boolean> {
-    const socket = RUNTIME.jsonRpcSockets.get(workspaceId) ?? ensureControlSocket(get, noopSet, workspaceId);
+  async function waitForControlSession(get: StoreGet, set: StoreSet, workspaceId: string, timeoutMs = 3_000): Promise<boolean> {
+    const socket = RUNTIME.jsonRpcSockets.get(workspaceId) ?? ensureControlSocket(get, set, workspaceId);
     if (!socket) {
       return false;
     }
     return await waitForReady(socket, timeoutMs);
-  }
-
-  function sendControl(get: StoreGet, workspaceId: string, build: (sessionId: string) => ClientMessage): boolean {
-    const socket = ensureWorkspaceJsonRpcSocket(get, undefined, workspaceId);
-    if (!socket) return false;
-    const message = build(get().workspaceRuntimeById[workspaceId]?.controlSessionId ?? `jsonrpc:${workspaceId}`);
-    const cwd = get().workspaces.find((workspace) => workspace.id === workspaceId)?.path;
-    switch (message.type) {
-      case "session_close":
-        return true;
-      case "refresh_provider_status":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/provider/status/refresh", { cwd });
-        return true;
-      case "provider_catalog_get":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/provider/catalog/read", { cwd });
-        return true;
-      case "provider_auth_methods_get":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/provider/authMethods/read", { cwd });
-        return true;
-      case "provider_auth_authorize":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/provider/auth/authorize", {
-          cwd,
-          provider: message.provider,
-          methodId: message.methodId,
-        });
-        return true;
-      case "provider_auth_logout":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/provider/auth/logout", {
-          cwd,
-          provider: message.provider,
-        });
-        return true;
-      case "provider_auth_callback":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/provider/auth/callback", {
-          cwd,
-          provider: message.provider,
-          methodId: message.methodId,
-          ...(message.code ? { code: message.code } : {}),
-        });
-        return true;
-      case "provider_auth_set_api_key":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/provider/auth/setApiKey", {
-          cwd,
-          provider: message.provider,
-          methodId: message.methodId,
-          apiKey: message.apiKey,
-        });
-        return true;
-      case "provider_auth_copy_api_key":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/provider/auth/copyApiKey", {
-          cwd,
-          provider: message.provider,
-          sourceProvider: message.sourceProvider,
-        });
-        return true;
-      case "mcp_servers_get":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/mcp/servers/read", { cwd });
-        return true;
-      case "mcp_server_upsert":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/mcp/server/upsert", {
-          cwd,
-          ...message.server,
-          ...(message.previousName ? { previousName: message.previousName } : {}),
-        });
-        return true;
-      case "mcp_server_delete":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/mcp/server/delete", {
-          cwd,
-          name: message.name,
-        });
-        return true;
-      case "mcp_server_validate":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/mcp/server/validate", {
-          cwd,
-          name: message.name,
-        });
-        return true;
-      case "mcp_server_auth_authorize":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/mcp/server/auth/authorize", {
-          cwd,
-          name: message.name,
-        });
-        return true;
-      case "mcp_server_auth_callback":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/mcp/server/auth/callback", {
-          cwd,
-          name: message.name,
-          ...(message.code ? { code: message.code } : {}),
-        });
-        return true;
-      case "mcp_server_auth_set_api_key":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/mcp/server/auth/setApiKey", {
-          cwd,
-          name: message.name,
-          apiKey: message.apiKey,
-        });
-        return true;
-      case "mcp_servers_migrate_legacy":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/mcp/legacy/migrate", {
-          cwd,
-          scope: message.scope,
-        });
-        return true;
-      case "skills_catalog_get":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/catalog/read", { cwd });
-        return true;
-      case "list_skills":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/list", { cwd });
-        return true;
-      case "read_skill":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/read", { cwd, skillName: message.skillName });
-        return true;
-      case "skill_installation_get":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/installation/read", { cwd, installationId: message.installationId });
-        return true;
-      case "skill_install_preview":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/install/preview", {
-          cwd,
-          sourceInput: message.sourceInput,
-          targetScope: message.targetScope,
-        });
-        return true;
-      case "skill_install":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/install", {
-          cwd,
-          sourceInput: message.sourceInput,
-          targetScope: message.targetScope,
-        });
-        return true;
-      case "disable_skill":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/disable", { cwd, skillName: message.skillName });
-        return true;
-      case "enable_skill":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/enable", { cwd, skillName: message.skillName });
-        return true;
-      case "delete_skill":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/delete", { cwd, skillName: message.skillName });
-        return true;
-      case "skill_installation_disable":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/installation/disable", { cwd, installationId: message.installationId });
-        return true;
-      case "skill_installation_enable":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/installation/enable", { cwd, installationId: message.installationId });
-        return true;
-      case "skill_installation_delete":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/installation/delete", { cwd, installationId: message.installationId });
-        return true;
-      case "skill_installation_copy":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/installation/copy", {
-          cwd,
-          installationId: message.installationId,
-          targetScope: message.targetScope,
-        });
-        return true;
-      case "skill_installation_check_update":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/installation/checkUpdate", {
-          cwd,
-          installationId: message.installationId,
-        });
-        return true;
-      case "skill_installation_update":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/skills/installation/update", {
-          cwd,
-          installationId: message.installationId,
-        });
-        return true;
-      case "memory_list":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/memory/list", { cwd });
-        return true;
-      case "memory_upsert":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/memory/upsert", {
-          cwd,
-          scope: message.scope,
-          ...(message.id ? { id: message.id } : {}),
-          content: message.content,
-        });
-        return true;
-      case "memory_delete":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/memory/delete", {
-          cwd,
-          scope: message.scope,
-          id: message.id,
-        });
-        return true;
-      case "workspace_backups_get":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/backups/workspace/read", { cwd });
-        return true;
-      case "workspace_backup_delta_get":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/backups/workspace/delta/read", {
-          cwd,
-          targetSessionId: message.targetSessionId,
-          checkpointId: message.checkpointId,
-        });
-        return true;
-      case "workspace_backup_checkpoint":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/backups/workspace/checkpoint", {
-          cwd,
-          targetSessionId: message.targetSessionId,
-        });
-        return true;
-      case "workspace_backup_restore":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/backups/workspace/restore", {
-          cwd,
-          targetSessionId: message.targetSessionId,
-          ...(message.checkpointId ? { checkpointId: message.checkpointId } : {}),
-        });
-        return true;
-      case "workspace_backup_delete_checkpoint":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/backups/workspace/deleteCheckpoint", {
-          cwd,
-          targetSessionId: message.targetSessionId,
-          checkpointId: message.checkpointId,
-        });
-        return true;
-      case "workspace_backup_delete_entry":
-        void requestJsonRpcControlEvent(get, noopSet, workspaceId, "cowork/backups/workspace/deleteEntry", {
-          cwd,
-          targetSessionId: message.targetSessionId,
-        });
-        return true;
-      default:
-        return false;
-    }
   }
 
   async function requestWorkspaceSessions(
@@ -1152,7 +943,7 @@ export function createControlSocketHelpers(
       const result = await requestJsonRpc(get, set, workspaceId, method, params);
       const event = (result as { event?: ServerEvent }).event;
       if (!event) {
-        return false;
+        return true;
       }
       applyJsonRpcControlEvent(get, set, workspaceId, event);
       return event.type !== "error";
@@ -1164,7 +955,6 @@ export function createControlSocketHelpers(
   return {
     ensureControlSocket,
     waitForControlSession,
-    sendControl,
     requestWorkspaceSessions,
     requestSessionSnapshot,
     requestJsonRpcControlEvent,

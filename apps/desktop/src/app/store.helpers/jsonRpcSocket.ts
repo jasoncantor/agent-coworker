@@ -16,9 +16,14 @@ type WorkspaceLifecycleListener = {
 
 const workspaceRouters = new Map<string, Set<WorkspaceNotificationRouter>>();
 const workspaceLifecycleListeners = new Map<string, Set<WorkspaceLifecycleListener>>();
+const workspaceStoreSetters = new Map<string, StoreSet>();
 const noopSet: StoreSet = () => {};
 
 type JsonRpcSocketConstructor = new (...args: any[]) => any;
+type WorkspaceJsonRpcSocket = JsonRpcSocket & {
+  __coworkOpened?: boolean;
+  __coworkUrl?: string;
+};
 
 function resolveJsonRpcSocketImpl(): JsonRpcSocketConstructor {
   const override = (globalThis as Record<string, unknown>)[JSONRPC_SOCKET_OVERRIDE_KEY];
@@ -31,6 +36,16 @@ function resolveJsonRpcSocketImpl(): JsonRpcSocketConstructor {
 function getWorkspaceById(get: StoreGet, workspaceId: string): WorkspaceRecord | undefined {
   const state = get() as { workspaces?: WorkspaceRecord[] };
   return state.workspaces?.find((workspace) => workspace.id === workspaceId);
+}
+
+function rememberWorkspaceStoreSet(workspaceId: string, set: StoreSet | undefined) {
+  if (set) {
+    workspaceStoreSetters.set(workspaceId, set);
+  }
+}
+
+function getWorkspaceStoreSet(workspaceId: string): StoreSet {
+  return workspaceStoreSetters.get(workspaceId) ?? noopSet;
 }
 
 function getWorkspaceUrl(get: StoreGet, workspaceId: string): string | null {
@@ -56,6 +71,19 @@ function emitWorkspaceLifecycle(workspaceId: string, event: "open" | "close") {
     }
     listener.onClose?.();
   }
+}
+
+function syncWorkspaceSocketState(workspaceId: string, isOpen: boolean) {
+  getWorkspaceStoreSet(workspaceId)((s) => ({
+    workspaceRuntimeById: {
+      ...s.workspaceRuntimeById,
+      [workspaceId]: {
+        ...s.workspaceRuntimeById[workspaceId],
+        controlSessionId: isOpen ? `jsonrpc:${workspaceId}` : null,
+      },
+    },
+  }));
+  emitWorkspaceLifecycle(workspaceId, isOpen ? "open" : "close");
 }
 
 export function registerWorkspaceJsonRpcRouter(workspaceId: string, router: WorkspaceNotificationRouter): () => void {
@@ -91,13 +119,27 @@ export function ensureWorkspaceJsonRpcSocket(
   set: StoreSet | undefined,
   workspaceId: string,
 ): any | null {
-  const effectiveSet = set ?? noopSet;
+  rememberWorkspaceStoreSet(workspaceId, set);
   const url = getWorkspaceUrl(get, workspaceId);
   if (!url) return null;
 
-  const existing = RUNTIME.jsonRpcSockets.get(workspaceId);
+  const existing = RUNTIME.jsonRpcSockets.get(workspaceId) as WorkspaceJsonRpcSocket | undefined;
   if (existing) {
-    return existing;
+    if (existing.__coworkUrl && existing.__coworkUrl !== url) {
+      RUNTIME.jsonRpcSockets.delete(workspaceId);
+      try {
+        existing.close?.();
+      } catch {
+        // ignore
+      }
+    } else {
+      const controlSessionId = (get() as { workspaceRuntimeById?: Record<string, { controlSessionId?: string | null }> })
+        .workspaceRuntimeById?.[workspaceId]?.controlSessionId ?? null;
+      if (set && existing.__coworkOpened === true && !controlSessionId) {
+        syncWorkspaceSocketState(workspaceId, true);
+      }
+      return existing;
+    }
   }
 
   const JsonRpcSocketImpl = resolveJsonRpcSocketImpl();
@@ -121,30 +163,14 @@ export function ensureWorkspaceJsonRpcSocket(
       });
     },
     onOpen: () => {
-      effectiveSet((s) => ({
-        workspaceRuntimeById: {
-          ...s.workspaceRuntimeById,
-          [workspaceId]: {
-            ...s.workspaceRuntimeById[workspaceId],
-            controlSessionId: `jsonrpc:${workspaceId}`,
-          },
-        },
-      }));
-      emitWorkspaceLifecycle(workspaceId, "open");
+      socket.__coworkOpened = true;
+      syncWorkspaceSocketState(workspaceId, true);
     },
     onClose: () => {
-      effectiveSet((s) => ({
-        workspaceRuntimeById: {
-          ...s.workspaceRuntimeById,
-          [workspaceId]: {
-            ...s.workspaceRuntimeById[workspaceId],
-            controlSessionId: null,
-          },
-        },
-      }));
-      emitWorkspaceLifecycle(workspaceId, "close");
+      socket.__coworkOpened = false;
+      syncWorkspaceSocketState(workspaceId, false);
     },
-  });
+  }) as WorkspaceJsonRpcSocket;
 
   if (!("readyPromise" in socket)) {
     (socket as any).readyPromise = Promise.resolve();
@@ -155,6 +181,8 @@ export function ensureWorkspaceJsonRpcSocket(
   if (typeof (socket as any).respond !== "function") {
     (socket as any).respond = () => true;
   }
+  socket.__coworkOpened = false;
+  socket.__coworkUrl = url;
 
   RUNTIME.jsonRpcSockets.set(workspaceId, socket);
   socket.connect();

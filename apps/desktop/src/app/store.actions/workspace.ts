@@ -42,7 +42,6 @@ import {
   pushNotification,
   queuePendingThreadMessage,
   requestWorkspaceSessions,
-  sendControl,
   sendThread,
   sendUserMessageToThread,
   normalizeThreadTitleSource,
@@ -52,10 +51,6 @@ import type { ThreadRecord, WorkspaceRecord } from "../types";
 import { reorderSidebarItemsById } from "../../ui/sidebarHelpers";
 
 export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "addWorkspace" | "removeWorkspace" | "selectWorkspace" | "reorderWorkspaces" | "restartWorkspaceServer"> {
-  const closeControlSession = (workspaceId: string) => {
-    sendControl(get, workspaceId, (sessionId) => ({ type: "session_close", sessionId }));
-  };
-
   const closeThreadSession = (threadId: string) => {
     sendThread(get, threadId, (sessionId) => ({ type: "session_close", sessionId }));
   };
@@ -114,7 +109,6 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
     removeWorkspace: async (workspaceId: string) => {
       bumpWorkspaceStartGeneration(workspaceId);
       const jsonRpcSocket = RUNTIME.jsonRpcSockets.get(workspaceId);
-      closeControlSession(workspaceId);
       RUNTIME.jsonRpcSockets.delete(workspaceId);
       try {
         jsonRpcSocket?.close();
@@ -199,7 +193,6 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
     restartWorkspaceServer: async (workspaceId) => {
       bumpWorkspaceStartGeneration(workspaceId);
       const jsonRpcSocket = RUNTIME.jsonRpcSockets.get(workspaceId);
-      closeControlSession(workspaceId);
       try {
         jsonRpcSocket?.close();
       } catch {

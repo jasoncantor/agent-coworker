@@ -341,7 +341,6 @@ const { appendThreadTranscript } = createTranscriptBuffer({ nowIso });
 const {
   ensureControlSocket,
   waitForControlSession,
-  sendControl,
   requestWorkspaceSessions,
   requestSessionSnapshot,
   requestJsonRpcControlEvent,
@@ -474,7 +473,6 @@ export {
   requestSessionSnapshot,
   requestJsonRpcControlEvent,
   ensureThreadSocket,
-  sendControl,
   sendThread,
   appendThreadTranscript,
   pushNotification,

@@ -498,7 +498,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
 
       await ensureServerRunning(get, set, workspaceId);
       ensureControlSocket(get, set, workspaceId);
-      const controlReady = await waitForControlSession(get, workspaceId);
+      const controlReady = await waitForControlSession(get, set, workspaceId);
       const workspace = controlReady
         ? resolveWorkspaceDefaults(workspaceId)
         : get().workspaces.find((w) => w.id === workspaceId);

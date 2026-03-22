@@ -8,8 +8,9 @@ const jsonRpcHandlers = new Map<string, (params?: any) => any | Promise<any>>();
 class MockJsonRpcSocket {
   static instances: MockJsonRpcSocket[] = [];
   readonly readyPromise = Promise.resolve();
+  closed = false;
 
-  constructor(public readonly opts: { onOpen?: () => void; onClose?: () => void }) {
+  constructor(public readonly opts: { url?: string; onOpen?: () => void; onClose?: () => void }) {
     MockJsonRpcSocket.instances.push(this);
   }
 
@@ -31,6 +32,7 @@ class MockJsonRpcSocket {
   }
 
   close() {
+    this.closed = true;
     this.opts.onClose?.();
   }
 }
@@ -41,6 +43,7 @@ mock.module("../src/lib/agentSocket", () => ({
 }));
 
 const { createControlSocketHelpers } = await import("../src/app/store.helpers/controlSocket");
+const { ensureWorkspaceJsonRpcSocket } = await import("../src/app/store.helpers/jsonRpcSocket");
 const { RUNTIME, defaultWorkspaceRuntime } = await import("../src/app/store.helpers/runtimeState");
 
 let persistCalls = 0;
@@ -219,6 +222,57 @@ describe("control socket helpers over JSON-RPC", () => {
     });
   });
 
+  test("requestJsonRpcControlEvent treats successful no-event responses as success", async () => {
+    const workspaceId = "ws-no-event";
+    const { get, set } = createState(workspaceId);
+    installFakeSocket(workspaceId, async (method) => {
+      expect(method).toBe("cowork/provider/catalog/read");
+      return {};
+    });
+
+    const helpers = createControlSocketHelpers(deps);
+    const ok = await helpers.requestJsonRpcControlEvent(
+      get as any,
+      set as any,
+      workspaceId,
+      "cowork/provider/catalog/read",
+      { cwd: "/tmp/workspace" },
+    );
+
+    expect(ok).toBe(true);
+  });
+
+  test("ensureControlSocket backfills control session state if the first socket caller had no store setter", () => {
+    const workspaceId = "ws-backfill";
+    const { state, get, set } = createState(workspaceId);
+
+    ensureWorkspaceJsonRpcSocket(get as any, undefined, workspaceId);
+    expect(state.workspaceRuntimeById[workspaceId].controlSessionId).toBeNull();
+
+    const helpers = createControlSocketHelpers(deps);
+    helpers.ensureControlSocket(get as any, set as any, workspaceId);
+
+    expect(state.workspaceRuntimeById[workspaceId].controlSessionId).toBe(`jsonrpc:${workspaceId}`);
+  });
+
+  test("ensureControlSocket recreates the shared workspace socket when serverUrl changes", () => {
+    const workspaceId = "ws-url-change";
+    const { state, get, set } = createState(workspaceId);
+    const helpers = createControlSocketHelpers(deps);
+
+    const firstSocket = helpers.ensureControlSocket(get as any, set as any, workspaceId);
+    expect(MockJsonRpcSocket.instances).toHaveLength(1);
+    expect((firstSocket as MockJsonRpcSocket).opts.url).toBe("ws://mock");
+
+    state.workspaceRuntimeById[workspaceId].serverUrl = "ws://changed";
+    const secondSocket = helpers.ensureControlSocket(get as any, set as any, workspaceId);
+
+    expect(MockJsonRpcSocket.instances).toHaveLength(2);
+    expect(firstSocket).not.toBe(secondSocket);
+    expect((firstSocket as MockJsonRpcSocket).closed).toBe(true);
+    expect((secondSocket as MockJsonRpcSocket).opts.url).toBe("ws://changed");
+  });
+
   test("requestJsonRpcControlEvent resolves matching skill install waiters", async () => {
     const workspaceId = "ws-skills";
     const { state, get, set } = createState(workspaceId, {
@@ -336,15 +390,7 @@ describe("control socket helpers over JSON-RPC", () => {
         return {};
       }
       if (method === "cowork/provider/catalog/read") {
-        return {
-          event: {
-            type: "provider_catalog",
-            sessionId: "jsonrpc-control",
-            all: [],
-            default: {},
-            connected: [],
-          },
-        };
+        throw new Error("catalog refresh failed");
       }
       throw new Error(`unexpected method: ${method}`);
     });
