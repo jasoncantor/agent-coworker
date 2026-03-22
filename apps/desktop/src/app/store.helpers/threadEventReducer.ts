@@ -388,13 +388,22 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
           { id: streamId, mode },
         ));
         const finalText = String(params.item?.text ?? "");
-        if (finalText) {
-          handleThreadEvent(get, set, mappedThreadId, {
-            type: "reasoning",
-            sessionId: mappedSessionId,
-            kind: mode,
-            text: finalText,
-          });
+        if (finalText.trim()) {
+          const stream = getModelStreamRuntime(mappedThreadId);
+          const key = `${turnId}:${streamId}`;
+          const existingItemId = stream.reasoningItemIdByStream.get(key);
+          if (existingItemId) {
+            updateFeedItem(set, mappedThreadId, existingItemId, (item) =>
+              item.kind === "reasoning" ? { ...item, mode, text: finalText } : item
+            );
+          } else {
+            handleThreadEvent(get, set, mappedThreadId, {
+              type: "reasoning",
+              sessionId: mappedSessionId,
+              kind: mode,
+              text: finalText,
+            });
+          }
         }
         return;
       }
