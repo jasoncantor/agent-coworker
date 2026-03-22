@@ -20,6 +20,20 @@ function streamChunk(partType: Extract<ServerEvent, { type: "model_stream_chunk"
   };
 }
 
+function googleRaw(index: number, event: Record<string, unknown>): ServerEvent {
+  return {
+    type: "model_stream_raw",
+    sessionId,
+    turnId,
+    index,
+    provider: "google",
+    model: "gemini-3.1-pro-preview-customtools",
+    format: "google-interactions-v1",
+    normalizerVersion: 1,
+    event,
+  };
+}
+
 describe("JSON-RPC projectors", () => {
   test("legacy projector suppresses commentary deltas and streams reasoning items from live chunks", () => {
     const outbound: Array<{ method: string; params?: any }> = [];
@@ -162,6 +176,206 @@ describe("JSON-RPC projectors", () => {
       type: "reasoning",
       mode: "summary",
       text: "Inspecting the reports.",
+    });
+  });
+
+  test("legacy projector replays raw Gemini search tool items and drops aggregate final reasoning duplicates", () => {
+    const outbound: Array<{ method: string; params?: any }> = [];
+    const projector = createJsonRpcLegacyEventProjector({
+      threadId: sessionId,
+      send: (message) => outbound.push(message as { method: string; params?: any }),
+    });
+
+    projector.handle({
+      type: "session_busy",
+      sessionId,
+      busy: true,
+      turnId,
+      cause: "user_message",
+    });
+    projector.handle(googleRaw(0, { event_type: "interaction.start" }));
+    projector.handle(googleRaw(1, { event_type: "content.start", index: 0, content: { type: "thought" } }));
+    projector.handle(googleRaw(2, {
+      event_type: "content.delta",
+      index: 0,
+      delta: { type: "thought_summary", content: { type: "text", text: "First pass." } },
+    }));
+    projector.handle(googleRaw(3, { event_type: "content.stop", index: 0 }));
+    projector.handle(googleRaw(4, {
+      event_type: "content.start",
+      index: 1,
+      content: { type: "google_search_call", id: "search-call" },
+    }));
+    projector.handle(googleRaw(5, {
+      event_type: "content.delta",
+      index: 1,
+      delta: { type: "google_search_call", id: "search-call", arguments: { queries: ["Project Hail Mary movie reviews"] } },
+    }));
+    projector.handle(googleRaw(6, { event_type: "content.stop", index: 1 }));
+    projector.handle(googleRaw(7, {
+      event_type: "content.start",
+      index: 2,
+      content: {
+        type: "google_search_result",
+        call_id: "search-call",
+        result: {
+          results: [{ title: "MovieWeb" }],
+          sources: [{ url: "https://example.com/review" }],
+        },
+      },
+    }));
+    projector.handle(googleRaw(8, { event_type: "content.stop", index: 2 }));
+    projector.handle(googleRaw(9, { event_type: "content.start", index: 3, content: { type: "thought" } }));
+    projector.handle(googleRaw(10, {
+      event_type: "content.delta",
+      index: 3,
+      delta: { type: "thought_summary", content: { type: "text", text: "Second pass." } },
+    }));
+    projector.handle(googleRaw(11, { event_type: "content.stop", index: 3 }));
+    projector.handle({
+      type: "reasoning",
+      sessionId,
+      kind: "reasoning",
+      text: "First pass.\n\nSecond pass.",
+    });
+    projector.handle({
+      type: "assistant_message",
+      sessionId,
+      text: "Final answer.",
+    });
+
+    const completedReasoning = outbound
+      .filter((message) => message.method === "item/completed")
+      .filter((message) => message.params?.item?.type === "reasoning")
+      .map((message) => String(message.params?.item?.text ?? ""));
+    expect(completedReasoning).toEqual(["First pass.", "Second pass."]);
+
+    const toolStarted = outbound
+      .filter((message) => message.method === "item/started")
+      .filter((message) => message.params?.item?.type === "toolCall");
+    const toolCompleted = outbound
+      .filter((message) => message.method === "item/completed")
+      .filter((message) => message.params?.item?.type === "toolCall");
+
+    expect(toolStarted).toHaveLength(1);
+    expect(toolCompleted).toHaveLength(1);
+    expect(toolStarted[0]?.params?.item).toMatchObject({
+      type: "toolCall",
+      toolName: "nativeWebSearch",
+      state: "input-streaming",
+    });
+    expect(toolCompleted[0]?.params?.item).toMatchObject({
+      type: "toolCall",
+      toolName: "nativeWebSearch",
+      state: "output-available",
+      args: { queries: ["Project Hail Mary movie reviews"] },
+      result: {
+        provider: "google",
+        status: "completed",
+        queries: ["Project Hail Mary movie reviews"],
+        results: [{ title: "MovieWeb" }],
+        sources: [{ url: "https://example.com/review" }],
+      },
+    });
+  });
+
+  test("journal projector replays raw Gemini search tool items and drops aggregate final reasoning duplicates", () => {
+    const emissions: Array<{ eventType: string; payload: any }> = [];
+    const projector = createThreadJournalProjector({
+      threadId: sessionId,
+      emit: (event) => emissions.push({ eventType: event.eventType, payload: event.payload }),
+    });
+
+    projector.handle({
+      type: "session_busy",
+      sessionId,
+      busy: true,
+      turnId,
+      cause: "user_message",
+    });
+    projector.handle(googleRaw(0, { event_type: "interaction.start" }));
+    projector.handle(googleRaw(1, { event_type: "content.start", index: 0, content: { type: "thought" } }));
+    projector.handle(googleRaw(2, {
+      event_type: "content.delta",
+      index: 0,
+      delta: { type: "thought_summary", content: { type: "text", text: "First pass." } },
+    }));
+    projector.handle(googleRaw(3, { event_type: "content.stop", index: 0 }));
+    projector.handle(googleRaw(4, {
+      event_type: "content.start",
+      index: 1,
+      content: { type: "google_search_call", id: "search-call" },
+    }));
+    projector.handle(googleRaw(5, {
+      event_type: "content.delta",
+      index: 1,
+      delta: { type: "google_search_call", id: "search-call", arguments: { queries: ["Project Hail Mary movie reviews"] } },
+    }));
+    projector.handle(googleRaw(6, { event_type: "content.stop", index: 1 }));
+    projector.handle(googleRaw(7, {
+      event_type: "content.start",
+      index: 2,
+      content: {
+        type: "google_search_result",
+        call_id: "search-call",
+        result: {
+          results: [{ title: "MovieWeb" }],
+          sources: [{ url: "https://example.com/review" }],
+        },
+      },
+    }));
+    projector.handle(googleRaw(8, { event_type: "content.stop", index: 2 }));
+    projector.handle(googleRaw(9, { event_type: "content.start", index: 3, content: { type: "thought" } }));
+    projector.handle(googleRaw(10, {
+      event_type: "content.delta",
+      index: 3,
+      delta: { type: "thought_summary", content: { type: "text", text: "Second pass." } },
+    }));
+    projector.handle(googleRaw(11, { event_type: "content.stop", index: 3 }));
+    projector.handle({
+      type: "reasoning",
+      sessionId,
+      kind: "reasoning",
+      text: "First pass.\n\nSecond pass.",
+    });
+    projector.handle({
+      type: "assistant_message",
+      sessionId,
+      text: "Final answer.",
+    });
+
+    const completedReasoning = emissions
+      .filter((event) => event.eventType === "item/completed")
+      .filter((event) => event.payload?.item?.type === "reasoning")
+      .map((event) => String(event.payload?.item?.text ?? ""));
+    expect(completedReasoning).toEqual(["First pass.", "Second pass."]);
+
+    const toolStarted = emissions
+      .filter((event) => event.eventType === "item/started")
+      .filter((event) => event.payload?.item?.type === "toolCall");
+    const toolCompleted = emissions
+      .filter((event) => event.eventType === "item/completed")
+      .filter((event) => event.payload?.item?.type === "toolCall");
+
+    expect(toolStarted).toHaveLength(1);
+    expect(toolCompleted).toHaveLength(1);
+    expect(toolStarted[0]?.payload?.item).toMatchObject({
+      type: "toolCall",
+      toolName: "nativeWebSearch",
+      state: "input-streaming",
+    });
+    expect(toolCompleted[0]?.payload?.item).toMatchObject({
+      type: "toolCall",
+      toolName: "nativeWebSearch",
+      state: "output-available",
+      args: { queries: ["Project Hail Mary movie reviews"] },
+      result: {
+        provider: "google",
+        status: "completed",
+        queries: ["Project Hail Mary movie reviews"],
+        results: [{ title: "MovieWeb" }],
+        sources: [{ url: "https://example.com/review" }],
+      },
     });
   });
 });

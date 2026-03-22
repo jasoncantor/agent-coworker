@@ -150,6 +150,49 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     };
   }
 
+  function jsonRpcToolName(item: Record<string, unknown> | null | undefined): string {
+    if (!item) return "tool";
+    if (typeof item.toolName === "string" && item.toolName.trim().length > 0) return item.toolName;
+    if (typeof item.name === "string" && item.name.trim().length > 0) return item.name;
+    return "tool";
+  }
+
+  function jsonRpcToolStartPart(item: Record<string, unknown> | null | undefined): Record<string, unknown> {
+    const toolName = jsonRpcToolName(item);
+    const id = typeof item?.id === "string" && item.id.trim().length > 0 ? item.id : "jsonrpc-tool";
+    return {
+      id,
+      toolName,
+      ...(item?.providerExecuted === true ? { providerExecuted: true } : {}),
+    };
+  }
+
+  function emitJsonRpcToolCall(
+    get: StoreGet,
+    set: StoreSet,
+    opts: {
+      threadId: string;
+      sessionId: string;
+      turnId: string;
+      itemId: string;
+      item: Record<string, unknown> | null | undefined;
+    },
+  ) {
+    if (opts.item?.args === undefined) return;
+    handleThreadEvent(get, set, opts.threadId, buildJsonRpcModelStreamChunk(
+      get,
+      opts.threadId,
+      opts.sessionId,
+      opts.turnId,
+      "tool_call",
+      {
+        toolCallId: opts.itemId,
+        toolName: jsonRpcToolName(opts.item),
+        input: opts.item.args,
+      },
+    ));
+  }
+
   function workspaceIdForThread(get: StoreGet, threadId: string): string | null {
     return get().threads.find((thread) => thread.id === threadId)?.workspaceId ?? null;
   }
@@ -416,6 +459,131 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
           sessionId: mappedSessionId,
           text: String(params.item.text ?? ""),
         });
+        return;
+      }
+
+      if (message.method === "item/started" && params.item?.type === "toolCall") {
+        const turnId = String(params.turnId ?? "jsonrpc-turn");
+        const itemId = String(params.item?.id ?? `jsonrpc-tool:${turnId}`);
+        handleThreadEvent(get, set, mappedThreadId, buildJsonRpcModelStreamChunk(
+          get,
+          mappedThreadId,
+          mappedSessionId,
+          turnId,
+          "tool_input_start",
+          jsonRpcToolStartPart({
+            ...(params.item as Record<string, unknown>),
+            id: itemId,
+          }),
+        ));
+        return;
+      }
+
+      if (message.method === "item/completed" && params.item?.type === "toolCall") {
+        const turnId = String(params.turnId ?? "jsonrpc-turn");
+        const itemId = String(params.item?.id ?? `jsonrpc-tool:${turnId}`);
+        const toolName = jsonRpcToolName(params.item as Record<string, unknown>);
+        const stream = getModelStreamRuntime(mappedThreadId);
+        const streamKey = `${turnId}:${itemId}`;
+        if (!stream.toolItemIdByKey.get(streamKey)) {
+          handleThreadEvent(get, set, mappedThreadId, buildJsonRpcModelStreamChunk(
+            get,
+            mappedThreadId,
+            mappedSessionId,
+            turnId,
+            "tool_input_start",
+            jsonRpcToolStartPart({
+              ...(params.item as Record<string, unknown>),
+              id: itemId,
+            }),
+          ));
+        }
+
+        const toolState = typeof params.item?.state === "string" ? params.item.state : "";
+        if (toolState === "output-error") {
+          emitJsonRpcToolCall(get, set, {
+            threadId: mappedThreadId,
+            sessionId: mappedSessionId,
+            turnId,
+            itemId,
+            item: params.item as Record<string, unknown>,
+          });
+          const resultRecord =
+            params.item?.result && typeof params.item.result === "object" && !Array.isArray(params.item.result)
+              ? params.item.result as Record<string, unknown>
+              : null;
+          handleThreadEvent(get, set, mappedThreadId, buildJsonRpcModelStreamChunk(
+            get,
+            mappedThreadId,
+            mappedSessionId,
+            turnId,
+            "tool_error",
+            {
+              toolCallId: itemId,
+              toolName,
+              error: resultRecord?.error ?? params.item?.error ?? params.item?.result ?? "Tool failed",
+            },
+          ));
+          return;
+        }
+
+        if (toolState === "output-denied") {
+          emitJsonRpcToolCall(get, set, {
+            threadId: mappedThreadId,
+            sessionId: mappedSessionId,
+            turnId,
+            itemId,
+            item: params.item as Record<string, unknown>,
+          });
+          const resultRecord =
+            params.item?.result && typeof params.item.result === "object" && !Array.isArray(params.item.result)
+              ? params.item.result as Record<string, unknown>
+              : null;
+          handleThreadEvent(get, set, mappedThreadId, buildJsonRpcModelStreamChunk(
+            get,
+            mappedThreadId,
+            mappedSessionId,
+            turnId,
+            "tool_output_denied",
+            {
+              toolCallId: itemId,
+              toolName,
+              reason: resultRecord?.reason ?? params.item?.reason ?? params.item?.result,
+            },
+          ));
+          return;
+        }
+
+        if (toolState === "input-available" || toolState === "input-streaming") {
+          emitJsonRpcToolCall(get, set, {
+            threadId: mappedThreadId,
+            sessionId: mappedSessionId,
+            turnId,
+            itemId,
+            item: params.item as Record<string, unknown>,
+          });
+          return;
+        }
+
+        emitJsonRpcToolCall(get, set, {
+          threadId: mappedThreadId,
+          sessionId: mappedSessionId,
+          turnId,
+          itemId,
+          item: params.item as Record<string, unknown>,
+        });
+        handleThreadEvent(get, set, mappedThreadId, buildJsonRpcModelStreamChunk(
+          get,
+          mappedThreadId,
+          mappedSessionId,
+          turnId,
+          "tool_result",
+          {
+            toolCallId: itemId,
+            toolName,
+            output: params.item?.result,
+          },
+        ));
         return;
       }
     });

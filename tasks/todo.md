@@ -1,5 +1,19 @@
 # Task Plan
 
+## Fix JSON-RPC Gemini Reasoning and Tool Projection
+
+- [x] Inspect the affected Gemini session in `~/.cowork/sessions.db` and confirm whether the bad ordering/tool loss lives in the persisted session snapshot, the JSON-RPC journal, or the desktop renderer.
+- [x] Patch the JSON-RPC live/journal projector path so raw Gemini search tool activity becomes `toolCall` items and aggregate final reasoning does not land after assistant output.
+- [x] Patch the desktop shared-socket reducer so JSON-RPC `toolCall` notifications map back into the existing model-stream tool lifecycle with correct Gemini search arguments/results.
+- [x] Add focused regressions for the live projector, journal replay, thread/read projection, and desktop JSON-RPC feed path, then rerun targeted verification plus `bun run typecheck`.
+
+## Fix JSON-RPC Gemini Reasoning and Tool Projection Review
+
+- `src/server/jsonrpc/legacyEventProjector.ts` and `src/server/jsonrpc/journalProjector.ts` now replay raw Gemini interaction events through the shared model-stream replay runtime, emit `toolCall` items for native Google web search, and suppress aggregate final reasoning when it only repeats streamed reasoning steps.
+- `apps/desktop/src/app/store.helpers/threadEventReducer.ts` now treats JSON-RPC `item/started` tool notifications as metadata-only stream starts and synthesizes a proper `tool_call` from `item.args` before terminal result/error states, so Gemini native web search cards keep the correct input instead of polluted `{ id, toolName }` args.
+- `test/jsonrpc.projectors.test.ts`, `test/jsonrpc.thread-read-projector.test.ts`, and `apps/desktop/test/protocol-v2-events.test.ts` now cover raw Gemini search projection, journal preservation of projected tool items, and the desktop JSON-RPC mapping for native web search plus late completed-only reasoning.
+- Verification passed with `bun test test/jsonrpc.projectors.test.ts test/jsonrpc.thread-read-projector.test.ts`, `bun test apps/desktop/test/protocol-v2-events.test.ts`, and `bun run typecheck`.
+
 ## Fix Steer Replay Reasoning Ordering
 
 - [x] Reproduce the persisted normalized streamed-turn shape from `~/.cowork/sessions.db` and confirm the bad ordering only happened because the late-reasoning replay guard was raw-backed only.

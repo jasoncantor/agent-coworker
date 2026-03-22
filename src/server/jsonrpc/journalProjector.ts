@@ -1,5 +1,19 @@
 import type { ServerEvent } from "../protocol";
 import type { PersistedThreadJournalEvent } from "../sessionDb";
+import {
+  clearModelStreamReplayRuntime,
+  createModelStreamReplayRuntime,
+  replayModelStreamRawEvent,
+  shouldIgnoreNormalizedChunkForRawBackedTurn,
+  type ModelStreamReplayRuntime,
+} from "../../client/modelStreamReplay";
+import {
+  mapModelStreamChunk,
+  type ModelStreamChunkEvent,
+  type ModelStreamRawEvent,
+  type ModelStreamUpdate,
+} from "../../client/modelStream";
+import { parseStructuredToolInput } from "../../shared/structuredInput";
 
 type ThreadJournalEmission = Omit<PersistedThreadJournalEvent, "seq">;
 
@@ -16,6 +30,14 @@ type BufferedReasoningState = {
   started: boolean;
 };
 
+type BufferedToolState = {
+  itemId: string;
+  name: string;
+  args?: unknown;
+  inputText: string;
+  started: boolean;
+};
+
 function makeItemId(prefix: string, seed: string): string {
   return `${prefix}:${seed}`;
 }
@@ -29,9 +51,39 @@ function reasoningModeFromPart(part: Record<string, unknown> | undefined): Proje
   return readPartString(part, "mode") === "summary" ? "summary" : "reasoning";
 }
 
-function reasoningDedupKey(mode: ProjectedReasoningMode, text: string): string | null {
-  const trimmed = text.trim();
-  return trimmed.length > 0 ? `${mode}:${trimmed}` : null;
+function normalizeTranscriptReplayText(text: string): string {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function normalizeReasoningText(text: string): string | null {
+  const normalized = text.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeToolArgsFromInput(inputText: string, existingArgs?: unknown): unknown {
+  const parsed = parseStructuredToolInput(inputText);
+  const base = isRecord(existingArgs) ? existingArgs : {};
+  const { input: _discardInput, ...rest } = base;
+
+  if (isRecord(parsed)) {
+    return { ...rest, ...parsed };
+  }
+
+  if (Object.keys(rest).length > 0) {
+    return { ...rest, input: inputText };
+  }
+
+  return { input: inputText };
 }
 
 export function createThreadJournalProjector(opts: CreateThreadJournalProjectorOptions) {
@@ -41,7 +93,10 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
   const agentTextByTurn = new Map<string, string>();
   const agentItemIdByTurn = new Map<string, string>();
   const reasoningByKey = new Map<string, BufferedReasoningState>();
-  const lastBufferedReasoningKeyByTurn = new Map<string, string>();
+  const reasoningTextsSeenInTurn = new Set<string>();
+  const reasoningTextHistoryInTurn: string[] = [];
+  const toolByKey = new Map<string, BufferedToolState>();
+  const replayRuntime: ModelStreamReplayRuntime = createModelStreamReplayRuntime();
 
   const emit = (eventType: string, payload: unknown, meta?: {
     turnId?: string | null;
@@ -109,17 +164,22 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
     itemId = makeItemId("reasoning", `${turnId}:${crypto.randomUUID()}`),
   ) => {
     if (!text.trim()) return false;
+    if (hasMatchingStreamedReasoningText(text)) {
+      return false;
+    }
     const item = {
       id: itemId,
       type: "reasoning",
       mode,
       text,
     };
-    emit("item/started", {
-      threadId: opts.threadId,
-      turnId,
-      item,
-    }, { turnId, itemId });
+    if (!agentItemIdByTurn.has(turnId)) {
+      emit("item/started", {
+        threadId: opts.threadId,
+        turnId,
+        item,
+      }, { turnId, itemId });
+    }
     emit("item/completed", {
       threadId: opts.threadId,
       turnId,
@@ -143,10 +203,7 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
         text: state.text,
       },
     }, { turnId, itemId: state.itemId });
-    const dedupKey = reasoningDedupKey(state.mode, state.text);
-    if (dedupKey) {
-      lastBufferedReasoningKeyByTurn.set(turnId, dedupKey);
-    }
+    rememberStreamedReasoningText(state.text);
   };
 
   const clearReasoningStateForTurn = (turnId: string) => {
@@ -155,7 +212,211 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
         reasoningByKey.delete(key);
       }
     }
-    lastBufferedReasoningKeyByTurn.delete(turnId);
+  };
+
+  const clearToolStateForTurn = (turnId: string) => {
+    for (const key of toolByKey.keys()) {
+      if (key.startsWith(`${turnId}:`)) {
+        toolByKey.delete(key);
+      }
+    }
+  };
+
+  const clearTurnProjectionState = (turnId: string | null) => {
+    if (turnId) {
+      clearReasoningStateForTurn(turnId);
+      clearToolStateForTurn(turnId);
+    } else {
+      reasoningByKey.clear();
+      toolByKey.clear();
+    }
+    reasoningTextsSeenInTurn.clear();
+    reasoningTextHistoryInTurn.length = 0;
+    clearModelStreamReplayRuntime(replayRuntime);
+  };
+
+  const rememberStreamedReasoningText = (text: string) => {
+    const normalized = normalizeReasoningText(text);
+    if (!normalized) return;
+    reasoningTextsSeenInTurn.add(normalized);
+    reasoningTextHistoryInTurn.push(normalized);
+  };
+
+  const hasMatchingStreamedReasoningText = (text: string): boolean => {
+    const normalized = normalizeReasoningText(text);
+    if (!normalized) return false;
+    if (reasoningTextsSeenInTurn.has(normalized)) return true;
+
+    for (const state of reasoningByKey.values()) {
+      if (normalizeReasoningText(state.text) === normalized) {
+        return true;
+      }
+    }
+
+    const aggregate = normalizeTranscriptReplayText([
+      ...reasoningTextHistoryInTurn,
+      ...[...reasoningByKey.values()]
+        .map((state) => normalizeReasoningText(state.text))
+        .filter((current): current is string => current !== null),
+    ].join("\n\n"));
+    return Boolean(aggregate && aggregate === normalizeTranscriptReplayText(normalized));
+  };
+
+  const toolStreamKey = (turnId: string, key: string) => `${turnId}:${key}`;
+
+  const ensureToolState = (turnId: string, key: string, name: string) => {
+    const fullKey = toolStreamKey(turnId, key);
+    const existing = toolByKey.get(fullKey);
+    if (existing) {
+      existing.name = name;
+      return { fullKey, state: existing };
+    }
+    const next: BufferedToolState = {
+      itemId: makeItemId("toolCall", `${turnId}:${key}`),
+      name,
+      inputText: "",
+      started: false,
+    };
+    toolByKey.set(fullKey, next);
+    return { fullKey, state: next };
+  };
+
+  const emitToolStarted = (turnId: string, state: BufferedToolState) => {
+    if (state.started) return;
+    state.started = true;
+    emit("item/started", {
+      threadId: opts.threadId,
+      turnId,
+      item: {
+        id: state.itemId,
+        type: "toolCall",
+        toolName: state.name,
+        state: "input-streaming",
+        ...(state.args !== undefined ? { args: state.args } : {}),
+      },
+    }, { turnId, itemId: state.itemId });
+  };
+
+  const emitToolCompleted = (
+    turnId: string,
+    key: string,
+    state: BufferedToolState,
+    itemState: "output-available" | "output-error" | "output-denied",
+    result: unknown,
+  ) => {
+    emit("item/completed", {
+      threadId: opts.threadId,
+      turnId,
+      item: {
+        id: state.itemId,
+        type: "toolCall",
+        toolName: state.name,
+        state: itemState,
+        ...(state.args !== undefined ? { args: state.args } : {}),
+        result,
+      },
+    }, { turnId, itemId: state.itemId });
+    toolByKey.delete(toolStreamKey(turnId, key));
+  };
+
+  const handleModelStreamUpdate = (update: ModelStreamUpdate) => {
+    if (update.kind === "assistant_delta") {
+      if (update.phase === "commentary") return;
+      const delta = update.text;
+      const itemId = ensureAgentItemId(update.turnId);
+      const current = agentTextByTurn.get(update.turnId) ?? "";
+      const next = `${current}${delta}`;
+      agentTextByTurn.set(update.turnId, next);
+      if (current.length === 0) {
+        emit("item/started", {
+          threadId: opts.threadId,
+          turnId: update.turnId,
+          item: {
+            id: itemId,
+            type: "agentMessage",
+            text: "",
+          },
+        }, { turnId: update.turnId, itemId });
+      }
+      if (delta) {
+        emit("item/agentMessage/delta", {
+          threadId: opts.threadId,
+          turnId: update.turnId,
+          itemId,
+          delta,
+        }, { turnId: update.turnId, itemId });
+      }
+      return;
+    }
+
+    if (update.kind === "reasoning_start") {
+      const { state } = ensureBufferedReasoning(update.turnId, { id: update.streamId, mode: update.mode });
+      startBufferedReasoning(update.turnId, state);
+      return;
+    }
+
+    if (update.kind === "reasoning_delta") {
+      const { state } = ensureBufferedReasoning(update.turnId, { id: update.streamId, mode: update.mode });
+      startBufferedReasoning(update.turnId, state);
+      state.text = `${state.text}${update.text}`;
+      if (update.text) {
+        emit("item/reasoning/delta", {
+          threadId: opts.threadId,
+          turnId: update.turnId,
+          itemId: state.itemId,
+          mode: state.mode,
+          delta: update.text,
+        }, { turnId: update.turnId, itemId: state.itemId });
+      }
+      return;
+    }
+
+    if (update.kind === "reasoning_end") {
+      flushBufferedReasoning(update.turnId, `${update.turnId}:${update.streamId}`);
+      return;
+    }
+
+    if (update.kind === "tool_input_start") {
+      const { state } = ensureToolState(update.turnId, update.key, update.name);
+      if (update.args !== undefined) {
+        state.args = update.args;
+      }
+      emitToolStarted(update.turnId, state);
+      return;
+    }
+
+    if (update.kind === "tool_input_delta") {
+      const { state } = ensureToolState(update.turnId, update.key, "tool");
+      state.inputText = `${state.inputText}${update.delta}`;
+      state.args = normalizeToolArgsFromInput(state.inputText, state.args);
+      return;
+    }
+
+    if (update.kind === "tool_call") {
+      const { state } = ensureToolState(update.turnId, update.key, update.name);
+      if (update.args !== undefined) {
+        state.args = update.args;
+      }
+      emitToolStarted(update.turnId, state);
+      return;
+    }
+
+    if (update.kind === "tool_result") {
+      const { state } = ensureToolState(update.turnId, update.key, update.name);
+      emitToolCompleted(update.turnId, update.key, state, "output-available", update.result);
+      return;
+    }
+
+    if (update.kind === "tool_error") {
+      const { state } = ensureToolState(update.turnId, update.key, update.name);
+      emitToolCompleted(update.turnId, update.key, state, "output-error", { error: update.error });
+      return;
+    }
+
+    if (update.kind === "tool_output_denied") {
+      const { state } = ensureToolState(update.turnId, update.key, update.name);
+      emitToolCompleted(update.turnId, update.key, state, "output-denied", { denied: true, reason: update.reason });
+    }
   };
 
   return {
@@ -169,6 +430,9 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
           return;
         case "session_busy":
           if (event.busy) {
+            if (activeTurnId && event.turnId && activeTurnId !== event.turnId) {
+              clearTurnProjectionState(activeTurnId);
+            }
             activeTurnId = event.turnId ?? null;
             if (!activeTurnId) return;
             emit("turn/started", {
@@ -204,7 +468,7 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
           }
 
           if (event.turnId) {
-            clearReasoningStateForTurn(event.turnId);
+            clearTurnProjectionState(event.turnId);
             emit("turn/completed", {
               threadId: opts.threadId,
               turn: {
@@ -220,71 +484,22 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
           }
           activeTurnId = null;
           return;
+        case "model_stream_raw": {
+          const updates = replayModelStreamRawEvent(replayRuntime, event as ModelStreamRawEvent);
+          for (const update of updates) {
+            handleModelStreamUpdate(update);
+          }
+          return;
+        }
         case "model_stream_chunk":
-          if (event.partType === "text_delta") {
-            if (readPartString(event.part, "phase") === "commentary") return;
-            const delta =
-              typeof event.part?.text === "string"
-                ? event.part.text
-                : typeof event.part?.delta === "string"
-                  ? event.part.delta
-                  : "";
-            const itemId = ensureAgentItemId(event.turnId);
-            const current = agentTextByTurn.get(event.turnId) ?? "";
-            const next = `${current}${delta}`;
-            agentTextByTurn.set(event.turnId, next);
-            if (current.length === 0) {
-              emit("item/started", {
-                threadId: opts.threadId,
-                turnId: event.turnId,
-                item: {
-                  id: itemId,
-                  type: "agentMessage",
-                  text: "",
-                },
-              }, { turnId: event.turnId, itemId });
-            }
-            if (delta) {
-              emit("item/agentMessage/delta", {
-                threadId: opts.threadId,
-                turnId: event.turnId,
-                itemId,
-                delta,
-              }, { turnId: event.turnId, itemId });
-            }
+          if (shouldIgnoreNormalizedChunkForRawBackedTurn(replayRuntime, event as ModelStreamChunkEvent)) {
             return;
           }
-
-          if (event.partType === "reasoning_start") {
-            const { state } = ensureBufferedReasoning(event.turnId, event.part);
-            startBufferedReasoning(event.turnId, state);
-            return;
-          }
-
-          if (event.partType === "reasoning_delta") {
-            const { state } = ensureBufferedReasoning(event.turnId, event.part);
-            startBufferedReasoning(event.turnId, state);
-            const delta =
-              typeof event.part?.text === "string"
-                ? event.part.text
-                : typeof event.part?.delta === "string"
-                  ? event.part.delta
-                  : "";
-            state.text = `${state.text}${delta}`;
-            if (delta) {
-              emit("item/reasoning/delta", {
-                threadId: opts.threadId,
-                turnId: event.turnId,
-                itemId: state.itemId,
-                mode: state.mode,
-                delta,
-              }, { turnId: event.turnId, itemId: state.itemId });
+          {
+            const update = mapModelStreamChunk(event as ModelStreamChunkEvent);
+            if (update) {
+              handleModelStreamUpdate(update);
             }
-            return;
-          }
-
-          if (event.partType === "reasoning_end") {
-            flushBufferedReasoning(event.turnId, reasoningStreamKey(event.turnId, event.part));
           }
           return;
         case "assistant_message":
@@ -323,14 +538,7 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
           return;
         case "reasoning":
           if (!activeTurnId) return;
-          {
-            const dedupKey = reasoningDedupKey(event.kind, event.text);
-            if (dedupKey && lastBufferedReasoningKeyByTurn.get(activeTurnId) === dedupKey) {
-              lastBufferedReasoningKeyByTurn.delete(activeTurnId);
-              return;
-            }
-            emitReasoningItem(activeTurnId, event.kind, event.text, makeItemId("reasoning", `${activeTurnId}:${crypto.randomUUID()}`));
-          }
+          emitReasoningItem(activeTurnId, event.kind, event.text, makeItemId("reasoning", `${activeTurnId}:${crypto.randomUUID()}`));
           return;
         case "ask":
           emit("request:item/tool/requestUserInput", {

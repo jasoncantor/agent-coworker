@@ -70,4 +70,87 @@ describe("JSON-RPC thread read projector", () => {
       },
     ]);
   });
+
+  test("preserves projected tool items from the journal", () => {
+    const turns = projectThreadTurnsFromJournal([
+      {
+        threadId: "thread-1",
+        seq: 1,
+        ts: "2026-03-22T15:39:39.127Z",
+        eventType: "turn/started",
+        turnId: "turn-1",
+        itemId: null,
+        requestId: null,
+        payload: {
+          threadId: "thread-1",
+          turn: { id: "turn-1", status: "inProgress", items: [] },
+        },
+      },
+      {
+        threadId: "thread-1",
+        seq: 2,
+        ts: "2026-03-22T15:39:41.772Z",
+        eventType: "item/started",
+        turnId: "turn-1",
+        itemId: "tool-1",
+        requestId: null,
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            id: "tool-1",
+            type: "toolCall",
+            toolName: "nativeWebSearch",
+            state: "input-streaming",
+          },
+        },
+      },
+      {
+        threadId: "thread-1",
+        seq: 3,
+        ts: "2026-03-22T15:39:41.774Z",
+        eventType: "item/completed",
+        turnId: "turn-1",
+        itemId: "tool-1",
+        requestId: null,
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            id: "tool-1",
+            type: "toolCall",
+            toolName: "nativeWebSearch",
+            state: "output-available",
+            args: { queries: ["Project Hail Mary movie reviews"] },
+            result: {
+              provider: "google",
+              status: "completed",
+              results: [{ title: "MovieWeb" }],
+            },
+          },
+        },
+      },
+    ] as any);
+
+    expect(turns).toEqual([
+      {
+        id: "turn-1",
+        status: "inProgress",
+        items: [
+          {
+            id: "tool-1",
+            type: "toolCall",
+            toolName: "nativeWebSearch",
+            state: "output-available",
+            args: { queries: ["Project Hail Mary movie reviews"] },
+            result: {
+              provider: "google",
+              status: "completed",
+              results: [{ title: "MovieWeb" }],
+            },
+          },
+        ],
+      },
+    ]);
+  });
 });

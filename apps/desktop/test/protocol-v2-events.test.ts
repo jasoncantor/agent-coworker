@@ -506,6 +506,106 @@ describe("desktop JSON-RPC event mapping", () => {
     });
   });
 
+  test("shared JSON-RPC toolCall items render Gemini native web search cards", async () => {
+    const socket = await reconnectThreadAndGetSocket();
+
+    socket.notify("turn/started", {
+      threadId: sessionId,
+      turn: { id: "turn-1", status: "inProgress", items: [] },
+    });
+    socket.notify("item/started", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: {
+        id: "tool-1",
+        type: "toolCall",
+        toolName: "nativeWebSearch",
+        state: "input-streaming",
+      },
+    });
+    socket.notify("item/completed", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: {
+        id: "tool-1",
+        type: "toolCall",
+        toolName: "nativeWebSearch",
+        state: "output-available",
+        args: { queries: ["Project Hail Mary movie reviews"] },
+        result: {
+          provider: "google",
+          status: "completed",
+          queries: ["Project Hail Mary movie reviews"],
+          results: [{ title: "MovieWeb" }],
+        },
+      },
+    });
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const tools = useAppStore.getState().threadRuntimeById[threadId]?.feed.filter((item) => item.kind === "tool") ?? [];
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({
+      kind: "tool",
+      name: "nativeWebSearch",
+      state: "output-available",
+      args: { queries: ["Project Hail Mary movie reviews"] },
+      result: {
+        provider: "google",
+        status: "completed",
+        queries: ["Project Hail Mary movie reviews"],
+        results: [{ title: "MovieWeb" }],
+      },
+    });
+  });
+
+  test("completed-only JSON-RPC reasoning items anchor before an existing assistant reply", async () => {
+    const socket = await reconnectThreadAndGetSocket();
+
+    socket.notify("turn/started", {
+      threadId: sessionId,
+      turn: { id: "turn-1", status: "inProgress", items: [] },
+    });
+    socket.notify("item/agentMessage/delta", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      itemId: "assistant-1",
+      delta: "Final answer",
+    });
+    socket.notify("item/completed", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: {
+        id: "reasoning-final",
+        type: "reasoning",
+        mode: "reasoning",
+        text: "Late synthesis.",
+      },
+    });
+    socket.notify("item/completed", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: { id: "assistant-1", type: "agentMessage", text: "Final answer" },
+    });
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const feed = useAppStore.getState().threadRuntimeById[threadId]?.feed.filter((item) =>
+      item.kind === "reasoning" || item.kind === "message"
+    ) ?? [];
+    expect(feed.map((item) => item.kind)).toEqual(["reasoning", "message"]);
+    expect(feed[0]).toMatchObject({
+      kind: "reasoning",
+      mode: "reasoning",
+      text: "Late synthesis.",
+    });
+    expect(feed[1]).toMatchObject({
+      kind: "message",
+      role: "assistant",
+      text: "Final answer",
+    });
+  });
+
   test("shared JSON-RPC notifications hydrate live session metadata immediately", async () => {
     const socket = await reconnectThreadAndGetSocket();
 
