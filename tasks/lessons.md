@@ -182,7 +182,6 @@
 - When a CI failure only reproduces on GitHub Actions, treat the runner environment as authoritative: compare the workflow OS/runtime to the local machine immediately and harden the failing test against environment-sensitive module/mock behavior instead of waiting for a local repro.
 - When the default CI lane hits transient `mcp.grep.app` 5xxs, keep `RUN_REMOTE_MCP_TESTS` on connect/discover smoke only and require `RUN_REMOTE_MCP_AGENT_TESTS` for live remote tool execution.
 - When a desktop Linux smoke run shows a blank renderer or `Render frame was disposed` errors, do not treat native window chrome or menu interactivity alone as proof the UI is healthy; debug the renderer failure and visible content before signing off.
-- When the user explicitly says to implement an approved fix plan, do the code, tests, and requested verification before responding; do not answer with another plan or a claimed outcome that has not been executed.
 
 ## 2026-03-18 Tool Output Overflow Audit
 
