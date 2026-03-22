@@ -33,12 +33,21 @@ import { decodeJsonRpcMessage } from "./jsonrpc/decodeJsonRpcMessage";
 import { dispatchJsonRpcMessage } from "./jsonrpc/dispatchJsonRpcMessage";
 import { createThreadJournalProjector } from "./jsonrpc/journalProjector";
 import { createJsonRpcLegacyEventProjector } from "./jsonrpc/legacyEventProjector";
-import { projectThreadTurnsFromJournal } from "./jsonrpc/threadReadProjector";
 import {
   buildJsonRpcErrorResponse,
   buildJsonRpcResultResponse,
   JSONRPC_ERROR_CODES,
 } from "./jsonrpc/protocol";
+import { createJsonRpcRequestRouter } from "./jsonrpc/routes";
+import {
+  buildControlSessionStateEvents,
+  buildJsonRpcThreadFromRecord,
+  buildJsonRpcThreadFromSession,
+  extractJsonRpcTextInput,
+  isJsonRpcSessionError,
+  requireWorkspacePath,
+  shouldIncludeJsonRpcThreadSummary,
+} from "./jsonrpc/routes/shared";
 import { decodeClientMessage } from "./startServer/decodeClientMessage";
 import { dispatchClientMessage } from "./startServer/dispatchClientMessage";
 import { type SessionBinding, type StartServerSocketData } from "./startServer/types";
@@ -348,14 +357,6 @@ export async function startAgentServer(
     [...binding.sinks.keys()].filter((sinkId) => !sinkId.startsWith("journal:")).length
   );
 
-  const requireWorkspacePath = (params: Record<string, unknown>, method: string): string => {
-    const cwd = typeof params.cwd === "string" ? params.cwd.trim() : "";
-    if (!cwd) {
-      throw new Error(`${method} requires cwd`);
-    }
-    return cwd;
-  };
-
   const getOrCreateWorkspaceControlBinding = (cwd: string): SessionBinding => {
     const existing = workspaceControlBindings.get(cwd);
     if (existing?.session) {
@@ -466,45 +467,6 @@ export async function startAgentServer(
       });
     });
   };
-
-  type JsonRpcTurnStartOutcome =
-    | Extract<ServerEvent, { type: "session_busy" }>
-    | Extract<ServerEvent, { type: "error" }>;
-  type JsonRpcTurnSteerOutcome =
-    | Extract<ServerEvent, { type: "steer_accepted" }>
-    | Extract<ServerEvent, { type: "error" }>;
-
-  const isJsonRpcSessionError = (
-    event: ServerEvent,
-  ): event is Extract<ServerEvent, { type: "error" }> => (
-    event.type === "error" && event.source === "session"
-  );
-
-  const sendJsonRpcSessionMutationError = (
-    ws: Bun.ServerWebSocket<StartServerSocketData>,
-    id: string | number | null,
-    event: Extract<ServerEvent, { type: "error" }>,
-  ) => {
-    sendJsonRpc(ws, buildJsonRpcErrorResponse(id, {
-      code: JSONRPC_ERROR_CODES.invalidRequest,
-      message: event.message,
-    }));
-  };
-
-  const shouldIncludeJsonRpcThreadSummary = (summary: {
-    titleSource?: string | null;
-    messageCount?: number | null;
-    hasPendingAsk?: boolean | null;
-    hasPendingApproval?: boolean | null;
-    executionState?: string | null;
-  }) => (
-    summary.executionState === "running"
-    || summary.executionState === "pending_init"
-    || (summary.messageCount ?? 0) > 0
-    || summary.titleSource !== "default"
-    || summary.hasPendingAsk === true
-    || summary.hasPendingApproval === true
-  );
 
   const buildSessionCommon = (binding: SessionBinding, sessionKind: SessionKind = "root") => {
     const emit = (evt: ServerEvent) => {
@@ -986,42 +948,6 @@ export async function startAgentServer(
     });
   };
 
-  const buildJsonRpcThreadFromSession = (session: AgentSession) => {
-    const info = session.getSessionInfoEvent();
-    const snapshot = session.buildSessionSnapshot();
-    return {
-      id: session.id,
-      title: info.title,
-      preview: info.lastMessagePreview ?? session.getLatestAssistantText() ?? "",
-      modelProvider: info.provider,
-      model: info.model,
-      cwd: session.getWorkingDirectory(),
-      createdAt: info.createdAt,
-      updatedAt: info.updatedAt,
-      messageCount: snapshot.messageCount,
-      lastEventSeq: snapshot.lastEventSeq,
-      status: {
-        type: session.isBusy ? "running" : "loaded",
-      },
-    };
-  };
-
-  const buildJsonRpcThreadFromRecord = (record: PersistedSessionRecord) => ({
-    id: record.sessionId,
-    title: record.title,
-    preview: record.lastMessagePreview ?? "",
-    modelProvider: record.provider,
-    model: record.model,
-    cwd: record.workingDirectory,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    messageCount: record.messageCount,
-    lastEventSeq: record.lastEventSeq,
-    status: {
-      type: "notLoaded",
-    },
-  });
-
   const ensureJsonRpcConnectionSubscriptions = (connectionId: string) => {
     const existing = jsonRpcSubscriptionsByConnectionId.get(connectionId);
     if (existing) return existing;
@@ -1169,30 +1095,6 @@ export async function startAgentServer(
     jsonRpcSubscriptionsByConnectionId.delete(connectionId);
   };
 
-  const extractJsonRpcTextInput = (input: unknown): string => {
-    if (typeof input === "string") {
-      return input.trim();
-    }
-    if (!Array.isArray(input)) {
-      return "";
-    }
-    return input
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") return "";
-        const record = entry as Record<string, unknown>;
-        if (record.type === "text" && typeof record.text === "string") {
-          return record.text;
-        }
-        if (record.type === "inputText" && typeof record.text === "string") {
-          return record.text;
-        }
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n")
-      .trim();
-  };
-
   const readThreadSnapshot = (threadId: string) => {
     const liveSnapshot = sessionBindings.get(threadId)?.session?.buildSessionSnapshot() ?? null;
     if (liveSnapshot) return liveSnapshot;
@@ -1247,34 +1149,6 @@ export async function startAgentServer(
     }
     return await runner(binding, binding.session);
   };
-
-  const emitControlResult = (ws: Bun.ServerWebSocket<StartServerSocketData>, id: string | number, event: ServerEvent) => {
-    sendJsonRpc(ws, buildJsonRpcResultResponse(id, { event }));
-  };
-
-  const emitControlResultEvents = (
-    ws: Bun.ServerWebSocket<StartServerSocketData>,
-    id: string | number,
-    events: ServerEvent[],
-  ) => {
-    sendJsonRpc(ws, buildJsonRpcResultResponse(id, { events }));
-  };
-
-  const buildControlSessionStateEvents = (session: AgentSession): ServerEvent[] => [
-    {
-      type: "config_updated",
-      sessionId: session.id,
-      config: session.getPublicConfig(),
-    },
-    {
-      type: "session_settings",
-      sessionId: session.id,
-      enableMcp: session.getEnableMcp(),
-      enableMemory: session.getEnableMemory(),
-      memoryRequireApproval: session.getMemoryRequireApproval(),
-    },
-    session.getSessionConfigEvent(),
-  ];
 
   const routeJsonRpcResponse = (
     ws: Bun.ServerWebSocket<StartServerSocketData>,
@@ -1347,19 +1221,10 @@ export async function startAgentServer(
     });
   };
 
-  const routeJsonRpcRequest = async (
-    ws: Bun.ServerWebSocket<StartServerSocketData>,
-    message: { id: string | number; method: string; params?: unknown },
-  ) => {
-    const params = message.params && typeof message.params === "object"
-      ? message.params as Record<string, unknown>
-      : {};
-
-    switch (message.method) {
-      case "thread/start": {
-        const provider = typeof params.provider === "string" ? params.provider as AgentConfig["provider"] : undefined;
-        const model = typeof params.model === "string" ? params.model : undefined;
-        const cwd = typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : config.workingDirectory;
+  const handleJsonRpcRequest = createJsonRpcRequestRouter({
+    getConfig: () => config,
+    threads: {
+      create: ({ cwd, provider, model }) => {
         const binding: SessionBinding = { session: null, socket: null, sinks: new Map() };
         const threadConfig: AgentConfig = {
           ...config,
@@ -1373,934 +1238,60 @@ export async function startAgentServer(
         binding.session = built.session;
         ensureThreadJournalSink(binding, built.session.id);
         sessionBindings.set(built.session.id, binding);
-        subscribeJsonRpcThread(ws, built.session.id);
-        const thread = buildJsonRpcThreadFromSession(built.session);
-        void enqueueThreadJournalEvent({
-          threadId: built.session.id,
-          ts: new Date().toISOString(),
-          eventType: "thread/started",
-          turnId: null,
-          itemId: null,
-          requestId: null,
-          payload: { thread },
-        }).catch(() => {
-          // Best-effort journal persistence.
-        });
-        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, { thread }));
-        sendJsonRpc(ws, { method: "thread/started", params: { thread } });
-        return;
-      }
-      case "thread/resume": {
-        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-        const afterSeq = typeof params.afterSeq === "number" && Number.isFinite(params.afterSeq)
-          ? Math.max(0, Math.floor(params.afterSeq))
-          : 0;
-        if (!threadId) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: "thread/resume requires threadId",
-          }));
-          return;
-        }
-        const binding = loadThreadBinding(threadId);
-        if (!binding?.session) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `Unknown thread: ${threadId}`,
-          }));
-          return;
-        }
-        const thread = buildJsonRpcThreadFromSession(binding.session);
-        if (afterSeq > 0) {
-          await waitForThreadJournalIdle(threadId);
-          binding.session.ensureDisconnectedReplayBuffer();
-          replayThreadJournalEvents(ws, threadId, afterSeq);
-        }
-        subscribeJsonRpcThread(
-          ws,
-          threadId,
-          {
-            ...(binding.session.activeTurnId
-              ? {
-                  initialActiveTurnId: binding.session.activeTurnId,
-                  initialAgentText: binding.session.getLatestAssistantText() ?? "",
-                }
-              : {}),
-            ...(afterSeq > 0 ? { drainDisconnectedReplayBuffer: true } : {}),
-          },
-        );
-        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, { thread }));
-        sendJsonRpc(ws, { method: "thread/started", params: { thread } });
-        return;
-      }
-      case "thread/list": {
-        const cwd = typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : undefined;
-        const threads = new Map<string, ReturnType<typeof buildJsonRpcThreadFromRecord>>();
-        for (const record of sessionDb.listSessions({ ...(cwd ? { workingDirectory: cwd } : {}) })) {
+        return built.session;
+      },
+      load: loadThreadBinding,
+      getLive: (threadId) => sessionBindings.get(threadId),
+      getPersisted: (threadId) => sessionDb.getSessionRecord(threadId),
+      listPersisted: (opts) => sessionDb.listSessions({ ...(opts?.cwd ? { workingDirectory: opts.cwd } : {}) })
+        .flatMap((record) => {
           const persisted = sessionDb.getSessionRecord(record.sessionId);
-          if (!persisted) continue;
-          if (!shouldIncludeJsonRpcThreadSummary({
-            titleSource: persisted.titleSource,
-            messageCount: persisted.messageCount,
-            hasPendingAsk: persisted.hasPendingAsk,
-            hasPendingApproval: persisted.hasPendingApproval,
-            executionState: persisted.executionState ?? null,
-          })) {
-            continue;
-          }
-          threads.set(record.sessionId, buildJsonRpcThreadFromRecord(persisted));
-        }
-        for (const binding of sessionBindings.values()) {
+          return persisted ? [persisted] : [];
+        }),
+      listLiveRoot: (opts) => [...sessionBindings.values()]
+        .flatMap((binding) => {
           const session = binding.session;
-          if (!session || session.sessionKind !== "root") continue;
-          if (cwd && session.getWorkingDirectory() !== cwd) continue;
-          threads.set(session.id, buildJsonRpcThreadFromSession(session));
-        }
-        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {
-          threads: [...threads.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
-        }));
-        return;
-      }
-      case "thread/read": {
-        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-        if (!threadId) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: "thread/read requires threadId",
-          }));
-          return;
-        }
-        const snapshot = readThreadSnapshot(threadId);
-        if (!snapshot) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `Unknown thread: ${threadId}`,
-          }));
-          return;
-        }
-        const binding = sessionBindings.get(threadId);
-        const thread = binding?.session
-          ? buildJsonRpcThreadFromSession(binding.session)
-          : buildJsonRpcThreadFromRecord(sessionDb.getSessionRecord(threadId)!);
-        await waitForThreadJournalIdle(threadId);
-        const journalEvents = params.includeTurns === true
-          ? sessionDb.listThreadJournalEvents(threadId)
-          : [];
-        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {
-          thread: {
-            ...thread,
-            ...(params.includeTurns === true ? { turns: projectThreadTurnsFromJournal(journalEvents) } : {}),
-          },
-          coworkSnapshot: snapshot,
-          ...(params.includeTurns === true
-            ? { journalTailSeq: journalEvents.at(-1)?.seq ?? 0 }
-            : {}),
-        }));
-        return;
-      }
-      case "thread/unsubscribe": {
-        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-        if (!threadId) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: "thread/unsubscribe requires threadId",
-          }));
-          return;
-        }
-        const status = unsubscribeJsonRpcThread(ws, threadId);
-        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, { status }));
-        if (status === "unsubscribed") {
-          sendJsonRpc(ws, {
-            method: "thread/closed",
-            params: { threadId },
-          });
-        }
-        return;
-      }
-      case "turn/start": {
-        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-        const text = extractJsonRpcTextInput(params.input);
-        const clientMessageId =
-          typeof params.clientMessageId === "string" && params.clientMessageId.trim()
-            ? params.clientMessageId.trim()
-            : undefined;
-        if (!threadId || !text) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: "turn/start requires threadId and non-empty text input",
-          }));
-          return;
-        }
-        const binding = subscribeJsonRpcThread(ws, threadId);
-        if (!binding?.session) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `Unknown thread: ${threadId}`,
-          }));
-          return;
-        }
-        const outcome = await captureSessionEvent(
-          binding,
-          () => binding.session!.sendUserMessage(text, clientMessageId),
-          (event): event is JsonRpcTurnStartOutcome => (
-            (event.type === "session_busy"
-              && event.sessionId === binding.session!.id
-              && event.busy === true
-              && typeof event.turnId === "string"
-              && event.turnId.trim().length > 0)
-            || isJsonRpcSessionError(event)
-          ),
-        );
-        if (outcome.type === "error") {
-          sendJsonRpcSessionMutationError(ws, message.id, outcome);
-          return;
-        }
-        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {
-          turn: {
-            id: outcome.turnId,
-            threadId,
-            status: "inProgress",
-            items: [],
-          },
-        }));
-        return;
-      }
-      case "turn/steer": {
-        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-        const text = extractJsonRpcTextInput(params.input);
-        const clientMessageId =
-          typeof params.clientMessageId === "string" && params.clientMessageId.trim()
-            ? params.clientMessageId.trim()
-            : undefined;
-        const expectedTurnId = typeof params.turnId === "string" && params.turnId.trim()
-          ? params.turnId.trim()
-          : sessionBindings.get(threadId)?.session?.activeTurnId ?? "";
-        const session = sessionBindings.get(threadId)?.session;
-        if (!session || !text || !expectedTurnId) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: "turn/steer requires threadId, active turnId, and non-empty text input",
-          }));
-          return;
-        }
-        const binding = sessionBindings.get(threadId);
-        if (!binding) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `Unknown thread: ${threadId}`,
-          }));
-          return;
-        }
-        const outcome = await captureSessionEvent(
-          binding,
-          () => session.sendSteerMessage(text, expectedTurnId, clientMessageId),
-          (event): event is JsonRpcTurnSteerOutcome => (
-            (event.type === "steer_accepted"
-              && event.sessionId === session.id
-              && event.turnId === expectedTurnId)
-            || isJsonRpcSessionError(event)
-          ),
-        );
-        if (outcome.type === "error") {
-          sendJsonRpcSessionMutationError(ws, message.id, outcome);
-          return;
-        }
-        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {
-          turnId: outcome.turnId,
-        }));
-        return;
-      }
-      case "turn/interrupt": {
-        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-        const session = sessionBindings.get(threadId)?.session;
-        if (!session) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `Unknown thread: ${threadId}`,
-          }));
-          return;
-        }
-        session.cancel();
-        sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {}));
-        return;
-      }
-      case "cowork/session/title/set": {
-        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-        const title = typeof params.title === "string" ? params.title : "";
-        const binding = sessionBindings.get(threadId);
-        const session = binding?.session;
-        if (!session || !title.trim()) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `${message.method} requires threadId and title`,
-          }));
-          return;
-        }
-        const event = await captureSessionEvent(
-          binding!,
-          () => session.setSessionTitle(title),
-          (event): event is Extract<ServerEvent, { type: "session_info" }> => event.type === "session_info",
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/session/state/read": {
-        const cwd = requireWorkspacePath(params, message.method);
-        await withWorkspaceControlSession(cwd, async (_binding, session) => {
-          emitControlResultEvents(ws, message.id, buildControlSessionStateEvents(session));
-        });
-        return;
-      }
-      case "cowork/session/model/set": {
-        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-        const model = typeof params.model === "string" ? params.model : "";
-        const provider = typeof params.provider === "string" ? params.provider as AgentConfig["provider"] : undefined;
-        const binding = sessionBindings.get(threadId);
-        const session = binding?.session;
-        if (!session || !model.trim()) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `${message.method} requires threadId and model`,
-          }));
-          return;
-        }
-        const event = await captureSessionEvent(
-          binding!,
-          async () => await session.setModel(model, provider),
-          (event): event is Extract<ServerEvent, { type: "config_updated" }> => event.type === "config_updated",
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/session/usageBudget/set": {
-        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-        const binding = sessionBindings.get(threadId);
-        const session = binding?.session;
-        if (!session) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `${message.method} requires threadId`,
-          }));
-          return;
-        }
-        const warnAtUsd = typeof params.warnAtUsd === "number" || params.warnAtUsd === null ? params.warnAtUsd as number | null : undefined;
-        const stopAtUsd = typeof params.stopAtUsd === "number" || params.stopAtUsd === null ? params.stopAtUsd as number | null : undefined;
-        const event = await captureSessionEvent(
-          binding!,
-          () => session.setSessionUsageBudget(warnAtUsd, stopAtUsd),
-          (event): event is Extract<ServerEvent, { type: "session_usage" }> => event.type === "session_usage",
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/session/config/set": {
-        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-        const configPatch = params.config as any;
-        const binding = sessionBindings.get(threadId);
-        const session = binding?.session;
-        if (!session || !configPatch || typeof configPatch !== "object") {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `${message.method} requires threadId and config`,
-          }));
-          return;
-        }
-        const event = await captureSessionEvent(
-          binding!,
-          async () => await session.setConfig(configPatch),
-          (event): event is Extract<ServerEvent, { type: "session_config" }> => event.type === "session_config",
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/session/defaults/apply": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-        const binding = threadId ? loadThreadBinding(threadId) : getOrCreateWorkspaceControlBinding(cwd);
-        const session = binding?.session;
-        if (!binding || !session) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `${message.method} requires a live workspace control session or threadId`,
-          }));
-          return;
-        }
-        const provider = typeof params.provider === "string" ? params.provider as AgentConfig["provider"] : undefined;
-        const model = typeof params.model === "string" ? params.model : undefined;
-        const enableMcp = typeof params.enableMcp === "boolean" ? params.enableMcp : undefined;
-        const configPatch = params.config as any;
-        const outcome = await captureSessionMutationOutcome(
-          binding,
-          async () => await session.applySessionDefaults({
-            ...(provider !== undefined && model !== undefined ? { provider, model } : {}),
-            ...(enableMcp !== undefined ? { enableMcp } : {}),
-            ...(configPatch && typeof configPatch === "object" ? { config: configPatch } : {}),
-          }),
-          (event): event is Extract<ServerEvent, { type: "session_config" | "config_updated" | "session_settings" | "session_info" | "error" }> => (
-            event.type === "session_config"
-            || event.type === "config_updated"
-            || event.type === "session_settings"
-            || event.type === "session_info"
-            || event.type === "error"
-          ),
-        );
-        emitControlResult(ws, message.id, outcome?.type === "error" ? outcome : session.getSessionConfigEvent());
-        return;
-      }
-      case "cowork/session/delete": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const targetSessionId = typeof params.targetSessionId === "string" ? params.targetSessionId.trim() : "";
-        const binding = getOrCreateWorkspaceControlBinding(cwd);
-        const session = binding.session!;
-        const event = await captureSessionEvent(
-          binding,
-          async () => await session.deleteSession(targetSessionId),
-          (event): event is Extract<ServerEvent, { type: "session_deleted" }> =>
-            event.type === "session_deleted" && event.targetSessionId === targetSessionId,
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/provider/catalog/read": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.emitProviderCatalog(),
-            (event): event is Extract<ServerEvent, { type: "provider_catalog" }> => event.type === "provider_catalog",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/provider/authMethods/read": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            () => session.emitProviderAuthMethods(),
-            (event): event is Extract<ServerEvent, { type: "provider_auth_methods" }> => event.type === "provider_auth_methods",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/provider/status/refresh": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.refreshProviderStatus(),
-            (event): event is Extract<ServerEvent, { type: "provider_status" }> => event.type === "provider_status",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/provider/auth/authorize": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const provider = typeof params.provider === "string" ? params.provider as AgentConfig["provider"] : undefined;
-        const methodId = typeof params.methodId === "string" ? params.methodId.trim() : "";
-        if (!provider || !methodId) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `${message.method} requires provider and methodId`,
-          }));
-          return;
-        }
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.authorizeProviderAuth(provider, methodId),
-            (event): event is Extract<ServerEvent, { type: "provider_auth_challenge" | "provider_auth_result" }> =>
-              (event.type === "provider_auth_challenge" || event.type === "provider_auth_result") &&
-              event.provider === provider && event.methodId === methodId,
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/provider/auth/logout": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const provider = typeof params.provider === "string" ? params.provider as AgentConfig["provider"] : undefined;
-        if (!provider) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `${message.method} requires provider`,
-          }));
-          return;
-        }
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.logoutProviderAuth(provider),
-            (event): event is Extract<ServerEvent, { type: "provider_auth_result" }> =>
-              event.type === "provider_auth_result" && event.provider === provider,
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/provider/auth/callback": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const provider = typeof params.provider === "string" ? params.provider as AgentConfig["provider"] : undefined;
-        const methodId = typeof params.methodId === "string" ? params.methodId.trim() : "";
-        const code = typeof params.code === "string" && params.code.trim() ? params.code.trim() : undefined;
-        if (!provider || !methodId) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `${message.method} requires provider and methodId`,
-          }));
-          return;
-        }
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.callbackProviderAuth(provider, methodId, code),
-            (event): event is Extract<ServerEvent, { type: "provider_auth_result" }> =>
-              event.type === "provider_auth_result" && event.provider === provider && event.methodId === methodId,
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/provider/auth/setApiKey": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const provider = typeof params.provider === "string" ? params.provider as AgentConfig["provider"] : undefined;
-        const methodId = typeof params.methodId === "string" ? params.methodId.trim() : "";
-        const apiKey = typeof params.apiKey === "string" ? params.apiKey : "";
-        if (!provider || !methodId || !apiKey) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `${message.method} requires provider, methodId, and apiKey`,
-          }));
-          return;
-        }
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.setProviderApiKey(provider, methodId, apiKey),
-            (event): event is Extract<ServerEvent, { type: "provider_auth_result" }> =>
-              event.type === "provider_auth_result" && event.provider === provider && event.methodId === methodId,
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/provider/auth/copyApiKey": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const provider = typeof params.provider === "string" ? params.provider as AgentConfig["provider"] : undefined;
-        const sourceProvider = typeof params.sourceProvider === "string" ? params.sourceProvider as AgentConfig["provider"] : undefined;
-        if (!provider || !sourceProvider) {
-          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-            code: JSONRPC_ERROR_CODES.invalidParams,
-            message: `${message.method} requires provider and sourceProvider`,
-          }));
-          return;
-        }
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.copyProviderApiKey(provider, sourceProvider),
-            (event): event is Extract<ServerEvent, { type: "provider_auth_result" }> =>
-              event.type === "provider_auth_result" && event.provider === provider,
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/mcp/servers/read": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.emitMcpServers(),
-            (event): event is Extract<ServerEvent, { type: "mcp_servers" }> => event.type === "mcp_servers",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/mcp/server/upsert": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const server = params.server as any;
-        const previousName = typeof params.previousName === "string" ? params.previousName : undefined;
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              await session.upsertMcpServer(server, previousName);
-              await session.emitMcpServers();
-            },
-            (event): event is Extract<ServerEvent, { type: "mcp_servers" }> => event.type === "mcp_servers",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/mcp/server/delete": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const name = typeof params.name === "string" ? params.name.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              await session.deleteMcpServer(name);
-              await session.emitMcpServers();
-            },
-            (event): event is Extract<ServerEvent, { type: "mcp_servers" }> => event.type === "mcp_servers",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/mcp/server/validate": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const name = typeof params.name === "string" ? params.name.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.validateMcpServer(name),
-            (event): event is Extract<ServerEvent, { type: "mcp_server_validation" }> => event.type === "mcp_server_validation",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/mcp/server/auth/authorize": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const name = typeof params.name === "string" ? params.name.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.authorizeMcpServerAuth(name),
-            (event): event is Extract<ServerEvent, { type: "mcp_server_auth_challenge" | "mcp_server_auth_result" }> =>
-              event.type === "mcp_server_auth_challenge" || event.type === "mcp_server_auth_result",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/mcp/server/auth/callback": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const name = typeof params.name === "string" ? params.name.trim() : "";
-        const code = typeof params.code === "string" && params.code.trim() ? params.code.trim() : undefined;
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.callbackMcpServerAuth(name, code),
-            (event): event is Extract<ServerEvent, { type: "mcp_server_auth_result" }> => event.type === "mcp_server_auth_result",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/mcp/server/auth/setApiKey": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const name = typeof params.name === "string" ? params.name.trim() : "";
-        const apiKey = typeof params.apiKey === "string" ? params.apiKey : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.setMcpServerApiKey(name, apiKey),
-            (event): event is Extract<ServerEvent, { type: "mcp_server_auth_result" }> => event.type === "mcp_server_auth_result",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/mcp/legacy/migrate": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const scope = params.scope === "user" ? "user" : "workspace";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              await session.migrateLegacyMcpServers(scope);
-              await session.emitMcpServers();
-            },
-            (event): event is Extract<ServerEvent, { type: "mcp_servers" }> => event.type === "mcp_servers",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/catalog/read": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.getSkillsCatalog(),
-            (event): event is Extract<ServerEvent, { type: "skills_catalog" }> => event.type === "skills_catalog",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/list": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.listSkills(),
-            (event): event is Extract<ServerEvent, { type: "skills_list" }> => event.type === "skills_list",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/read": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const skillName = typeof params.skillName === "string" ? params.skillName.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.readSkill(skillName),
-            (event): event is Extract<ServerEvent, { type: "skill_content" }> => event.type === "skill_content",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/disable": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const skillName = typeof params.skillName === "string" ? params.skillName.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              await session.disableSkill(skillName);
-              await session.listSkills();
-            },
-            (event): event is Extract<ServerEvent, { type: "skills_list" }> => event.type === "skills_list",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/enable": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const skillName = typeof params.skillName === "string" ? params.skillName.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              await session.enableSkill(skillName);
-              await session.listSkills();
-            },
-            (event): event is Extract<ServerEvent, { type: "skills_list" }> => event.type === "skills_list",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/delete": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const skillName = typeof params.skillName === "string" ? params.skillName.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              await session.deleteSkill(skillName);
-              await session.listSkills();
-            },
-            (event): event is Extract<ServerEvent, { type: "skills_list" }> => event.type === "skills_list",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/installation/read": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const installationId = typeof params.installationId === "string" ? params.installationId.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.getSkillInstallation(installationId),
-            (event): event is Extract<ServerEvent, { type: "skill_installation" }> => event.type === "skill_installation",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/install/preview": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const sourceInput = typeof params.sourceInput === "string" ? params.sourceInput : "";
-        const targetScope = params.targetScope === "global" ? "global" : "project";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.previewSkillInstall(sourceInput, targetScope),
-            (event): event is Extract<ServerEvent, { type: "skill_install_preview" }> => event.type === "skill_install_preview",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/install": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const sourceInput = typeof params.sourceInput === "string" ? params.sourceInput : "";
-        const targetScope = params.targetScope === "global" ? "global" : "project";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.installSkills(sourceInput, targetScope),
-            (event): event is Extract<ServerEvent, { type: "skills_catalog" }> => event.type === "skills_catalog",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/installation/enable":
-      case "cowork/skills/installation/disable":
-      case "cowork/skills/installation/delete":
-      case "cowork/skills/installation/update": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const installationId = typeof params.installationId === "string" ? params.installationId.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              if (message.method === "cowork/skills/installation/enable") await session.enableSkillInstallation(installationId);
-              if (message.method === "cowork/skills/installation/disable") await session.disableSkillInstallation(installationId);
-              if (message.method === "cowork/skills/installation/delete") await session.deleteSkillInstallation(installationId);
-              if (message.method === "cowork/skills/installation/update") await session.updateSkillInstallation(installationId);
-            },
-            (event): event is Extract<ServerEvent, { type: "skills_catalog" }> => event.type === "skills_catalog",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/installation/copy": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const installationId = typeof params.installationId === "string" ? params.installationId.trim() : "";
-        const targetScope = params.targetScope === "global" ? "global" : "project";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.copySkillInstallation(installationId, targetScope),
-            (event): event is Extract<ServerEvent, { type: "skills_catalog" }> => event.type === "skills_catalog",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/skills/installation/checkUpdate": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const installationId = typeof params.installationId === "string" ? params.installationId.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.checkSkillInstallationUpdate(installationId),
-            (event): event is Extract<ServerEvent, { type: "skill_installation_update_check" }> => event.type === "skill_installation_update_check",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/memory/list": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const scope = params.scope === "user" ? "user" : params.scope === "workspace" ? "workspace" : undefined;
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.emitMemories(scope),
-            (event): event is Extract<ServerEvent, { type: "memory_list" }> => event.type === "memory_list",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/memory/upsert": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const scope = params.scope === "user" ? "user" : "workspace";
-        const id = typeof params.id === "string" && params.id.trim() ? params.id.trim() : undefined;
-        const content = typeof params.content === "string" ? params.content : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.upsertMemory(scope, id, content),
-            (event): event is Extract<ServerEvent, { type: "memory_list" }> => event.type === "memory_list",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/memory/delete": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const scope = params.scope === "user" ? "user" : "workspace";
-        const id = typeof params.id === "string" ? params.id.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.deleteMemory(scope, id),
-            (event): event is Extract<ServerEvent, { type: "memory_list" }> => event.type === "memory_list",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/backups/workspace/read": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.listWorkspaceBackups(),
-            (event): event is Extract<ServerEvent, { type: "workspace_backups" }> => event.type === "workspace_backups",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/backups/workspace/delta/read": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const targetSessionId = typeof params.targetSessionId === "string" ? params.targetSessionId.trim() : "";
-        const checkpointId = typeof params.checkpointId === "string" ? params.checkpointId.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.getWorkspaceBackupDelta(targetSessionId, checkpointId),
-            (event): event is Extract<ServerEvent, { type: "workspace_backup_delta" }> => event.type === "workspace_backup_delta",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      case "cowork/backups/workspace/checkpoint":
-      case "cowork/backups/workspace/restore":
-      case "cowork/backups/workspace/deleteCheckpoint":
-      case "cowork/backups/workspace/deleteEntry": {
-        const cwd = requireWorkspacePath(params, message.method);
-        const targetSessionId = typeof params.targetSessionId === "string" ? params.targetSessionId.trim() : "";
-        const checkpointId = typeof params.checkpointId === "string" && params.checkpointId.trim()
-          ? params.checkpointId.trim()
-          : undefined;
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              if (message.method === "cowork/backups/workspace/checkpoint") await session.createWorkspaceBackupCheckpoint(targetSessionId);
-              if (message.method === "cowork/backups/workspace/restore") await session.restoreWorkspaceBackup(targetSessionId, checkpointId);
-              if (message.method === "cowork/backups/workspace/deleteCheckpoint" && checkpointId) {
-                await session.deleteWorkspaceBackupCheckpoint(targetSessionId, checkpointId);
-              }
-              if (message.method === "cowork/backups/workspace/deleteEntry") await session.deleteWorkspaceBackupEntry(targetSessionId);
-            },
-            (event): event is Extract<ServerEvent, { type: "workspace_backups" }> => event.type === "workspace_backups",
-          ),
-        );
-        emitControlResult(ws, message.id, event);
-        return;
-      }
-      default:
-        sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
-          code: JSONRPC_ERROR_CODES.methodNotFound,
-          message: `Unknown method: ${message.method}`,
-        }));
-    }
-  };
-
+          if (!session || session.sessionKind !== "root") return [];
+          if (opts?.cwd && session.getWorkingDirectory() !== opts.cwd) return [];
+          return [session];
+        }),
+      subscribe: subscribeJsonRpcThread,
+      unsubscribe: unsubscribeJsonRpcThread,
+      readSnapshot: readThreadSnapshot,
+    },
+    workspaceControl: {
+      getOrCreateBinding: getOrCreateWorkspaceControlBinding,
+      withSession: withWorkspaceControlSession,
+    },
+    journal: {
+      enqueue: enqueueThreadJournalEvent,
+      waitForIdle: waitForThreadJournalIdle,
+      list: (threadId, opts) => sessionDb.listThreadJournalEvents(threadId, opts),
+      replay: replayThreadJournalEvents,
+    },
+    events: {
+      capture: captureSessionEvent,
+      captureMutationOutcome: captureSessionMutationOutcome,
+    },
+    jsonrpc: {
+      send: sendJsonRpc,
+      sendResult: (ws, id, result) => {
+        sendJsonRpc(ws, buildJsonRpcResultResponse(id, result));
+      },
+      sendError: (ws, id, error) => {
+        sendJsonRpc(ws, buildJsonRpcErrorResponse(id, error));
+      },
+    },
+    utils: {
+      requireWorkspacePath,
+      extractTextInput: extractJsonRpcTextInput,
+      buildThreadFromSession: buildJsonRpcThreadFromSession,
+      buildThreadFromRecord: buildJsonRpcThreadFromRecord,
+      shouldIncludeThreadSummary: shouldIncludeJsonRpcThreadSummary,
+      buildControlSessionStateEvents,
+      isSessionError: isJsonRpcSessionError,
+    },
+  });
   function createServer(port: number): ReturnType<typeof Bun.serve> {
     return Bun.serve<StartServerSocketData>({
       hostname,
@@ -2373,8 +1364,8 @@ export async function startAgentServer(
                 if (ws.data.rpc) {
                   ws.data.rpc.pendingRequestCount += 1;
                 }
-                void routeJsonRpcRequest(ws, message)
-                  .catch((reason) => {
+                void Promise.resolve(handleJsonRpcRequest(ws, message))
+                  .catch((reason: unknown) => {
                     const id = "id" in message ? message.id : undefined;
                     if (id === undefined || id === null) {
                       return;
