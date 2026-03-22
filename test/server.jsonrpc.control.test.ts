@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
+import { MemoryStore } from "../src/memoryStore";
 import { startAgentServer } from "../src/server/startServer";
+import { WorkspaceBackupService } from "../src/server/workspaceBackups";
 import { makeTmpProject, serverOpts } from "./helpers/wsHarness";
 
 async function connectJsonRpc(url: string) {
@@ -74,6 +76,26 @@ async function connectJsonRpc(url: string) {
 }
 
 describe("server JSON-RPC control methods", () => {
+  test("provider auth authorize returns the emitted session error instead of timing out", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const response = await rpc.request("cowork/provider/auth/authorize", {
+        cwd: tmpDir,
+        provider: "google",
+        methodId: "missing_method",
+      });
+
+      expect(response.error.message).toContain("Unsupported auth method");
+      expect(response.result).toBeUndefined();
+      rpc.close();
+    } finally {
+      server.stop();
+    }
+  });
+
   test("session state read returns the workspace control config bundle", async () => {
     const tmpDir = await makeTmpProject();
     const { server, url } = await startAgentServer(serverOpts(tmpDir));
@@ -160,6 +182,123 @@ describe("server JSON-RPC control methods", () => {
       server.stop();
     }
   });
+
+  for (const method of [
+    "cowork/skills/disable",
+    "cowork/skills/enable",
+    "cowork/skills/delete",
+  ] as const) {
+    test(`${method} returns a session error when the skill mutation is rejected`, async () => {
+      const tmpDir = await makeTmpProject();
+      const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+      try {
+        const rpc = await connectJsonRpc(url);
+        const response = await rpc.request(method, {
+          cwd: tmpDir,
+          skillName: "missing-skill",
+        });
+
+        expect(response.error.message).toContain('Skill "missing-skill" not found.');
+        expect(response.result).toBeUndefined();
+        rpc.close();
+      } finally {
+        server.stop();
+      }
+    });
+  }
+
+  for (const scenario of [
+    {
+      name: "list",
+      method: "cowork/memory/list",
+      patch: "list" as const,
+      params: (cwd: string) => ({ cwd }),
+      expectedMessage: "mock memory list failure",
+    },
+    {
+      name: "upsert",
+      method: "cowork/memory/upsert",
+      patch: "upsert" as const,
+      params: (cwd: string) => ({ cwd, scope: "workspace", content: "remember this" }),
+      expectedMessage: "mock memory upsert failure",
+    },
+    {
+      name: "delete",
+      method: "cowork/memory/delete",
+      patch: "remove" as const,
+      params: (cwd: string) => ({ cwd, scope: "workspace", id: "memory-1" }),
+      expectedMessage: "mock memory delete failure",
+    },
+  ] as const) {
+    test(`${scenario.method} returns the emitted memory error instead of timing out`, async () => {
+      const original = MemoryStore.prototype[scenario.patch];
+      (MemoryStore.prototype as any)[scenario.patch] = async function (...args: unknown[]) {
+        throw new Error(scenario.expectedMessage);
+      };
+
+      const tmpDir = await makeTmpProject();
+      const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+      try {
+        const rpc = await connectJsonRpc(url);
+        const response = await rpc.request(scenario.method, scenario.params(tmpDir));
+
+        expect(response.error.message).toContain(scenario.expectedMessage);
+        expect(response.result).toBeUndefined();
+        rpc.close();
+      } finally {
+        (MemoryStore.prototype as any)[scenario.patch] = original;
+        server.stop();
+      }
+    });
+  }
+
+  for (const scenario of [
+    {
+      name: "read",
+      method: "cowork/backups/workspace/read",
+      patch: "listWorkspaceBackups" as const,
+      params: (cwd: string) => ({ cwd }),
+      expectedMessage: "mock backup read failure",
+    },
+    {
+      name: "delta",
+      method: "cowork/backups/workspace/delta/read",
+      patch: "getCheckpointDelta" as const,
+      params: (cwd: string) => ({ cwd, targetSessionId: "thread-1", checkpointId: "cp-1" }),
+      expectedMessage: "mock backup delta failure",
+    },
+    {
+      name: "checkpoint",
+      method: "cowork/backups/workspace/checkpoint",
+      patch: "createCheckpoint" as const,
+      params: (cwd: string) => ({ cwd, targetSessionId: "thread-1" }),
+      expectedMessage: "mock backup checkpoint failure",
+    },
+  ] as const) {
+    test(`${scenario.method} returns the emitted backup error instead of timing out`, async () => {
+      const original = WorkspaceBackupService.prototype[scenario.patch];
+      (WorkspaceBackupService.prototype as any)[scenario.patch] = async function (...args: unknown[]) {
+        throw new Error(scenario.expectedMessage);
+      };
+
+      const tmpDir = await makeTmpProject();
+      const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+      try {
+        const rpc = await connectJsonRpc(url);
+        const response = await rpc.request(scenario.method, scenario.params(tmpDir));
+
+        expect(response.error.message).toContain(scenario.expectedMessage);
+        expect(response.result).toBeUndefined();
+        rpc.close();
+      } finally {
+        (WorkspaceBackupService.prototype as any)[scenario.patch] = original;
+        server.stop();
+      }
+    });
+  }
 
   test("session control methods return legacy-compatible event payloads", async () => {
     const tmpDir = await makeTmpProject();

@@ -467,29 +467,70 @@ export async function startAgentServer(
     });
   };
 
+  type JsonRpcSessionError = Extract<ServerEvent, { type: "error" }>;
+  type JsonRpcSessionOutcome<T extends ServerEvent> = T | JsonRpcSessionError;
   type JsonRpcTurnStartOutcome =
     | Extract<ServerEvent, { type: "session_busy" }>
-    | Extract<ServerEvent, { type: "error" }>;
+    | JsonRpcSessionError;
   type JsonRpcTurnSteerOutcome =
     | Extract<ServerEvent, { type: "steer_accepted" }>
-    | Extract<ServerEvent, { type: "error" }>;
+    | JsonRpcSessionError;
 
   const isJsonRpcSessionError = (
     event: ServerEvent,
   ): event is Extract<ServerEvent, { type: "error" }> => (
-    event.type === "error" && event.source === "session"
+    event.type === "error"
   );
 
   const sendJsonRpcSessionMutationError = (
     ws: Bun.ServerWebSocket<StartServerSocketData>,
     id: string | number | null,
-    event: Extract<ServerEvent, { type: "error" }>,
+    event: JsonRpcSessionError,
   ) => {
     sendJsonRpc(ws, buildJsonRpcErrorResponse(id, {
       code: JSONRPC_ERROR_CODES.invalidRequest,
       message: event.message,
     }));
   };
+
+  const captureSessionOutcome = async <T extends ServerEvent>(
+    binding: SessionBinding,
+    action: () => Promise<void> | void,
+    predicate: (event: ServerEvent) => event is T,
+    timeoutMs = 5_000,
+  ): Promise<JsonRpcSessionOutcome<T>> =>
+    await captureSessionEvent(
+      binding,
+      action,
+      (event): event is JsonRpcSessionOutcome<T> => predicate(event) || isJsonRpcSessionError(event),
+      timeoutMs,
+    );
+
+  const captureWorkspaceControlSessionOutcome = async <T extends ServerEvent>(
+    cwd: string,
+    action: (session: AgentSession) => Promise<void> | void,
+    predicate: (event: ServerEvent) => event is T,
+    timeoutMs = 5_000,
+  ): Promise<JsonRpcSessionOutcome<T>> =>
+    await withWorkspaceControlSession(cwd, async (binding, session) =>
+      await captureSessionOutcome(binding, async () => await action(session), predicate, timeoutMs)
+    );
+
+  const captureWorkspaceControlSessionMutationError = async (
+    cwd: string,
+    action: (session: AgentSession) => Promise<void> | void,
+    timeoutMs = 5_000,
+    idleMs = 25,
+  ): Promise<JsonRpcSessionError | null> =>
+    await withWorkspaceControlSession(cwd, async (binding, session) =>
+      await captureSessionMutationOutcome(
+        binding,
+        async () => await action(session),
+        isJsonRpcSessionError,
+        timeoutMs,
+        idleMs,
+      )
+    );
 
   const shouldIncludeJsonRpcThreadSummary = (summary: {
     titleSource?: string | null;
@@ -1812,15 +1853,17 @@ export async function startAgentServer(
           }));
           return;
         }
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.authorizeProviderAuth(provider, methodId),
-            (event): event is Extract<ServerEvent, { type: "provider_auth_challenge" | "provider_auth_result" }> =>
-              (event.type === "provider_auth_challenge" || event.type === "provider_auth_result") &&
-              event.provider === provider && event.methodId === methodId,
-          ),
+        const event = await captureWorkspaceControlSessionOutcome(
+          cwd,
+          async (session) => await session.authorizeProviderAuth(provider, methodId),
+          (event): event is Extract<ServerEvent, { type: "provider_auth_challenge" | "provider_auth_result" }> =>
+            (event.type === "provider_auth_challenge" || event.type === "provider_auth_result") &&
+            event.provider === provider && event.methodId === methodId,
         );
+        if (event.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, event);
+          return;
+        }
         emitControlResult(ws, message.id, event);
         return;
       }
@@ -1965,7 +2008,8 @@ export async function startAgentServer(
           await captureSessionEvent(
             binding,
             async () => await session.validateMcpServer(name),
-            (event): event is Extract<ServerEvent, { type: "mcp_server_validation" }> => event.type === "mcp_server_validation",
+            (event): event is Extract<ServerEvent, { type: "mcp_server_validation" }> =>
+              event.type === "mcp_server_validation" && event.name === name,
           ),
         );
         emitControlResult(ws, message.id, event);
@@ -1979,7 +2023,8 @@ export async function startAgentServer(
             binding,
             async () => await session.authorizeMcpServerAuth(name),
             (event): event is Extract<ServerEvent, { type: "mcp_server_auth_challenge" | "mcp_server_auth_result" }> =>
-              event.type === "mcp_server_auth_challenge" || event.type === "mcp_server_auth_result",
+              (event.type === "mcp_server_auth_challenge" || event.type === "mcp_server_auth_result")
+              && event.name === name,
           ),
         );
         emitControlResult(ws, message.id, event);
@@ -1993,7 +2038,8 @@ export async function startAgentServer(
           await captureSessionEvent(
             binding,
             async () => await session.callbackMcpServerAuth(name, code),
-            (event): event is Extract<ServerEvent, { type: "mcp_server_auth_result" }> => event.type === "mcp_server_auth_result",
+            (event): event is Extract<ServerEvent, { type: "mcp_server_auth_result" }> =>
+              event.type === "mcp_server_auth_result" && event.name === name,
           ),
         );
         emitControlResult(ws, message.id, event);
@@ -2007,7 +2053,8 @@ export async function startAgentServer(
           await captureSessionEvent(
             binding,
             async () => await session.setMcpServerApiKey(name, apiKey),
-            (event): event is Extract<ServerEvent, { type: "mcp_server_auth_result" }> => event.type === "mcp_server_auth_result",
+            (event): event is Extract<ServerEvent, { type: "mcp_server_auth_result" }> =>
+              event.type === "mcp_server_auth_result" && event.name === name,
           ),
         );
         emitControlResult(ws, message.id, event);
@@ -2056,61 +2103,85 @@ export async function startAgentServer(
       case "cowork/skills/read": {
         const cwd = requireWorkspacePath(params, message.method);
         const skillName = typeof params.skillName === "string" ? params.skillName.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.readSkill(skillName),
-            (event): event is Extract<ServerEvent, { type: "skill_content" }> => event.type === "skill_content",
-          ),
+        const event = await captureWorkspaceControlSessionOutcome(
+          cwd,
+          async (session) => await session.readSkill(skillName),
+          (event): event is Extract<ServerEvent, { type: "skill_content" }> =>
+            event.type === "skill_content" && event.skill.name === skillName,
         );
+        if (event.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, event);
+          return;
+        }
         emitControlResult(ws, message.id, event);
         return;
       }
       case "cowork/skills/disable": {
         const cwd = requireWorkspacePath(params, message.method);
         const skillName = typeof params.skillName === "string" ? params.skillName.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              await session.disableSkill(skillName);
-              await session.listSkills();
-            },
-            (event): event is Extract<ServerEvent, { type: "skills_list" }> => event.type === "skills_list",
-          ),
+        const outcome = await captureWorkspaceControlSessionMutationError(
+          cwd,
+          async (session) => await session.disableSkill(skillName),
         );
+        if (outcome) {
+          sendJsonRpcSessionMutationError(ws, message.id, outcome);
+          return;
+        }
+        const event = await captureWorkspaceControlSessionOutcome(
+          cwd,
+          async (session) => await session.listSkills(),
+          (event): event is Extract<ServerEvent, { type: "skills_list" }> => event.type === "skills_list",
+        );
+        if (event.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, event);
+          return;
+        }
         emitControlResult(ws, message.id, event);
         return;
       }
       case "cowork/skills/enable": {
         const cwd = requireWorkspacePath(params, message.method);
         const skillName = typeof params.skillName === "string" ? params.skillName.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              await session.enableSkill(skillName);
-              await session.listSkills();
-            },
-            (event): event is Extract<ServerEvent, { type: "skills_list" }> => event.type === "skills_list",
-          ),
+        const outcome = await captureWorkspaceControlSessionMutationError(
+          cwd,
+          async (session) => await session.enableSkill(skillName),
         );
+        if (outcome) {
+          sendJsonRpcSessionMutationError(ws, message.id, outcome);
+          return;
+        }
+        const event = await captureWorkspaceControlSessionOutcome(
+          cwd,
+          async (session) => await session.listSkills(),
+          (event): event is Extract<ServerEvent, { type: "skills_list" }> => event.type === "skills_list",
+        );
+        if (event.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, event);
+          return;
+        }
         emitControlResult(ws, message.id, event);
         return;
       }
       case "cowork/skills/delete": {
         const cwd = requireWorkspacePath(params, message.method);
         const skillName = typeof params.skillName === "string" ? params.skillName.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              await session.deleteSkill(skillName);
-              await session.listSkills();
-            },
-            (event): event is Extract<ServerEvent, { type: "skills_list" }> => event.type === "skills_list",
-          ),
+        const outcome = await captureWorkspaceControlSessionMutationError(
+          cwd,
+          async (session) => await session.deleteSkill(skillName),
         );
+        if (outcome) {
+          sendJsonRpcSessionMutationError(ws, message.id, outcome);
+          return;
+        }
+        const event = await captureWorkspaceControlSessionOutcome(
+          cwd,
+          async (session) => await session.listSkills(),
+          (event): event is Extract<ServerEvent, { type: "skills_list" }> => event.type === "skills_list",
+        );
+        if (event.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, event);
+          return;
+        }
         emitControlResult(ws, message.id, event);
         return;
       }
@@ -2206,13 +2277,15 @@ export async function startAgentServer(
       case "cowork/memory/list": {
         const cwd = requireWorkspacePath(params, message.method);
         const scope = params.scope === "user" ? "user" : params.scope === "workspace" ? "workspace" : undefined;
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.emitMemories(scope),
-            (event): event is Extract<ServerEvent, { type: "memory_list" }> => event.type === "memory_list",
-          ),
+        const event = await captureWorkspaceControlSessionOutcome(
+          cwd,
+          async (session) => await session.emitMemories(scope),
+          (event): event is Extract<ServerEvent, { type: "memory_list" }> => event.type === "memory_list",
         );
+        if (event.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, event);
+          return;
+        }
         emitControlResult(ws, message.id, event);
         return;
       }
@@ -2221,13 +2294,15 @@ export async function startAgentServer(
         const scope = params.scope === "user" ? "user" : "workspace";
         const id = typeof params.id === "string" && params.id.trim() ? params.id.trim() : undefined;
         const content = typeof params.content === "string" ? params.content : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.upsertMemory(scope, id, content),
-            (event): event is Extract<ServerEvent, { type: "memory_list" }> => event.type === "memory_list",
-          ),
+        const event = await captureWorkspaceControlSessionOutcome(
+          cwd,
+          async (session) => await session.upsertMemory(scope, id, content),
+          (event): event is Extract<ServerEvent, { type: "memory_list" }> => event.type === "memory_list",
         );
+        if (event.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, event);
+          return;
+        }
         emitControlResult(ws, message.id, event);
         return;
       }
@@ -2235,25 +2310,29 @@ export async function startAgentServer(
         const cwd = requireWorkspacePath(params, message.method);
         const scope = params.scope === "user" ? "user" : "workspace";
         const id = typeof params.id === "string" ? params.id.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.deleteMemory(scope, id),
-            (event): event is Extract<ServerEvent, { type: "memory_list" }> => event.type === "memory_list",
-          ),
+        const event = await captureWorkspaceControlSessionOutcome(
+          cwd,
+          async (session) => await session.deleteMemory(scope, id),
+          (event): event is Extract<ServerEvent, { type: "memory_list" }> => event.type === "memory_list",
         );
+        if (event.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, event);
+          return;
+        }
         emitControlResult(ws, message.id, event);
         return;
       }
       case "cowork/backups/workspace/read": {
         const cwd = requireWorkspacePath(params, message.method);
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.listWorkspaceBackups(),
-            (event): event is Extract<ServerEvent, { type: "workspace_backups" }> => event.type === "workspace_backups",
-          ),
+        const event = await captureWorkspaceControlSessionOutcome(
+          cwd,
+          async (session) => await session.listWorkspaceBackups(),
+          (event): event is Extract<ServerEvent, { type: "workspace_backups" }> => event.type === "workspace_backups",
         );
+        if (event.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, event);
+          return;
+        }
         emitControlResult(ws, message.id, event);
         return;
       }
@@ -2261,13 +2340,16 @@ export async function startAgentServer(
         const cwd = requireWorkspacePath(params, message.method);
         const targetSessionId = typeof params.targetSessionId === "string" ? params.targetSessionId.trim() : "";
         const checkpointId = typeof params.checkpointId === "string" ? params.checkpointId.trim() : "";
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => await session.getWorkspaceBackupDelta(targetSessionId, checkpointId),
-            (event): event is Extract<ServerEvent, { type: "workspace_backup_delta" }> => event.type === "workspace_backup_delta",
-          ),
+        const event = await captureWorkspaceControlSessionOutcome(
+          cwd,
+          async (session) => await session.getWorkspaceBackupDelta(targetSessionId, checkpointId),
+          (event): event is Extract<ServerEvent, { type: "workspace_backup_delta" }> =>
+            event.type === "workspace_backup_delta",
         );
+        if (event.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, event);
+          return;
+        }
         emitControlResult(ws, message.id, event);
         return;
       }
@@ -2280,20 +2362,22 @@ export async function startAgentServer(
         const checkpointId = typeof params.checkpointId === "string" && params.checkpointId.trim()
           ? params.checkpointId.trim()
           : undefined;
-        const event = await withWorkspaceControlSession(cwd, async (binding, session) =>
-          await captureSessionEvent(
-            binding,
-            async () => {
-              if (message.method === "cowork/backups/workspace/checkpoint") await session.createWorkspaceBackupCheckpoint(targetSessionId);
-              if (message.method === "cowork/backups/workspace/restore") await session.restoreWorkspaceBackup(targetSessionId, checkpointId);
-              if (message.method === "cowork/backups/workspace/deleteCheckpoint" && checkpointId) {
-                await session.deleteWorkspaceBackupCheckpoint(targetSessionId, checkpointId);
-              }
-              if (message.method === "cowork/backups/workspace/deleteEntry") await session.deleteWorkspaceBackupEntry(targetSessionId);
-            },
-            (event): event is Extract<ServerEvent, { type: "workspace_backups" }> => event.type === "workspace_backups",
-          ),
+        const event = await captureWorkspaceControlSessionOutcome(
+          cwd,
+          async (session) => {
+            if (message.method === "cowork/backups/workspace/checkpoint") await session.createWorkspaceBackupCheckpoint(targetSessionId);
+            if (message.method === "cowork/backups/workspace/restore") await session.restoreWorkspaceBackup(targetSessionId, checkpointId);
+            if (message.method === "cowork/backups/workspace/deleteCheckpoint" && checkpointId) {
+              await session.deleteWorkspaceBackupCheckpoint(targetSessionId, checkpointId);
+            }
+            if (message.method === "cowork/backups/workspace/deleteEntry") await session.deleteWorkspaceBackupEntry(targetSessionId);
+          },
+          (event): event is Extract<ServerEvent, { type: "workspace_backups" }> => event.type === "workspace_backups",
         );
+        if (event.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, event);
+          return;
+        }
         emitControlResult(ws, message.id, event);
         return;
       }

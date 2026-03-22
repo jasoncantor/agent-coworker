@@ -6,6 +6,9 @@ import { JSONRPC_ERROR_CODES } from "../protocol";
 import { toJsonRpcParams } from "./shared";
 import type { JsonRpcRequestHandlerMap, JsonRpcRouteContext } from "./types";
 
+type JsonRpcSessionError = Extract<ServerEvent, { type: "error" }>;
+type JsonRpcSessionOutcome<T extends ServerEvent> = T | JsonRpcSessionError;
+
 async function captureWorkspaceControlEvent<T extends ServerEvent>(
   context: JsonRpcRouteContext,
   cwd: string,
@@ -19,6 +22,33 @@ async function captureWorkspaceControlEvent<T extends ServerEvent>(
       predicate,
     )
   );
+}
+
+async function captureWorkspaceControlOutcome<T extends ServerEvent>(
+  context: JsonRpcRouteContext,
+  cwd: string,
+  action: (session: AgentSession) => Promise<void> | void,
+  predicate: (event: ServerEvent) => event is T,
+): Promise<JsonRpcSessionOutcome<T>> {
+  return await context.workspaceControl.withSession(cwd, async (binding, session) =>
+    await context.events.capture(
+      binding,
+      async () => await action(session),
+      (event): event is JsonRpcSessionOutcome<T> => predicate(event) || context.utils.isSessionError(event),
+    )
+  );
+}
+
+function sendSessionMutationError(
+  context: JsonRpcRouteContext,
+  ws: Parameters<JsonRpcRouteContext["jsonrpc"]["send"]>[0],
+  id: string | number | null,
+  event: JsonRpcSessionError,
+) {
+  context.jsonrpc.sendError(ws, id, {
+    code: JSONRPC_ERROR_CODES.invalidRequest,
+    message: event.message,
+  });
 }
 
 export function createProviderAndMcpRouteHandlers(
@@ -75,7 +105,7 @@ export function createProviderAndMcpRouteHandlers(
         });
         return;
       }
-      const event = await captureWorkspaceControlEvent(
+      const event = await captureWorkspaceControlOutcome(
         context,
         cwd,
         async (session) => await session.authorizeProviderAuth(provider, methodId),
@@ -85,6 +115,10 @@ export function createProviderAndMcpRouteHandlers(
           && event.methodId === methodId
         ),
       );
+      if (context.utils.isSessionError(event)) {
+        sendSessionMutationError(context, ws, message.id, event);
+        return;
+      }
       context.jsonrpc.sendResult(ws, message.id, { event });
     },
 
@@ -248,7 +282,8 @@ export function createProviderAndMcpRouteHandlers(
         context,
         cwd,
         async (session) => await session.validateMcpServer(name),
-        (event): event is Extract<ServerEvent, { type: "mcp_server_validation" }> => event.type === "mcp_server_validation",
+        (event): event is Extract<ServerEvent, { type: "mcp_server_validation" }> =>
+          event.type === "mcp_server_validation" && event.name === name,
       );
       context.jsonrpc.sendResult(ws, message.id, { event });
     },
@@ -262,7 +297,8 @@ export function createProviderAndMcpRouteHandlers(
         cwd,
         async (session) => await session.authorizeMcpServerAuth(name),
         (event): event is Extract<ServerEvent, { type: "mcp_server_auth_challenge" | "mcp_server_auth_result" }> => (
-          event.type === "mcp_server_auth_challenge" || event.type === "mcp_server_auth_result"
+          (event.type === "mcp_server_auth_challenge" || event.type === "mcp_server_auth_result")
+          && event.name === name
         ),
       );
       context.jsonrpc.sendResult(ws, message.id, { event });
@@ -277,7 +313,8 @@ export function createProviderAndMcpRouteHandlers(
         context,
         cwd,
         async (session) => await session.callbackMcpServerAuth(name, code),
-        (event): event is Extract<ServerEvent, { type: "mcp_server_auth_result" }> => event.type === "mcp_server_auth_result",
+        (event): event is Extract<ServerEvent, { type: "mcp_server_auth_result" }> =>
+          event.type === "mcp_server_auth_result" && event.name === name,
       );
       context.jsonrpc.sendResult(ws, message.id, { event });
     },
@@ -291,7 +328,8 @@ export function createProviderAndMcpRouteHandlers(
         context,
         cwd,
         async (session) => await session.setMcpServerApiKey(name, apiKey),
-        (event): event is Extract<ServerEvent, { type: "mcp_server_auth_result" }> => event.type === "mcp_server_auth_result",
+        (event): event is Extract<ServerEvent, { type: "mcp_server_auth_result" }> =>
+          event.type === "mcp_server_auth_result" && event.name === name,
       );
       context.jsonrpc.sendResult(ws, message.id, { event });
     },

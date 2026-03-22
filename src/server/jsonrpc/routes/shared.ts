@@ -110,5 +110,5 @@ export function buildControlSessionStateEvents(session: AgentSession): ServerEve
 export function isJsonRpcSessionError(
   event: ServerEvent,
 ): event is Extract<ServerEvent, { type: "error" }> {
-  return event.type === "error" && event.source === "session";
+  return event.type === "error";
 }
