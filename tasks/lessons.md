@@ -10,6 +10,7 @@
 - For desktop admin pages that auto-fetch data, do not assume store-level success/error handling is enough; add a UI-level fallback so an orphaned request cannot leave the page stuck on a perpetual loading message when the correct end state is simply empty.
 - For desktop request spinners in this repo, clear the loading flag on both success events and structured control-session errors; server-side failures like `memory_list` SQLite errors may never emit the success payload that normally resets UI state.
 - When AWS Bedrock Proxy settings can come from workspace provider options, global config, or env, do not pass a standalone base-URL override through one code path; use the shared resolver everywhere so discovery, adapters, and validation all honor the same precedence, and never swallow desktop control-session send failures without logging and clearing the optimistic UI state they started.
+- In-process caching for AWS Bedrock Proxy `/models` discovery is keyed by base URL plus resolved API key material; tests that mock `fetch` for different payloads with the same URL+auth must call `__clearAwsBedrockProxyDiscoveryCacheForTests()` in `beforeEach` (or per test) or they will see stale discovery results.
 - For desktop actions whose UI clears only after a terminal result event, synthesize the same failure result on every early-return failure path before a control message is sent; otherwise local spinners can get stuck even when the user already saw a generic “Not connected” notification.
 - When the user explicitly changes a CI request from “narrow the trigger” to “delete the workflow,” stop refining the trigger and remove the job/workflow exactly as requested.
 - When the user expands a bugfix to include verification failures found during the lane, treat every concrete error you surfaced as in-scope work instead of stopping after the original fix.
@@ -168,6 +169,7 @@
 - When the user asks to fix CI or review feedback in this repo, keep verification scoped to the failing checks unless they explicitly ask for build/package validation; do not default to the desktop build matrix.
 - When a CI failure only reproduces on GitHub Actions, treat the runner environment as authoritative: compare the workflow OS/runtime to the local machine immediately and harden the failing test against environment-sensitive module/mock behavior instead of waiting for a local repro.
 - When a desktop Linux smoke run shows a blank renderer or `Render frame was disposed` errors, do not treat native window chrome or menu interactivity alone as proof the UI is healthy; debug the renderer failure and visible content before signing off.
+- When a PR review calls out missing dynamic provider capability propagation, trace that capability through every behavior-changing consumer before replying; fixing only the catalog/discovery surface is insufficient if prompt rendering or runtime input negotiation still reads a conservative fallback.
 
 ## 2026-03-18 Tool Output Overflow Audit
 
