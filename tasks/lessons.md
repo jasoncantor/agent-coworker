@@ -147,6 +147,7 @@
 - When a tool requires session-only runtime control, hide it from non-session tool registries and update any raw-loop prompt fixtures in the same pass; otherwise scripted coverage drifts from the live `spawnAgent` contract.
 - When the user broadens PR follow-up scope from specific review threads to "every comment that needs work," sweep both unresolved review threads and newer top-level review/comment bodies on the latest commit before declaring PR feedback handled.
 - When the user asks to "check again" on an open PR, do not report only CI and mergeability; re-scan the latest SHA for unresolved review threads and top-level review bodies before answering.
+- When review cleanup flips into PR babysitting, immediately inspect the latest GitHub Actions run too; a flaky remote MCP smoke lane can still be the real blocker after comments are resolved.
 - When the user explicitly asks for subagent verification first, spawn the requested subagents before editing, use their issue-by-issue findings to drive the fix plan, and then confirm the same conclusions locally before patching.
 - When making a live-session control read-only in desktop chat, verify whether draft threads still need that control to seed the first session config; do not remove draft-only setup selectors just because active sessions should be locked.
 - For draft-thread first sends in desktop chat, never flush the queued first message while `pendingWorkspaceDefaultApplyByThread` still holds the selected draft model; send the first `user_message` only after the draft override has been pushed with `apply_session_defaults`, or the session will start on the workspace default model.
@@ -169,6 +170,7 @@
 - For shared workspace/session path comparisons, never rely on raw resolved-string equality across platforms; Windows workspace identity must case-fold after lexical normalization, and the helper should expose deterministic test coverage for `win32` semantics from non-Windows CI.
 - When the user asks to fix CI or review feedback in this repo, keep verification scoped to the failing checks unless they explicitly ask for build/package validation; do not default to the desktop build matrix.
 - When a CI failure only reproduces on GitHub Actions, treat the runner environment as authoritative: compare the workflow OS/runtime to the local machine immediately and harden the failing test against environment-sensitive module/mock behavior instead of waiting for a local repro.
+- When the default CI lane hits transient `mcp.grep.app` 5xxs, keep `RUN_REMOTE_MCP_TESTS` on connect/discover smoke only and require `RUN_REMOTE_MCP_AGENT_TESTS` for live remote tool execution.
 - When a desktop Linux smoke run shows a blank renderer or `Render frame was disposed` errors, do not treat native window chrome or menu interactivity alone as proof the UI is healthy; debug the renderer failure and visible content before signing off.
 
 ## 2026-03-18 Tool Output Overflow Audit

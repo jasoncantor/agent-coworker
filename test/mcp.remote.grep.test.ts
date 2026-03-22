@@ -3,12 +3,29 @@ import { describe, expect, test } from "bun:test";
 import type { MCPServerConfig } from "../src/types";
 import { loadMCPTools } from "../src/mcp";
 
-const RUN_REMOTE =
+const RUN_REMOTE_SMOKE =
   process.env.RUN_REMOTE_MCP_TESTS === "1" ||
   process.env.RUN_REMOTE_MCP_TESTS === "true" ||
   process.env.RUN_REMOTE_MCP_TESTS === "yes";
 
-const it = RUN_REMOTE ? test : test.skip;
+const RUN_REMOTE_DEEP =
+  process.env.RUN_REMOTE_MCP_AGENT_TESTS === "1" ||
+  process.env.RUN_REMOTE_MCP_AGENT_TESTS === "true" ||
+  process.env.RUN_REMOTE_MCP_AGENT_TESTS === "yes";
+
+const smoke = RUN_REMOTE_SMOKE ? test : test.skip;
+const deep = RUN_REMOTE_DEEP ? test : test.skip;
+
+function grepServerConfig(): MCPServerConfig[] {
+  return [
+    {
+      name: "grep",
+      transport: { type: "http", url: "https://mcp.grep.app" },
+      required: true,
+      retries: 2,
+    },
+  ];
+}
 
 function isRetryableRemoteMcpError(error: unknown): boolean {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -80,19 +97,29 @@ describe("remote MCP retry helper", () => {
 });
 
 describe("remote MCP (mcp.grep.app)", () => {
-  it(
-    "connects, discovers tools, and executes searchGitHub",
+  smoke(
+    "connects and discovers tools",
     async () => {
-      const servers: MCPServerConfig[] = [
-        {
-          name: "grep",
-          transport: { type: "http", url: "https://mcp.grep.app" },
-          required: true,
-          retries: 2,
-        },
-      ];
+      const loaded = await loadMCPTools(grepServerConfig(), { log: () => {} });
+      try {
+        expect(loaded.errors).toEqual([]);
 
-      const loaded = await loadMCPTools(servers, { log: () => {} });
+        const toolName = "mcp__grep__searchGitHub";
+        expect(loaded.tools).toHaveProperty(toolName);
+
+        const tool: any = (loaded.tools as any)[toolName];
+        expect(typeof tool.execute).toBe("function");
+      } finally {
+        await loaded.close();
+      }
+    },
+    30_000
+  );
+
+  deep(
+    "executes searchGitHub",
+    async () => {
+      const loaded = await loadMCPTools(grepServerConfig(), { log: () => {} });
       try {
         expect(loaded.errors).toEqual([]);
 
