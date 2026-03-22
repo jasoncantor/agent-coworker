@@ -601,7 +601,31 @@ export function createControlSocketHelpers(
       return;
     }
     if (evt.type === "config_updated") {
+      const provider =
+        deps.isProviderName((evt.config as { provider?: unknown })?.provider)
+          ? (evt.config as { provider: ProviderName }).provider
+          : null;
+      const model =
+        typeof (evt.config as { model?: unknown })?.model === "string"
+          ? (evt.config as { model: string }).model.trim()
+          : "";
+      let workspaceMirrored = false;
       set((s) => ({
+        workspaces: s.workspaces.map((workspace) => {
+          if (workspace.id !== workspaceId) {
+            return workspace;
+          }
+          const nextWorkspace = {
+            ...workspace,
+            ...(!workspace.defaultProvider && provider ? { defaultProvider: provider } : {}),
+            ...(!workspace.defaultModel && model ? { defaultModel: model } : {}),
+          };
+          workspaceMirrored =
+            workspaceMirrored
+            || nextWorkspace.defaultProvider !== workspace.defaultProvider
+            || nextWorkspace.defaultModel !== workspace.defaultModel;
+          return nextWorkspace;
+        }),
         workspaceRuntimeById: {
           ...s.workspaceRuntimeById,
           [workspaceId]: {
@@ -611,6 +635,9 @@ export function createControlSocketHelpers(
           },
         },
       }));
+      if (workspaceMirrored) {
+        void deps.persist(get);
+      }
       return;
     }
 
