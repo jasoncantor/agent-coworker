@@ -8,8 +8,29 @@ type CreateThreadJournalProjectorOptions = {
   emit: (event: ThreadJournalEmission) => void;
 };
 
+type ProjectedReasoningMode = "reasoning" | "summary";
+type BufferedReasoningState = {
+  itemId: string;
+  mode: ProjectedReasoningMode;
+  text: string;
+};
+
 function makeItemId(prefix: string, seed: string): string {
   return `${prefix}:${seed}`;
+}
+
+function readPartString(part: Record<string, unknown> | undefined, key: string): string | null {
+  const value = part?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function reasoningModeFromPart(part: Record<string, unknown> | undefined): ProjectedReasoningMode {
+  return readPartString(part, "mode") === "summary" ? "summary" : "reasoning";
+}
+
+function reasoningDedupKey(mode: ProjectedReasoningMode, text: string): string | null {
+  const trimmed = text.trim();
+  return trimmed.length > 0 ? `${mode}:${trimmed}` : null;
 }
 
 export function createThreadJournalProjector(opts: CreateThreadJournalProjectorOptions) {
@@ -18,6 +39,8 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
   let lastUserMessageClientMessageId: string | null = null;
   const agentTextByTurn = new Map<string, string>();
   const agentItemIdByTurn = new Map<string, string>();
+  const reasoningByKey = new Map<string, BufferedReasoningState>();
+  const lastBufferedReasoningKeyByTurn = new Map<string, string>();
 
   const emit = (eventType: string, payload: unknown, meta?: {
     turnId?: string | null;
@@ -41,6 +64,71 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
     itemId = makeItemId("agentMessage", turnId);
     agentItemIdByTurn.set(turnId, itemId);
     return itemId;
+  };
+
+  const reasoningStreamKey = (turnId: string, part: Record<string, unknown> | undefined) =>
+    `${turnId}:${readPartString(part, "id") ?? "default"}`;
+
+  const ensureBufferedReasoning = (turnId: string, part: Record<string, unknown> | undefined) => {
+    const key = reasoningStreamKey(turnId, part);
+    const existing = reasoningByKey.get(key);
+    if (existing) {
+      existing.mode = reasoningModeFromPart(part);
+      return { key, state: existing };
+    }
+    const next: BufferedReasoningState = {
+      itemId: makeItemId("reasoning", `${turnId}:${readPartString(part, "id") ?? crypto.randomUUID()}`),
+      mode: reasoningModeFromPart(part),
+      text: "",
+    };
+    reasoningByKey.set(key, next);
+    return { key, state: next };
+  };
+
+  const emitReasoningItem = (
+    turnId: string,
+    mode: ProjectedReasoningMode,
+    text: string,
+    itemId = makeItemId("reasoning", `${turnId}:${crypto.randomUUID()}`),
+  ) => {
+    if (!text.trim()) return false;
+    const item = {
+      id: itemId,
+      type: "reasoning",
+      mode,
+      text,
+    };
+    emit("item/started", {
+      threadId: opts.threadId,
+      turnId,
+      item,
+    }, { turnId, itemId });
+    emit("item/completed", {
+      threadId: opts.threadId,
+      turnId,
+      item,
+    }, { turnId, itemId });
+    return true;
+  };
+
+  const flushBufferedReasoning = (turnId: string, key: string) => {
+    const state = reasoningByKey.get(key);
+    if (!state) return;
+    reasoningByKey.delete(key);
+    if (!emitReasoningItem(turnId, state.mode, state.text, state.itemId)) return;
+    const dedupKey = reasoningDedupKey(state.mode, state.text);
+    if (dedupKey) {
+      lastBufferedReasoningKeyByTurn.set(turnId, dedupKey);
+    }
+  };
+
+  const clearReasoningStateForTurn = (turnId: string) => {
+    for (const key of reasoningByKey.keys()) {
+      if (key.startsWith(`${turnId}:`)) {
+        reasoningByKey.delete(key);
+      }
+    }
+    lastBufferedReasoningKeyByTurn.delete(turnId);
   };
 
   return {
@@ -89,6 +177,7 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
           }
 
           if (event.turnId) {
+            clearReasoningStateForTurn(event.turnId);
             emit("turn/completed", {
               threadId: opts.threadId,
               turn: {
@@ -105,8 +194,8 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
           activeTurnId = null;
           return;
         case "model_stream_chunk":
-          if (event.partType !== "text_delta") return;
-          {
+          if (event.partType === "text_delta") {
+            if (readPartString(event.part, "phase") === "commentary") return;
             const delta =
               typeof event.part?.text === "string"
                 ? event.part.text
@@ -136,6 +225,28 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
                 delta,
               }, { turnId: event.turnId, itemId });
             }
+            return;
+          }
+
+          if (event.partType === "reasoning_start") {
+            ensureBufferedReasoning(event.turnId, event.part);
+            return;
+          }
+
+          if (event.partType === "reasoning_delta") {
+            const { state } = ensureBufferedReasoning(event.turnId, event.part);
+            const delta =
+              typeof event.part?.text === "string"
+                ? event.part.text
+                : typeof event.part?.delta === "string"
+                  ? event.part.delta
+                  : "";
+            state.text = `${state.text}${delta}`;
+            return;
+          }
+
+          if (event.partType === "reasoning_end") {
+            flushBufferedReasoning(event.turnId, reasoningStreamKey(event.turnId, event.part));
           }
           return;
         case "assistant_message":
@@ -175,23 +286,12 @@ export function createThreadJournalProjector(opts: CreateThreadJournalProjectorO
         case "reasoning":
           if (!activeTurnId) return;
           {
-            const itemId = makeItemId("reasoning", `${activeTurnId}:${crypto.randomUUID()}`);
-            const item = {
-              id: itemId,
-              type: "reasoning",
-              mode: event.kind,
-              text: event.text,
-            };
-            emit("item/started", {
-              threadId: opts.threadId,
-              turnId: activeTurnId,
-              item,
-            }, { turnId: activeTurnId, itemId });
-            emit("item/completed", {
-              threadId: opts.threadId,
-              turnId: activeTurnId,
-              item,
-            }, { turnId: activeTurnId, itemId });
+            const dedupKey = reasoningDedupKey(event.kind, event.text);
+            if (dedupKey && lastBufferedReasoningKeyByTurn.get(activeTurnId) === dedupKey) {
+              lastBufferedReasoningKeyByTurn.delete(activeTurnId);
+              return;
+            }
+            emitReasoningItem(activeTurnId, event.kind, event.text, makeItemId("reasoning", `${activeTurnId}:${crypto.randomUUID()}`));
           }
           return;
         case "ask":

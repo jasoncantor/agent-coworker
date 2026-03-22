@@ -382,6 +382,68 @@ describe("desktop JSON-RPC event mapping", () => {
     expect(runtime?.feed.some((item) => "text" in item && typeof item.text === "string" && item.text.includes("Hello from JSON-RPC"))).toBe(true);
   });
 
+  test("shared JSON-RPC reasoning notifications land in the reasoning feed before the assistant reply", async () => {
+    await useAppStore.getState().reconnectThread(threadId);
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const socket = MockJsonRpcSocket.instances[0];
+    expect(socket).toBeDefined();
+
+    socket.notify("turn/started", {
+      threadId: sessionId,
+      turn: { id: "turn-1", status: "inProgress", items: [] },
+    });
+    socket.notify("item/started", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: {
+        id: "reasoning-1",
+        type: "reasoning",
+        mode: "summary",
+        text: "Inspecting the reports.",
+      },
+    });
+    socket.notify("item/completed", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: {
+        id: "reasoning-1",
+        type: "reasoning",
+        mode: "summary",
+        text: "Inspecting the reports.",
+      },
+    });
+    socket.notify("item/agentMessage/delta", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      itemId: "assistant-1",
+      delta: "Final answer",
+    });
+    socket.notify("item/completed", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: { id: "assistant-1", type: "agentMessage", text: "Final answer" },
+    });
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const feed = useAppStore.getState().threadRuntimeById[threadId]?.feed.filter((item) =>
+      item.kind === "reasoning" || item.kind === "message",
+    ) ?? [];
+    expect(feed.map((item) => item.kind)).toEqual(["reasoning", "message"]);
+    expect(feed[0]).toMatchObject({
+      kind: "reasoning",
+      mode: "summary",
+      text: "Inspecting the reports.",
+    });
+    expect(feed[1]).toMatchObject({
+      kind: "message",
+      role: "assistant",
+      text: "Final answer",
+    });
+  });
+
   test("shared JSON-RPC notifications hydrate live session metadata immediately", async () => {
     await useAppStore.getState().reconnectThread(threadId);
     await flushAsyncWork();
