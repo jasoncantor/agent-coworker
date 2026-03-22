@@ -1463,7 +1463,9 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
       },
     }));
 
-    const connectPromise = (async () => {
+    const connectKeys = new Set([threadId]);
+    let connectPromise!: Promise<void>;
+    connectPromise = (async () => {
       let activeThreadId = threadId;
       try {
         const result = existingSessionId
@@ -1474,6 +1476,8 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
 
         if (!existingSessionId && activeThreadId !== thread.id) {
           activeThreadId = migrateThreadIdentity(get, set, activeThreadId, thread.id);
+          connectKeys.add(activeThreadId);
+          jsonRpcThreadConnectPromises.set(activeThreadId, connectPromise);
         }
 
         rememberThreadForReconnect(workspaceId, activeThreadId);
@@ -1531,7 +1535,11 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
         });
       }
     })().finally(() => {
-      jsonRpcThreadConnectPromises.delete(threadId);
+      for (const connectKey of connectKeys) {
+        if (jsonRpcThreadConnectPromises.get(connectKey) === connectPromise) {
+          jsonRpcThreadConnectPromises.delete(connectKey);
+        }
+      }
     });
 
     jsonRpcThreadConnectPromises.set(threadId, connectPromise);

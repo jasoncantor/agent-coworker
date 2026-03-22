@@ -429,6 +429,49 @@ describe("thread reconnect over shared JSON-RPC socket", () => {
     expect(useAppStore.getState().threads.find((thread) => thread.id === activeThreadId)?.status).toBe("active");
   });
 
+  test("reconnectThread dedupes an in-flight connect after draft thread identity migration", async () => {
+    const draftThreadId = "draft-thread-1";
+    seedStore({
+      id: draftThreadId,
+      sessionId: null,
+      draft: true,
+    }, {
+      sessionId: null,
+    });
+
+    let releaseRead!: () => void;
+    const readBlocked = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    jsonRpcHandlers.set("thread/start", async () => ({
+      thread: threadMeta("session-2"),
+    }));
+    jsonRpcHandlers.set("thread/read", async () => {
+      await readBlocked;
+      return {
+        coworkSnapshot: threadSnapshot("session-2"),
+      };
+    });
+
+    await useAppStore.getState().reconnectThread(draftThreadId, "hello once");
+    await flushAsyncWork();
+
+    const migratedThreadId = canonicalThreadId("session-2", draftThreadId);
+    expect(migratedThreadId).toBe("session-2");
+    expect(jsonRpcRequests.filter((entry) => entry.method === "thread/start")).toHaveLength(1);
+
+    await useAppStore.getState().reconnectThread(migratedThreadId);
+    await flushAsyncWork();
+
+    expect(jsonRpcRequests.filter((entry) => entry.method === "thread/start")).toHaveLength(1);
+    expect(jsonRpcRequests.filter((entry) => entry.method === "thread/resume")).toHaveLength(0);
+
+    releaseRead();
+    await flushAsyncWork();
+
+    expect(useAppStore.getState().threadRuntimeById[migratedThreadId]?.connected).toBe(true);
+  });
+
   test("selectThread falls back to transcript hydration when thread/read has no snapshot", async () => {
     jsonRpcHandlers.set("thread/read", async () => ({ coworkSnapshot: null }));
     const { threadId } = seedStore({
