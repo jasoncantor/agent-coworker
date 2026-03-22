@@ -308,6 +308,14 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         mode === "auto-resume"
           ? null
           : draftModelSelection ?? pendingApply?.draftModelSelection ?? null;
+      if (mode !== "explicit" && (rt.sessionConfig == null || typeof rt.enableMcp !== "boolean")) {
+        RUNTIME.pendingWorkspaceDefaultApplyByThread.set(threadId, {
+          mode,
+          draftModelSelection: effectiveDraftModelSelection,
+          inFlight: false,
+        });
+        return;
+      }
       const harnessBackupsDefault = workspaceRuntime?.controlSessionConfig?.defaultBackupsEnabled;
       const harnessToolOutputOverflowChars = workspaceRuntime?.controlSessionConfig?.defaultToolOutputOverflowChars;
 

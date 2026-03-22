@@ -1170,6 +1170,58 @@ describe("workspace settings sync", () => {
     });
   });
 
+  test("applyWorkspaceDefaultsToThread defers auto apply until session settings hydrate", async () => {
+    primeWorkspaceConnection();
+    const { threadId } = seedConnectedThread();
+    const hydratedRuntime = useAppStore.getState().threadRuntimeById[threadId];
+    useAppStore.setState((state) => ({
+      ...state,
+      workspaces: state.workspaces.map((workspace) =>
+        workspace.id === workspaceId
+          ? {
+              ...workspace,
+              defaultEnableMcp: false,
+            }
+          : workspace,
+      ),
+      threadRuntimeById: {
+        ...state.threadRuntimeById,
+        [threadId]: {
+          ...state.threadRuntimeById[threadId],
+          sessionConfig: null,
+          enableMcp: null,
+        },
+      },
+    }));
+    jsonRpcRequests.length = 0;
+
+    await useAppStore.getState().applyWorkspaceDefaultsToThread(threadId, "auto");
+
+    expect(requestsFor("cowork/session/defaults/apply")).toHaveLength(0);
+    expect(RUNTIME.pendingWorkspaceDefaultApplyByThread.get(threadId)).toEqual({
+      mode: "auto",
+      draftModelSelection: null,
+      inFlight: false,
+    });
+
+    useAppStore.setState((state) => ({
+      ...state,
+      threadRuntimeById: {
+        ...state.threadRuntimeById,
+        [threadId]: {
+          ...state.threadRuntimeById[threadId],
+          sessionConfig: hydratedRuntime?.sessionConfig ?? null,
+          enableMcp: hydratedRuntime?.enableMcp ?? true,
+        },
+      },
+    }));
+
+    await useAppStore.getState().applyWorkspaceDefaultsToThread(threadId, "auto");
+
+    expect(requestsFor("cowork/session/defaults/apply")).toHaveLength(1);
+    expect(RUNTIME.pendingWorkspaceDefaultApplyByThread.has(threadId)).toBe(false);
+  });
+
   test("applyWorkspaceDefaultsToThread flushes the oldest queued message after defaults apply", async () => {
     primeWorkspaceConnection();
     const { threadId, sessionId } = seedConnectedThread();

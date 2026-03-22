@@ -142,8 +142,12 @@ export function createSkillActions(
           },
         },
       }));
-      const okCatalog = await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/skills/catalog/read", { cwd });
-      const okList = await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/skills/list", { cwd });
+      const [catalogResult, listResult] = await Promise.allSettled([
+        requestJsonRpcControlEvent(get, set, workspaceId, "cowork/skills/catalog/read", { cwd }),
+        requestJsonRpcControlEvent(get, set, workspaceId, "cowork/skills/list", { cwd }),
+      ]);
+      const okCatalog = catalogResult.status === "fulfilled" && catalogResult.value;
+      const okList = listResult.status === "fulfilled" && listResult.value;
       if (!(okCatalog && okList)) {
         set((s) => ({
           workspaceRuntimeById: {

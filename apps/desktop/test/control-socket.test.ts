@@ -313,6 +313,66 @@ describe("control socket helpers over JSON-RPC", () => {
     expect(state.notifications).toHaveLength(1);
   });
 
+  test("provider auth refresh clears loading when the follow-up refresh only partially succeeds", async () => {
+    const workspaceId = "ws-provider-auth";
+    const { state, get, set } = createState(workspaceId);
+    const calls: string[] = [];
+    installFakeSocket(workspaceId, async (method) => {
+      calls.push(method);
+      if (method === "cowork/provider/auth/setApiKey") {
+        return {
+          event: {
+            type: "provider_auth_result",
+            sessionId: "jsonrpc-control",
+            provider: "openai",
+            methodId: "api_key",
+            ok: true,
+            mode: "api_key",
+            message: "saved",
+          },
+        };
+      }
+      if (method === "cowork/provider/status/refresh") {
+        return {};
+      }
+      if (method === "cowork/provider/catalog/read") {
+        return {
+          event: {
+            type: "provider_catalog",
+            sessionId: "jsonrpc-control",
+            all: [],
+            default: {},
+            connected: [],
+          },
+        };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    });
+
+    const helpers = createControlSocketHelpers(deps);
+    const ok = await helpers.requestJsonRpcControlEvent(
+      get as any,
+      set as any,
+      workspaceId,
+      "cowork/provider/auth/setApiKey",
+      {
+        cwd: "/tmp/workspace",
+        provider: "openai",
+        methodId: "api_key",
+        apiKey: "sk-test",
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(ok).toBe(true);
+    expect(state.providerStatusRefreshing).toBe(false);
+    expect(calls).toEqual([
+      "cowork/provider/auth/setApiKey",
+      "cowork/provider/status/refresh",
+      "cowork/provider/catalog/read",
+    ]);
+  });
+
   test("closing the shared workspace socket clears pending control runtime", async () => {
     const workspaceId = "ws-close";
     const { state, get, set } = createState(workspaceId, {

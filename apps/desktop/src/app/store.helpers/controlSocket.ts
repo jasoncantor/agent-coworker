@@ -1048,7 +1048,7 @@ export function createControlSocketHelpers(
         requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/status/refresh", { cwd }),
         requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/catalog/read", { cwd }),
       ]).then((results) => {
-        if (results.every((result) => result.status === "rejected")) {
+        if (!results.every((result) => result.status === "fulfilled" && result.value)) {
           set(() => ({ providerStatusRefreshing: false }));
         }
       });

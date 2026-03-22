@@ -69,6 +69,57 @@ describe("skill store actions", () => {
     expect(state.notifications).toHaveLength(1);
   });
 
+  test("refreshSkillsCatalog dispatches catalog and list requests in parallel", async () => {
+    const state = createState();
+    state.workspaceRuntimeById[workspaceId].serverUrl = "ws://mock";
+    state.workspaces = [{ id: workspaceId, path: "/tmp/workspace" }];
+    const { get, set } = createStoreHarness(state);
+
+    const calls: string[] = [];
+    let resolveCatalog: ((value: unknown) => void) | null = null;
+    RUNTIME.jsonRpcSockets.set(workspaceId, {
+      readyPromise: Promise.resolve(),
+      request: (method: string) => {
+        calls.push(method);
+        if (method === "cowork/skills/catalog/read") {
+          return new Promise((resolve) => {
+            resolveCatalog = resolve;
+          });
+        }
+        return Promise.resolve({
+          event: {
+            type: "skills_list",
+            sessionId: "jsonrpc-control",
+            skills: [],
+          },
+        });
+      },
+      respond: () => true,
+      close: () => {},
+    } as any);
+
+    const refreshPromise = createSkillActions(set as any, get as any).refreshSkillsCatalog();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(calls).toEqual([
+      "cowork/skills/catalog/read",
+      "cowork/skills/list",
+    ]);
+
+    resolveCatalog?.({
+      event: {
+        type: "skills_catalog",
+        sessionId: "jsonrpc-control",
+        catalog: { installations: [], sources: [], stats: { totalInstallations: 0, enabledInstallations: 0 } },
+        mutationBlocked: false,
+      },
+    });
+    await refreshPromise;
+
+    expect(state.workspaceRuntimeById[workspaceId].skillCatalogLoading).toBe(false);
+    expect(state.notifications).toHaveLength(0);
+  });
+
   test("previewSkillInstall removes only its pending key when sendControl fails", async () => {
     const state = createState();
     state.workspaceRuntimeById[workspaceId].skillMutationPendingKeys = { other: true };
