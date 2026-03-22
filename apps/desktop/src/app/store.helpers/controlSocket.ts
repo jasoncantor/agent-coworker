@@ -391,6 +391,7 @@ export function createControlSocketHelpers(
 
   async function bootstrapJsonRpcControlState(get: StoreGet, set: StoreSet, workspaceId: string): Promise<void> {
     const cwd = get().workspaces.find((workspace) => workspace.id === workspaceId)?.path;
+    const refreshGeneration = ++RUNTIME.providerStatusRefreshGeneration;
     set((s) => ({
       providerStatusRefreshing: true,
       providerLastAuthChallenge: null,
@@ -418,6 +419,9 @@ export function createControlSocketHelpers(
       requestJsonRpcControlEvent(get, set, workspaceId, "cowork/skills/catalog/read", { cwd }),
       requestJsonRpcControlEvent(get, set, workspaceId, "cowork/skills/list", { cwd }),
     ]);
+    if (refreshGeneration === RUNTIME.providerStatusRefreshGeneration) {
+      set(() => ({ providerStatusRefreshing: false }));
+    }
 
     const selectedSkillName = get().workspaceRuntimeById[workspaceId]?.selectedSkillName;
     if (selectedSkillName) {
@@ -782,7 +786,6 @@ export function createControlSocketHelpers(
       set((s) => ({
         providerStatusByName: { ...s.providerStatusByName, ...byName },
         providerStatusLastUpdatedAt: deps.nowIso(),
-        providerStatusRefreshing: false,
         providerConnected: connected,
       }));
       void deps.persist(get);
@@ -891,7 +894,6 @@ export function createControlSocketHelpers(
             title: "Control session error",
             detail: `${evt.source}/${evt.code}: ${evt.message}`,
           }),
-          providerStatusRefreshing: false,
           workspaceRuntimeById: {
             ...s.workspaceRuntimeById,
             [workspaceId]: {

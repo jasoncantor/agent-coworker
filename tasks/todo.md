@@ -101,3 +101,15 @@
 - `src/client/jsonRpcSocket.ts` now keeps retryable queued operations intact across transient `initialize` handshake failures while the socket is still auto-reconnecting, but still rejects them once reconnect attempts are exhausted or the socket is intentionally closed.
 - `src/server/startServer.ts` now applies `shouldSendJsonRpcNotification()` during journal replay, so `thread/resume` respects the same notification opt-out contract as live streaming.
 - Verification passed with `bun test test/jsonrpcSocket.runtime.test.ts test/server.jsonrpc.flow.test.ts` and `bun run typecheck`.
+
+## Provider Refresh Review Fixes
+
+- [x] Fix the remaining provider refresh generation race in the desktop control socket without widening the protocol surface.
+- [x] Add regressions for older `provider_status` events and bootstrap completion racing with a newer manual refresh.
+- [x] Re-run the focused desktop provider/control tests plus `bun run typecheck`, then resolve the remaining PR threads.
+
+## Provider Refresh Review Fixes Review
+
+- `apps/desktop/src/app/store.helpers/controlSocket.ts` now puts bootstrap refreshes on the same `providerStatusRefreshGeneration` contract as manual and auth-triggered refreshes, and it no longer lets `provider_status` or generic control error events clear `providerStatusRefreshing` outside that generation-aware completion path.
+- `apps/desktop/test/control-socket.test.ts` now covers both races: an older `provider_status` event arriving while a newer manual refresh is still running, and bootstrap completion arriving after a newer manual refresh has already taken ownership of the spinner.
+- Verification passed with `bun test --cwd apps/desktop test/control-socket.test.ts test/provider-actions.test.ts` and `bun run typecheck`.
