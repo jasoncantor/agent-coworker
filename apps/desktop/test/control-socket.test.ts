@@ -242,6 +242,32 @@ describe("control socket helpers over JSON-RPC", () => {
     expect(ok).toBe(true);
   });
 
+  test("requestWorkspaceSessions uses the retryable socket path even if readyPromise rejected during reconnect", async () => {
+    const workspaceId = "ws-retryable";
+    const { get, set } = createState(workspaceId);
+    let requestCalls = 0;
+    const readyPromise = Promise.reject(new Error("initialize failed"));
+    readyPromise.catch(() => {});
+    RUNTIME.jsonRpcSockets.set(workspaceId, {
+      readyPromise,
+      request: async (method: string) => {
+        requestCalls += 1;
+        expect(method).toBe("thread/list");
+        return {
+          threads: [makeThreadListEntry("session-1")],
+        };
+      },
+      respond: () => true,
+      close: () => {},
+    } as any);
+
+    const helpers = createControlSocketHelpers(deps);
+    const sessions = await helpers.requestWorkspaceSessions(get as any, set as any, workspaceId);
+
+    expect(requestCalls).toBe(1);
+    expect(sessions?.map((session) => session.sessionId)).toEqual(["session-1"]);
+  });
+
   test("ensureControlSocket backfills control session state if the first socket caller had no store setter", () => {
     const workspaceId = "ws-backfill";
     const { state, get, set } = createState(workspaceId);

@@ -200,7 +200,6 @@ export async function requestJsonRpc(
   if (!socket) {
     throw new Error("JSON-RPC workspace socket is unavailable");
   }
-  await socket.readyPromise;
   return await socket.request(method, params, { retryable: true });
 }
 

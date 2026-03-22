@@ -1179,9 +1179,12 @@ export async function startAgentServer(
     ws: Bun.ServerWebSocket<StartServerSocketData>,
     threadId: string,
     afterSeq = 0,
-    limit = 1_000,
+    limit?: number,
   ) => {
-    for (const event of sessionDb.listThreadJournalEvents(threadId, { afterSeq, limit })) {
+    const journalEvents = limit === undefined
+      ? sessionDb.listThreadJournalEvents(threadId, { afterSeq })
+      : sessionDb.listThreadJournalEvents(threadId, { afterSeq, limit });
+    for (const event of journalEvents) {
       if (event.eventType.startsWith("request:")) {
         const method = event.eventType.slice("request:".length);
         if (event.requestId) {

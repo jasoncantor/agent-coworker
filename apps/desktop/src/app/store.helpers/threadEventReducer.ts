@@ -1068,8 +1068,8 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
         const nextConfig = rt?.config
           ? {
               ...rt.config,
-              provider: evt.provider,
-              model: evt.model,
+              provider: rt.config.provider ?? evt.provider,
+              model: rt.config.model ?? evt.model,
             }
           : rt?.config ?? null;
         const incomingTitle = evt.title.trim();

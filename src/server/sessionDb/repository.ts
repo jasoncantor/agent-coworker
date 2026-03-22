@@ -532,25 +532,44 @@ export class SessionDbRepository {
     opts?: { afterSeq?: number; limit?: number },
   ): PersistedThreadJournalEvent[] {
     const afterSeq = Math.max(0, Math.floor(opts?.afterSeq ?? 0));
-    const limit = Math.max(1, Math.floor(opts?.limit ?? 1_000));
-    const rows = this.db
-      .query(
-        `SELECT
-           thread_id,
-           seq,
-           ts,
-           event_type,
-           turn_id,
-           item_id,
-           request_id,
-           payload_json
-         FROM thread_journal_events
-         WHERE thread_id = ?
-           AND seq > ?
-         ORDER BY seq ASC
-         LIMIT ?`,
-      )
-      .all(threadId, afterSeq, limit) as Array<Record<string, unknown>>;
+    const limit = opts?.limit === undefined ? null : Math.max(1, Math.floor(opts.limit));
+    const query = limit === null
+      ? this.db.query(
+          `SELECT
+             thread_id,
+             seq,
+             ts,
+             event_type,
+             turn_id,
+             item_id,
+             request_id,
+             payload_json
+           FROM thread_journal_events
+           WHERE thread_id = ?
+             AND seq > ?
+           ORDER BY seq ASC`,
+        )
+      : this.db.query(
+          `SELECT
+             thread_id,
+             seq,
+             ts,
+             event_type,
+             turn_id,
+             item_id,
+             request_id,
+             payload_json
+           FROM thread_journal_events
+           WHERE thread_id = ?
+             AND seq > ?
+           ORDER BY seq ASC
+           LIMIT ?`,
+        );
+    const rows = (
+      limit === null
+        ? query.all(threadId, afterSeq)
+        : query.all(threadId, afterSeq, limit)
+    ) as Array<Record<string, unknown>>;
 
     return rows.map((row) => ({
       threadId: String(row.thread_id),

@@ -515,4 +515,63 @@ describe("server JSON-RPC flows", () => {
       await server.stop();
     }
   });
+
+  test("thread/read and thread/resume replay journals beyond 1000 events", async () => {
+    const tmpDir = await makeTmpProject();
+    const deltaCount = 1_005;
+    const finalText = Array.from({ length: deltaCount }, (_, index) => `chunk-${index}`).join("");
+    const runTurnImpl = async (params: any) => {
+      await params.onModelStreamPart?.({ type: "start" });
+      for (let index = 0; index < deltaCount; index += 1) {
+        await params.onModelStreamPart?.({ type: "text-delta", id: `txt_${index}`, text: `chunk-${index}` });
+      }
+      await params.onModelStreamPart?.({ type: "finish", finishReason: "stop" });
+      return {
+        text: finalText,
+        responseMessages: [],
+      };
+    };
+
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: runTurnImpl as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "flood the journal" }],
+      });
+      await rpc.waitFor((message) => message.method === "turn/completed", 15_000);
+
+      const read = await rpc.sendRequest("thread/read", {
+        threadId: started.result.thread.id,
+        includeTurns: true,
+      });
+      expect(read.result.journalTailSeq).toBeGreaterThan(1_000);
+      expect(read.result.coworkSnapshot.feed.at(-1)?.text).toContain("chunk-1004");
+      rpc.close();
+
+      const replayRpc = await connectJsonRpc(url);
+      const resumeResponse = replayRpc.sendRequest("thread/resume", {
+        threadId: started.result.thread.id,
+        afterSeq: 1,
+      });
+      await replayRpc.waitFor((message) => message.method === "thread/started");
+      const replayedLastDelta = await replayRpc.waitFor(
+        (message) => message.method === "item/agentMessage/delta" && message.params.delta === "chunk-1004",
+        15_000,
+      );
+      const resumed = await resumeResponse;
+
+      expect(resumed.result.thread.id).toBe(started.result.thread.id);
+      expect(replayedLastDelta.params.delta).toBe("chunk-1004");
+      replayRpc.close();
+    } finally {
+      await server.stop();
+    }
+  });
 });

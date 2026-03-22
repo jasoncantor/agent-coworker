@@ -369,6 +369,64 @@ describe("sessionDb", () => {
     }
   });
 
+  test("listThreadJournalEvents returns the full journal when no limit is requested", async () => {
+    const paths = await makeTmpCoworkHome();
+    const db = await SessionDb.create({ paths });
+    try {
+      const now = new Date().toISOString();
+      await db.persistSessionMutation({
+        sessionId: "thread-1",
+        eventType: "session.created",
+        snapshot: {
+          sessionKind: "root",
+          parentSessionId: null,
+          role: null,
+          title: "Thread One",
+          titleSource: "default",
+          titleModel: null,
+          provider: "openai",
+          model: "gpt-5.4",
+          workingDirectory: "/tmp/project",
+          enableMcp: true,
+          createdAt: now,
+          updatedAt: now,
+          status: "active",
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+          systemPrompt: "system",
+          messages: [],
+          providerState: null,
+          todos: [],
+          harnessContext: null,
+          costTracker: null,
+        },
+      });
+
+      for (let index = 0; index < 1_005; index += 1) {
+        await db.appendThreadJournalEvent({
+          threadId: "thread-1",
+          ts: now,
+          eventType: "item/agentMessage/delta",
+          turnId: "turn-1",
+          itemId: `item-${index}`,
+          requestId: null,
+          payload: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            itemId: `item-${index}`,
+            delta: `chunk-${index}`,
+          },
+        });
+      }
+
+      expect(db.listThreadJournalEvents("thread-1")).toHaveLength(1_005);
+      expect(db.listThreadJournalEvents("thread-1", { limit: 10 })).toHaveLength(10);
+      expect(db.listThreadJournalEvents("thread-1").at(-1)?.payload).toMatchObject({ delta: "chunk-1004" });
+    } finally {
+      db.close();
+    }
+  });
+
   test("filters listed sessions by working directory and persists materialized snapshots", async () => {
     const paths = await makeTmpCoworkHome();
     const db = await SessionDb.create({ paths });
