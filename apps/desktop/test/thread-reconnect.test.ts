@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+import { clearJsonRpcSocketOverride, setJsonRpcSocketOverride } from "./helpers/jsonRpcSocketMock";
 
 const jsonRpcRequests: Array<{ method: string; params?: unknown }> = [];
 const jsonRpcHandlers = new Map<string, (params?: any) => any | Promise<any>>();
@@ -393,6 +395,7 @@ function seedStore(threadPatch: Record<string, unknown> = {}, runtimePatch: Reco
 
 describe("thread reconnect over shared JSON-RPC socket", () => {
   beforeEach(() => {
+    setJsonRpcSocketOverride(MockJsonRpcSocket);
     jsonRpcRequests.length = 0;
     jsonRpcHandlers.clear();
     MockJsonRpcSocket.instances.length = 0;
@@ -405,6 +408,10 @@ describe("thread reconnect over shared JSON-RPC socket", () => {
     RUNTIME.threadSelectionRequests.clear();
     RUNTIME.modelStreamByThread.clear();
     setDefaultJsonRpcHandlers();
+  });
+
+  afterEach(() => {
+    clearJsonRpcSocketOverride();
   });
 
   test("reconnectThread resumes through the workspace JsonRpcSocket", async () => {

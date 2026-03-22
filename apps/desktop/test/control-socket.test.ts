@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+import { clearJsonRpcSocketOverride, setJsonRpcSocketOverride } from "./helpers/jsonRpcSocketMock";
 
 const jsonRpcRequests: Array<{ method: string; params?: unknown }> = [];
 const jsonRpcHandlers = new Map<string, (params?: any) => any | Promise<any>>();
@@ -139,6 +141,7 @@ function installFakeSocket(workspaceId: string, request: (method: string, params
 
 describe("control socket helpers over JSON-RPC", () => {
   beforeEach(() => {
+    setJsonRpcSocketOverride(MockJsonRpcSocket);
     jsonRpcRequests.length = 0;
     jsonRpcHandlers.clear();
     MockJsonRpcSocket.instances.length = 0;
@@ -146,6 +149,10 @@ describe("control socket helpers over JSON-RPC", () => {
     RUNTIME.skillInstallWaiters.clear();
     RUNTIME.sessionSnapshots.clear();
     persistCalls = 0;
+  });
+
+  afterEach(() => {
+    clearJsonRpcSocketOverride();
   });
 
   test("requestWorkspaceSessions evicts removed cached snapshots and reconciles selection", async () => {

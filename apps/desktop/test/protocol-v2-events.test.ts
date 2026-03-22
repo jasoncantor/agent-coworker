@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+import { clearJsonRpcSocketOverride, setJsonRpcSocketOverride } from "./helpers/jsonRpcSocketMock";
 
 const jsonRpcRequests: Array<{ method: string; params?: unknown }> = [];
 const jsonRpcHandlers = new Map<string, (params?: unknown) => unknown | Promise<unknown>>();
@@ -219,6 +221,7 @@ describe("desktop JSON-RPC event mapping", () => {
   let sessionId = "";
 
   beforeEach(() => {
+    setJsonRpcSocketOverride(MockJsonRpcSocket);
     workspaceId = `ws-${crypto.randomUUID()}`;
     threadId = `thread-${crypto.randomUUID()}`;
     sessionId = `session-${crypto.randomUUID()}`;
@@ -337,6 +340,10 @@ describe("desktop JSON-RPC event mapping", () => {
       developerMode: false,
       showHiddenFiles: false,
     } as any);
+  });
+
+  afterEach(() => {
+    clearJsonRpcSocketOverride();
   });
 
   test("shared JSON-RPC notifications stream assistant output and clear busy state", async () => {

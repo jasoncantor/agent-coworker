@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+import { clearJsonRpcSocketOverride, setJsonRpcSocketOverride } from "./helpers/jsonRpcSocketMock";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -156,6 +158,7 @@ const defaultProviderActions = {
 
 describe("workspace startup flow", () => {
   beforeEach(() => {
+    setJsonRpcSocketOverride(MockJsonRpcSocket);
     startDeferreds.length = 0;
     startCalls.length = 0;
     stopCalls.length = 0;
@@ -207,6 +210,10 @@ describe("workspace startup flow", () => {
       messageBarHeight: 120,
       sidebarWidth: 280,
     });
+  });
+
+  afterEach(() => {
+    clearJsonRpcSocketOverride();
   });
 
   test("addWorkspace persists once before starting the new workspace server", async () => {

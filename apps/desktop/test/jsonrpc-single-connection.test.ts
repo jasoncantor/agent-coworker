@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+import { clearJsonRpcSocketOverride, setJsonRpcSocketOverride } from "./helpers/jsonRpcSocketMock";
 
 const startCalls: Array<{ workspaceId: string; workspacePath: string; yolo: boolean }> = [];
 const savedStates: any[] = [];
@@ -338,6 +340,7 @@ async function flushAsyncWork() {
 
 describe("desktop JSON-RPC single connection path", () => {
   beforeEach(() => {
+    setJsonRpcSocketOverride(MockJsonRpcSocket);
     startCalls.length = 0;
     savedStates.length = 0;
     jsonRpcRequests.length = 0;
@@ -388,6 +391,10 @@ describe("desktop JSON-RPC single connection path", () => {
       showHiddenFiles: false,
       perWorkspaceSettings: false,
     } as any);
+  });
+
+  afterEach(() => {
+    clearJsonRpcSocketOverride();
   });
 
   test("uses one workspace JsonRpcSocket for thread start and turn start", async () => {

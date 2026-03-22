@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+import { clearJsonRpcSocketOverride, setJsonRpcSocketOverride } from "./helpers/jsonRpcSocketMock";
 
 const jsonRpcRequests: Array<{ method: string; params?: unknown }> = [];
 const jsonRpcHandlers = new Map<string, (params?: unknown) => unknown | Promise<unknown>>();
@@ -159,6 +161,7 @@ describe("workspace MCP editor flow", () => {
   let workspaceId = "";
 
   beforeEach(() => {
+    setJsonRpcSocketOverride(MockJsonRpcSocket);
     workspaceId = `ws-${crypto.randomUUID()}`;
     jsonRpcRequests.length = 0;
     jsonRpcHandlers.clear();
@@ -216,6 +219,10 @@ describe("workspace MCP editor flow", () => {
       messageBarHeight: 120,
       sidebarWidth: 280,
     } as any);
+  });
+
+  afterEach(() => {
+    clearJsonRpcSocketOverride();
   });
 
   test("requestWorkspaceMcpServers hydrates runtime from the shared JsonRpcSocket", async () => {

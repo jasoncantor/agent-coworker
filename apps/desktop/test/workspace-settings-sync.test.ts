@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+import { clearJsonRpcSocketOverride, setJsonRpcSocketOverride } from "./helpers/jsonRpcSocketMock";
 
 const jsonRpcRequests: Array<{ method: string; params?: unknown }> = [];
 const jsonRpcResponseOverrides = new Map<string, (params?: unknown) => unknown | Promise<unknown>>();
@@ -445,6 +447,7 @@ describe("workspace settings sync", () => {
   let workspaceId = "";
 
   beforeEach(() => {
+    setJsonRpcSocketOverride(MockJsonRpcSocket);
     workspaceId = `ws-${crypto.randomUUID()}`;
     MockJsonRpcSocket.instances.length = 0;
     jsonRpcRequests.length = 0;
@@ -509,6 +512,10 @@ describe("workspace settings sync", () => {
       messageBarHeight: 120,
       sidebarWidth: 280,
     });
+  });
+
+  afterEach(() => {
+    clearJsonRpcSocketOverride();
   });
 
   test("init normalizes workspace defaultPreferredChildModel fallback", async () => {

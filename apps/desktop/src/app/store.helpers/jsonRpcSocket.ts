@@ -2,6 +2,7 @@ import { JsonRpcSocket } from "../../lib/agentSocket";
 import type { StoreGet, StoreSet } from "../store.helpers";
 import type { ThreadRuntime, WorkspaceRecord } from "../types";
 import { RUNTIME } from "./runtimeState";
+import { JSONRPC_SOCKET_OVERRIDE_KEY } from "./jsonRpcSocketOverride";
 
 type JsonRpcNotification =
   | { kind: "notification"; method: string; params?: any }
@@ -15,8 +16,17 @@ type WorkspaceLifecycleListener = {
 
 const workspaceRouters = new Map<string, Set<WorkspaceNotificationRouter>>();
 const workspaceLifecycleListeners = new Map<string, Set<WorkspaceLifecycleListener>>();
-const JsonRpcSocketImpl = JsonRpcSocket as new (...args: any[]) => any;
 const noopSet: StoreSet = () => {};
+
+type JsonRpcSocketConstructor = new (...args: any[]) => any;
+
+function resolveJsonRpcSocketImpl(): JsonRpcSocketConstructor {
+  const override = (globalThis as Record<string, unknown>)[JSONRPC_SOCKET_OVERRIDE_KEY];
+  if (typeof override === "function") {
+    return override as JsonRpcSocketConstructor;
+  }
+  return JsonRpcSocket as JsonRpcSocketConstructor;
+}
 
 function getWorkspaceById(get: StoreGet, workspaceId: string): WorkspaceRecord | undefined {
   const state = get() as { workspaces?: WorkspaceRecord[] };
@@ -90,6 +100,7 @@ export function ensureWorkspaceJsonRpcSocket(
     return existing;
   }
 
+  const JsonRpcSocketImpl = resolveJsonRpcSocketImpl();
   const socket = new JsonRpcSocketImpl({
     url,
     clientInfo: {
