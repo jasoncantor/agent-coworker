@@ -108,14 +108,7 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
 
     removeWorkspace: async (workspaceId: string) => {
       bumpWorkspaceStartGeneration(workspaceId);
-      const jsonRpcSocket = RUNTIME.jsonRpcSockets.get(workspaceId);
-      RUNTIME.jsonRpcSockets.delete(workspaceId);
-      try {
-        jsonRpcSocket?.close();
-      } catch {
-        // ignore
-      }
-  
+
       for (const thread of get().threads) {
         if (thread.workspaceId !== workspaceId) continue;
         closeThreadSession(thread.id);
@@ -126,7 +119,15 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
         RUNTIME.modelStreamByThread.delete(thread.id);
         clearPendingThreadSteers(thread.id);
       }
-  
+
+      const jsonRpcSocket = RUNTIME.jsonRpcSockets.get(workspaceId);
+      RUNTIME.jsonRpcSockets.delete(workspaceId);
+      try {
+        jsonRpcSocket?.close();
+      } catch {
+        // ignore
+      }
+
       try {
         await stopWorkspaceServer({ workspaceId });
       } catch {
@@ -192,6 +193,14 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
 
     restartWorkspaceServer: async (workspaceId) => {
       bumpWorkspaceStartGeneration(workspaceId);
+
+      for (const thread of get().threads) {
+        if (thread.workspaceId !== workspaceId) continue;
+        closeThreadSession(thread.id);
+        RUNTIME.threadSelectionRequests.delete(thread.id);
+        RUNTIME.pendingWorkspaceDefaultApplyByThread.delete(thread.id);
+      }
+
       const jsonRpcSocket = RUNTIME.jsonRpcSockets.get(workspaceId);
       try {
         jsonRpcSocket?.close();
@@ -200,13 +209,6 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
       }
       RUNTIME.jsonRpcSockets.delete(workspaceId);
 
-      for (const thread of get().threads) {
-        if (thread.workspaceId !== workspaceId) continue;
-        closeThreadSession(thread.id);
-        RUNTIME.threadSelectionRequests.delete(thread.id);
-        RUNTIME.pendingWorkspaceDefaultApplyByThread.delete(thread.id);
-      }
-  
       try {
         await stopWorkspaceServer({ workspaceId });
       } catch {

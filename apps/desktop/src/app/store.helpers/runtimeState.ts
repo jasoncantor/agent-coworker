@@ -50,6 +50,8 @@ export type RuntimeMaps = {
   modelStreamByThread: Map<string, ThreadModelStreamRuntime>;
   sessionSnapshots: Map<string, CachedSessionSnapshot>;
   workspacePickerOpen: boolean;
+  /** Monotonic counter so overlapping provider status refreshes do not clear `providerStatusRefreshing` early. */
+  providerStatusRefreshGeneration: number;
 };
 
 export const RUNTIME: RuntimeMaps = {
@@ -66,6 +68,7 @@ export const RUNTIME: RuntimeMaps = {
   modelStreamByThread: new Map(),
   sessionSnapshots: new Map(),
   workspacePickerOpen: false,
+  providerStatusRefreshGeneration: 0,
 };
 
 export function getModelStreamRuntime(threadId: string): ThreadModelStreamRuntime {

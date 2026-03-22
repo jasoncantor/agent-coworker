@@ -60,6 +60,7 @@ export async function refreshProviderStatusForWorkspace(
   workspaceId: string,
   path: string | undefined,
 ): Promise<void> {
+  const refreshGeneration = ++RUNTIME.providerStatusRefreshGeneration;
   deps.set({ providerStatusRefreshing: true });
   const results = await Promise.allSettled([
     deps.requestJsonRpcControlEvent(deps.get, deps.set, workspaceId, "cowork/provider/status/refresh", { cwd: path }),
@@ -68,7 +69,7 @@ export async function refreshProviderStatusForWorkspace(
   ]);
   const allSucceeded = results.every((result) => result.status === "fulfilled" && result.value);
   deps.set((s) => ({
-    providerStatusRefreshing: false,
+    ...(refreshGeneration === RUNTIME.providerStatusRefreshGeneration ? { providerStatusRefreshing: false } : {}),
     ...(!allSucceeded
       ? {
           notifications: deps.pushNotification(s.notifications, {

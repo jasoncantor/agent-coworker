@@ -251,4 +251,43 @@ describe("server JSON-RPC websocket mode", () => {
       server.stop();
     }
   });
+
+  test("JSON-RPC returns internal error when a handler throws before sending a response", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const ws = new WebSocket(`${url}?protocol=jsonrpc`);
+      await waitForOpen(ws);
+      ws.send(JSON.stringify({
+        id: 1,
+        method: "initialize",
+        params: {
+          clientInfo: {
+            name: "test-client",
+          },
+        },
+      }));
+      await waitForSingleMessage(ws);
+      ws.send(JSON.stringify({ method: "initialized" }));
+      await expectNoMessage(ws);
+
+      ws.send(JSON.stringify({
+        id: 2,
+        method: "cowork/provider/status/refresh",
+        params: {},
+      }));
+      const errorResponse = await waitForSingleMessage(ws);
+      expect(errorResponse).toEqual({
+        id: 2,
+        error: {
+          code: -32603,
+          message: "cowork/provider/status/refresh requires cwd",
+        },
+      });
+      ws.close();
+    } finally {
+      server.stop();
+    }
+  });
 });

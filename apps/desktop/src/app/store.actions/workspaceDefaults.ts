@@ -332,6 +332,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         RUNTIME.pendingWorkspaceDefaultApplyByThread.set(threadId, {
           mode,
           draftModelSelection: effectiveDraftModelSelection,
+          ...(allowBeforeHydration ? { allowBeforeHydration: true } : {}),
           inFlight: false,
         });
         return;

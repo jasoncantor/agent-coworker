@@ -269,6 +269,7 @@ mock.module("../src/lib/agentSocket", () => ({
 
 const { useAppStore } = await import("../src/app/store");
 const { RUNTIME, requestJsonRpcControlEvent } = await import("../src/app/store.helpers");
+const { ensureWorkspaceJsonRpcSocket } = await import("../src/app/store.helpers/jsonRpcSocket");
 
 function requestsFor(method: string) {
   return jsonRpcRequests.filter((entry) => entry.method === method);
@@ -461,6 +462,7 @@ describe("workspace settings sync", () => {
     RUNTIME.workspaceStartPromises.clear();
     RUNTIME.workspaceStartGenerations.clear();
     RUNTIME.modelStreamByThread.clear();
+    RUNTIME.providerStatusRefreshGeneration = 0;
 
     useAppStore.setState({
       ready: true,
@@ -481,6 +483,7 @@ describe("workspace settings sync", () => {
           defaultToolOutputOverflowChars: 25000,
           defaultEnableMcp: true,
           defaultBackupsEnabled: true,
+          wsProtocol: "jsonrpc",
           yolo: false,
         },
       ],
@@ -1168,6 +1171,51 @@ describe("workspace settings sync", () => {
         },
       },
     });
+  });
+
+  test("applyWorkspaceDefaultsToThread preserves allowBeforeHydration when deferring for a busy thread", async () => {
+    primeWorkspaceConnection();
+    const { threadId } = seedConnectedThread();
+    useAppStore.setState((state) => ({
+      ...state,
+      threadRuntimeById: {
+        ...state.threadRuntimeById,
+        [threadId]: {
+          ...state.threadRuntimeById[threadId],
+          sessionConfig: null,
+          enableMcp: null,
+          busy: true,
+        },
+      },
+    }));
+    jsonRpcRequests.length = 0;
+
+    await useAppStore.getState().applyWorkspaceDefaultsToThread(threadId, "auto", null, { allowBeforeHydration: true });
+
+    expect(RUNTIME.pendingWorkspaceDefaultApplyByThread.get(threadId)?.allowBeforeHydration).toBe(true);
+    expect(requestsFor("cowork/session/defaults/apply")).toHaveLength(0);
+  });
+
+  test("removeWorkspace reuses the shared JsonRpcSocket for thread/unsubscribe before closing it", async () => {
+    primeWorkspaceConnection();
+    ensureWorkspaceJsonRpcSocket(useAppStore.getState, useAppStore.setState, workspaceId);
+    const { threadId, sessionId } = seedConnectedThread();
+    jsonRpcRequests.length = 0;
+    const socketsBefore = MockJsonRpcSocket.instances.length;
+    expect(socketsBefore).toBeGreaterThan(0);
+
+    await useAppStore.getState().removeWorkspace(workspaceId);
+    await flushAsyncWork();
+
+    expect(MockJsonRpcSocket.instances.length).toBe(socketsBefore);
+    expect(requestsFor("thread/unsubscribe")).toEqual([
+      expect.objectContaining({
+        method: "thread/unsubscribe",
+        params: { threadId: sessionId },
+      }),
+    ]);
+    expect(useAppStore.getState().workspaces.some((w) => w.id === workspaceId)).toBe(false);
+    expect(useAppStore.getState().threads.some((t) => t.id === threadId)).toBe(false);
   });
 
   test("applyWorkspaceDefaultsToThread defers auto apply until session settings hydrate", async () => {

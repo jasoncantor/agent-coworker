@@ -151,6 +151,7 @@ describe("control socket helpers over JSON-RPC", () => {
     RUNTIME.jsonRpcSockets.clear();
     RUNTIME.skillInstallWaiters.clear();
     RUNTIME.sessionSnapshots.clear();
+    RUNTIME.providerStatusRefreshGeneration = 0;
     persistCalls = 0;
   });
 
@@ -443,6 +444,79 @@ describe("control socket helpers over JSON-RPC", () => {
       "cowork/provider/status/refresh",
       "cowork/provider/catalog/read",
     ]);
+  });
+
+  test("stale provider auth refresh completion does not clear loading after a newer manual refresh finishes", async () => {
+    const workspaceId = "ws-provider-auth-refresh-gen";
+    const { state, get, set } = createState(workspaceId);
+    let statusRefreshInvocation = 0;
+    let releaseFirstRefresh: (() => void) | null = null;
+    const firstRefreshBarrier = new Promise<void>((resolve) => {
+      releaseFirstRefresh = resolve;
+    });
+
+    installFakeSocket(workspaceId, async (method) => {
+      if (method === "cowork/provider/auth/setApiKey") {
+        return {
+          event: {
+            type: "provider_auth_result",
+            sessionId: "jsonrpc-control",
+            provider: "openai",
+            methodId: "api_key",
+            ok: true,
+            mode: "api_key",
+            message: "saved",
+          },
+        };
+      }
+      if (method === "cowork/provider/status/refresh") {
+        statusRefreshInvocation += 1;
+        if (statusRefreshInvocation === 1) {
+          await firstRefreshBarrier;
+        }
+        return {};
+      }
+      if (method === "cowork/provider/catalog/read" || method === "cowork/provider/authMethods/read") {
+        return {};
+      }
+      throw new Error(`unexpected method: ${method}`);
+    });
+
+    const helpers = createControlSocketHelpers(deps);
+    void helpers.requestJsonRpcControlEvent(
+      get as any,
+      set as any,
+      workspaceId,
+      "cowork/provider/auth/setApiKey",
+      {
+        cwd: "/tmp/workspace",
+        provider: "openai",
+        methodId: "api_key",
+        apiKey: "sk-test",
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state.providerStatusRefreshing).toBe(true);
+
+    const { refreshProviderStatusForWorkspace } = await import("../src/app/store.actions/provider");
+    await refreshProviderStatusForWorkspace(
+      {
+        get: get as any,
+        set: set as any,
+        makeId: () => "note-2",
+        nowIso: () => "2026-03-21T00:00:01.000Z",
+        pushNotification: (notifications: any[], entry: any) => [...notifications, entry],
+        requestJsonRpcControlEvent: ((...args: any[]) =>
+          helpers.requestJsonRpcControlEvent(args[0], args[1], args[2], args[3], args[4])) as any,
+      },
+      workspaceId,
+      "/tmp/workspace",
+    );
+    expect(state.providerStatusRefreshing).toBe(false);
+
+    releaseFirstRefresh?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state.providerStatusRefreshing).toBe(false);
   });
 
   test("provider auth refresh clears loading when the follow-up refresh succeeds without event envelopes", async () => {

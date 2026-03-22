@@ -834,12 +834,15 @@ export function createControlSocketHelpers(
       }
 
       const cwd = get().workspaces.find((workspace) => workspace.id === workspaceId)?.path;
+      const refreshGeneration = ++RUNTIME.providerStatusRefreshGeneration;
       set(() => ({ providerStatusRefreshing: true }));
       void Promise.allSettled([
         requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/status/refresh", { cwd }),
         requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/catalog/read", { cwd }),
       ]).then(() => {
-        set(() => ({ providerStatusRefreshing: false }));
+        if (refreshGeneration === RUNTIME.providerStatusRefreshGeneration) {
+          set(() => ({ providerStatusRefreshing: false }));
+        }
       });
       return;
     }

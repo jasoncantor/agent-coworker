@@ -2268,11 +2268,27 @@ export async function startAgentServer(
                 if (ws.data.rpc) {
                   ws.data.rpc.pendingRequestCount += 1;
                 }
-                void routeJsonRpcRequest(ws, message).finally(() => {
-                  if (ws.data.rpc) {
-                    ws.data.rpc.pendingRequestCount = Math.max(0, ws.data.rpc.pendingRequestCount - 1);
-                  }
-                });
+                void routeJsonRpcRequest(ws, message)
+                  .catch((reason) => {
+                    const id = "id" in message ? message.id : undefined;
+                    if (id === undefined || id === null) {
+                      return;
+                    }
+                    const detail = reason instanceof Error
+                      ? reason.message
+                      : typeof reason === "string"
+                        ? reason
+                        : "Internal error";
+                    sendJsonRpc(ws, buildJsonRpcErrorResponse(id, {
+                      code: JSONRPC_ERROR_CODES.internalError,
+                      message: detail,
+                    }));
+                  })
+                  .finally(() => {
+                    if (ws.data.rpc) {
+                      ws.data.rpc.pendingRequestCount = Math.max(0, ws.data.rpc.pendingRequestCount - 1);
+                    }
+                  });
               },
               onResponse: (message) => {
                 routeJsonRpcResponse(ws, message);
