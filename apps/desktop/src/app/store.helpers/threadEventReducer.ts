@@ -333,16 +333,14 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
           { id: streamId, mode },
         ));
         const initialText = String(params.item?.text ?? "");
-        if (initialText) {
-          handleThreadEvent(get, set, mappedThreadId, buildJsonRpcModelStreamChunk(
-            get,
-            mappedThreadId,
-            mappedSessionId,
-            turnId,
-            "reasoning_delta",
-            { id: streamId, mode, text: initialText },
-          ));
-        }
+        handleThreadEvent(get, set, mappedThreadId, buildJsonRpcModelStreamChunk(
+          get,
+          mappedThreadId,
+          mappedSessionId,
+          turnId,
+          "reasoning_delta",
+          { id: streamId, mode, text: initialText },
+        ));
         return;
       }
 
