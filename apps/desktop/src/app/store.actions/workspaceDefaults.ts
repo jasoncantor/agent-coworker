@@ -277,11 +277,11 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
       return false;
     }
 
-    const ok = sendUserMessageToThread(get, set, threadId, next);
-    if (!ok) {
+    const accepted = sendUserMessageToThread(get, set, threadId, next);
+    if (!accepted) {
       prependPendingThreadMessage(threadId, next);
     }
-    return ok;
+    return accepted;
   };
 
   return {

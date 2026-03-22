@@ -685,6 +685,39 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     return false;
   }
 
+  function dispatchJsonRpcTurnStart(
+    get: StoreGet,
+    set: StoreSet,
+    workspaceId: string,
+    sessionId: string,
+    text: string,
+    threadId: string,
+    clientMessageId: string,
+  ) {
+    void startJsonRpcTurn(get, set, workspaceId, sessionId, text, clientMessageId)
+      .catch(() => {
+        surfaceJsonRpcTurnSendFailure(set, threadId);
+      });
+  }
+
+  function dispatchJsonRpcTurnSteer(
+    get: StoreGet,
+    set: StoreSet,
+    workspaceId: string,
+    sessionId: string,
+    turnId: string,
+    text: string,
+    threadId: string,
+    clientMessageId: string,
+  ) {
+    void steerJsonRpcTurn(get, set, workspaceId, sessionId, turnId, text, clientMessageId)
+      .catch(() => {
+        surfaceJsonRpcTurnSendFailure(set, threadId, { clientMessageId });
+      });
+  }
+
+  // `true` means the reducer accepted the message locally; JSON-RPC failures
+  // still surface asynchronously through the existing protocol-error path.
   function sendUserMessageToThread(
     get: StoreGet,
     set: StoreSet,
@@ -747,11 +780,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
           clientMessageId,
         });
 
-        void steerJsonRpcTurn(get, set, workspaceId, rt.sessionId, rt.activeTurnId, trimmed, clientMessageId)
-          .catch(() => {
-            surfaceJsonRpcTurnSendFailure(set, threadId, { clientMessageId });
-          });
-
+        dispatchJsonRpcTurnSteer(get, set, workspaceId, rt.sessionId, rt.activeTurnId, trimmed, threadId, clientMessageId);
         return true;
       }
 
@@ -778,11 +807,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
       clientMessageId,
     });
 
-    void startJsonRpcTurn(get, set, workspaceId, rt.sessionId, trimmed, clientMessageId)
-      .catch(() => {
-        surfaceJsonRpcTurnSendFailure(set, threadId);
-      });
-
+    dispatchJsonRpcTurnStart(get, set, workspaceId, rt.sessionId, trimmed, threadId, clientMessageId);
     return true;
   }
 
@@ -792,11 +817,11 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     }
     const next = shiftPendingThreadMessage(threadId);
     if (!next) return false;
-    const ok = sendUserMessageToThread(get, set, threadId, next);
-    if (!ok) {
+    const accepted = sendUserMessageToThread(get, set, threadId, next);
+    if (!accepted) {
       prependPendingThreadMessage(threadId, next);
     }
-    return ok;
+    return accepted;
   }
 
   function flushOneQueuedThreadMessageIfReady(get: StoreGet, set: StoreSet, threadId: string) {
@@ -1029,7 +1054,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
         draftModelSelection,
         { allowBeforeHydration: !evt.isResume },
       );
-      let sentPendingFirstMessage = false;
+      let acceptedPendingFirstMessage = false;
       if (pendingFirstMessage && pendingFirstMessage.trim()) {
         if (resumedBusy) {
           if (!pendingFirstMessageQueued) {
@@ -1040,13 +1065,13 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
             prependPendingThreadMessage(threadId, pendingFirstMessage);
           }
         } else {
-          sentPendingFirstMessage = pendingFirstMessageQueued
+          acceptedPendingFirstMessage = pendingFirstMessageQueued
             ? flushOneQueuedThreadMessageIfReady(get, set, threadId)
             : sendUserMessageToThread(get, set, threadId, pendingFirstMessage);
         }
       }
 
-      if (!resumedBusy && !sentPendingFirstMessage) {
+      if (!resumedBusy && !acceptedPendingFirstMessage) {
         flushOneQueuedThreadMessageIfReady(get, set, threadId);
       }
       return;

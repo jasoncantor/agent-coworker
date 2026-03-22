@@ -693,8 +693,8 @@ export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStore
         return;
       }
   
-      const ok = sendUserMessageToThread(get, set, activeThreadId, trimmed, busyPolicy);
-      if (!ok) return;
+      const accepted = sendUserMessageToThread(get, set, activeThreadId, trimmed, busyPolicy);
+      if (!accepted) return;
       if (busyPolicy === "steer" && rt?.busy) return;
 
       set({ composerText: "" });
