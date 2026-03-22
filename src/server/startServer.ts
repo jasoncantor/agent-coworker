@@ -463,8 +463,32 @@ export async function startAgentServer(
           }
           removeBindingSink(binding, sinkId);
           reject(error instanceof Error ? error : new Error(String(error)));
-        });
+      });
     });
+  };
+
+  type JsonRpcTurnStartOutcome =
+    | Extract<ServerEvent, { type: "session_busy" }>
+    | Extract<ServerEvent, { type: "error" }>;
+  type JsonRpcTurnSteerOutcome =
+    | Extract<ServerEvent, { type: "steer_accepted" }>
+    | Extract<ServerEvent, { type: "error" }>;
+
+  const isJsonRpcSessionError = (
+    event: ServerEvent,
+  ): event is Extract<ServerEvent, { type: "error" }> => (
+    event.type === "error" && event.source === "session"
+  );
+
+  const sendJsonRpcSessionMutationError = (
+    ws: Bun.ServerWebSocket<StartServerSocketData>,
+    id: string | number | null,
+    event: Extract<ServerEvent, { type: "error" }>,
+  ) => {
+    sendJsonRpc(ws, buildJsonRpcErrorResponse(id, {
+      code: JSONRPC_ERROR_CODES.invalidRequest,
+      message: event.message,
+    }));
   };
 
   const shouldIncludeJsonRpcThreadSummary = (summary: {
@@ -1486,12 +1510,27 @@ export async function startAgentServer(
           }));
           return;
         }
-        void binding.session.sendUserMessage(text, clientMessageId);
+        const outcome = await captureSessionEvent(
+          binding,
+          () => binding.session!.sendUserMessage(text, clientMessageId),
+          (event): event is JsonRpcTurnStartOutcome => (
+            (event.type === "session_busy"
+              && event.sessionId === binding.session!.id
+              && event.busy === true
+              && typeof event.turnId === "string"
+              && event.turnId.trim().length > 0)
+            || isJsonRpcSessionError(event)
+          ),
+        );
+        if (outcome.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, outcome);
+          return;
+        }
         sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {
           turn: {
-            id: binding.session.activeTurnId,
+            id: outcome.turnId,
             threadId,
-            status: binding.session.isBusy ? "inProgress" : "completed",
+            status: "inProgress",
             items: [],
           },
         }));
@@ -1515,9 +1554,30 @@ export async function startAgentServer(
           }));
           return;
         }
-        void session.sendSteerMessage(text, expectedTurnId, clientMessageId);
+        const binding = sessionBindings.get(threadId);
+        if (!binding) {
+          sendJsonRpc(ws, buildJsonRpcErrorResponse(message.id, {
+            code: JSONRPC_ERROR_CODES.invalidParams,
+            message: `Unknown thread: ${threadId}`,
+          }));
+          return;
+        }
+        const outcome = await captureSessionEvent(
+          binding,
+          () => session.sendSteerMessage(text, expectedTurnId, clientMessageId),
+          (event): event is JsonRpcTurnSteerOutcome => (
+            (event.type === "steer_accepted"
+              && event.sessionId === session.id
+              && event.turnId === expectedTurnId)
+            || isJsonRpcSessionError(event)
+          ),
+        );
+        if (outcome.type === "error") {
+          sendJsonRpcSessionMutationError(ws, message.id, outcome);
+          return;
+        }
         sendJsonRpc(ws, buildJsonRpcResultResponse(message.id, {
-          turnId: expectedTurnId,
+          turnId: outcome.turnId,
         }));
         return;
       }

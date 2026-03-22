@@ -211,6 +211,8 @@ describe("server JSON-RPC flows", () => {
         input: [{ type: "text", text: "hello there" }],
       });
       expect(turnResponse.result.turn.threadId).toBe(started.result.thread.id);
+      expect(turnResponse.result.turn.id).toBeTruthy();
+      expect(turnResponse.result.turn.status).toBe("inProgress");
 
       const turnStarted = await rpc.waitFor((message) => message.method === "turn/started");
       const userItemStarted = await rpc.waitFor((message) =>
@@ -223,11 +225,134 @@ describe("server JSON-RPC flows", () => {
       const turnCompleted = await rpc.waitFor((message) => message.method === "turn/completed");
 
       expect(turnStarted.params.threadId).toBe(started.result.thread.id);
+      expect(turnStarted.params.turn.id).toBe(turnResponse.result.turn.id);
       expect(userItemStarted.params.item.content[0].text).toBe("hello there");
       expect(userItemStarted.params.item.clientMessageId).toBe("msg-1");
       expect(agentDelta.params.delta).toBe("streamed reply");
       expect(agentCompleted.params.item.text).toBe("streamed reply");
       expect(turnCompleted.params.turn.status).toBe("completed");
+      rpc.close();
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("turn/start rejects at the request layer when the thread is already running", async () => {
+    const tmpDir = await makeTmpProject();
+    const releaseTurn = Promise.withResolvers<void>();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async () => {
+        await releaseTurn.promise;
+        return {
+          text: "done",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const firstTurn = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "first turn" }],
+      });
+      expect(firstTurn.result.turn.status).toBe("inProgress");
+
+      const secondTurn = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "second turn" }],
+      });
+      expect(secondTurn.error?.message).toBe("Agent is busy");
+      expect(secondTurn.result).toBeUndefined();
+
+      releaseTurn.resolve();
+      await rpc.waitFor((message) => message.method === "turn/completed");
+      rpc.close();
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("turn/steer returns the accepted turn id once steering is actually accepted", async () => {
+    const tmpDir = await makeTmpProject();
+    const releaseTurn = Promise.withResolvers<void>();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async () => {
+        await releaseTurn.promise;
+        return {
+          text: "done",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const turnStart = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "start turn" }],
+      });
+      const turnId = turnStart.result.turn.id;
+
+      const steerResponse = await rpc.sendRequest("turn/steer", {
+        threadId: started.result.thread.id,
+        turnId,
+        input: [{ type: "text", text: "keep going" }],
+        clientMessageId: "steer-1",
+      });
+      expect(steerResponse.result.turnId).toBe(turnId);
+
+      const steerAccepted = await rpc.waitFor((message) => message.method === "cowork/session/steerAccepted");
+      expect(steerAccepted.params.turnId).toBe(turnId);
+      expect(steerAccepted.params.clientMessageId).toBe("steer-1");
+
+      releaseTurn.resolve();
+      await rpc.waitFor((message) => message.method === "turn/completed");
+      rpc.close();
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("turn/steer rejects at the request layer when the requested turn is no longer active", async () => {
+    const tmpDir = await makeTmpProject();
+    const releaseTurn = Promise.withResolvers<void>();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async () => {
+        await releaseTurn.promise;
+        return {
+          text: "done",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "start turn" }],
+      });
+
+      const steerResponse = await rpc.sendRequest("turn/steer", {
+        threadId: started.result.thread.id,
+        turnId: "turn-stale",
+        input: [{ type: "text", text: "wrong turn" }],
+      });
+      expect(steerResponse.error?.message).toBe("Active turn mismatch.");
+      expect(steerResponse.result).toBeUndefined();
+
+      releaseTurn.resolve();
+      await rpc.waitFor((message) => message.method === "turn/completed");
       rpc.close();
     } finally {
       await server.stop();

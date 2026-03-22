@@ -113,3 +113,15 @@
 - `apps/desktop/src/app/store.helpers/controlSocket.ts` now puts bootstrap refreshes on the same `providerStatusRefreshGeneration` contract as manual and auth-triggered refreshes, and it no longer lets `provider_status` or generic control error events clear `providerStatusRefreshing` outside that generation-aware completion path.
 - `apps/desktop/test/control-socket.test.ts` now covers both races: an older `provider_status` event arriving while a newer manual refresh is still running, and bootstrap completion arriving after a newer manual refresh has already taken ownership of the spinner.
 - Verification passed with `bun test --cwd apps/desktop test/control-socket.test.ts test/provider-actions.test.ts` and `bun run typecheck`.
+
+## Turn Request Review Fixes
+
+- [x] Make JSON-RPC `turn/start` wait for real session acceptance or rejection before replying.
+- [x] Make JSON-RPC `turn/steer` wait for `steer_accepted` or a session error before replying.
+- [x] Add server-flow regressions for accepted `turn/start`, busy `turn/start`, accepted `turn/steer`, and rejected `turn/steer`, then rerun the affected desktop/server slices plus `bun run typecheck`.
+
+## Turn Request Review Fixes Review
+
+- `src/server/startServer.ts` now routes JSON-RPC `turn/start` and `turn/steer` through the existing session-event capture helper so request responses reflect the first real session outcome instead of fire-and-forget guesses. `turn/start` only returns success after `session_busy: true` yields a concrete `turnId`, and `turn/steer` only returns success after `steer_accepted`; session-level rejections now become JSON-RPC errors.
+- `test/server.jsonrpc.flow.test.ts` now asserts that accepted `turn/start` responses already carry the concrete `turn.id` with `inProgress` status, and it adds request-level regressions for busy `turn/start`, accepted `turn/steer`, and stale-turn `turn/steer`.
+- Verification passed with `bun test test/server.jsonrpc.flow.test.ts`, `bun test --cwd apps/desktop test/jsonrpc-single-connection.test.ts`, and `bun run typecheck`.
