@@ -964,6 +964,7 @@ export async function startAgentServer(
 
   const buildJsonRpcThreadFromSession = (session: AgentSession) => {
     const info = session.getSessionInfoEvent();
+    const snapshot = session.buildSessionSnapshot();
     return {
       id: session.id,
       title: info.title,
@@ -973,6 +974,8 @@ export async function startAgentServer(
       cwd: session.getWorkingDirectory(),
       createdAt: info.createdAt,
       updatedAt: info.updatedAt,
+      messageCount: snapshot.messageCount,
+      lastEventSeq: snapshot.lastEventSeq,
       status: {
         type: session.isBusy ? "running" : "loaded",
       },
@@ -988,6 +991,8 @@ export async function startAgentServer(
     cwd: record.workingDirectory,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+    messageCount: record.messageCount,
+    lastEventSeq: record.lastEventSeq,
     status: {
       type: "notLoaded",
     },
@@ -1033,7 +1038,14 @@ export async function startAgentServer(
     return binding;
   };
 
-  const subscribeJsonRpcThread = (ws: Bun.ServerWebSocket<StartServerSocketData>, threadId: string): SessionBinding | null => {
+  const subscribeJsonRpcThread = (
+    ws: Bun.ServerWebSocket<StartServerSocketData>,
+    threadId: string,
+    opts?: {
+      initialActiveTurnId?: string | null;
+      initialAgentText?: string | null;
+    },
+  ): SessionBinding | null => {
     const connectionId = ws.data.connectionId;
     if (!connectionId) {
       return null;
@@ -1055,6 +1067,12 @@ export async function startAgentServer(
       threadId,
       send: (message) => sendJsonRpc(ws, message),
       shouldSendNotification: (method) => shouldSendJsonRpcNotification(ws, method),
+      ...(opts?.initialActiveTurnId
+        ? {
+            initialActiveTurnId: opts.initialActiveTurnId,
+            initialAgentText: opts.initialAgentText ?? "",
+          }
+        : {}),
       onServerRequest: (request) => {
         ws.data.rpc?.pendingServerRequests.set(request.id, {
           threadId: request.threadId,
@@ -1341,8 +1359,13 @@ export async function startAgentServer(
         sendJsonRpc(ws, { method: "thread/started", params: { thread } });
         if (afterSeq > 0) {
           await waitForThreadJournalIdle(threadId);
+          binding.session.ensureDisconnectedReplayBuffer();
           replayThreadJournalEvents(ws, threadId, afterSeq);
         }
+        subscribeJsonRpcThread(ws, threadId, afterSeq > 0 ? {
+          initialActiveTurnId: binding.session.activeTurnId,
+          initialAgentText: binding.session.getLatestAssistantText() ?? "",
+        } : undefined);
         return;
       }
       case "thread/list": {

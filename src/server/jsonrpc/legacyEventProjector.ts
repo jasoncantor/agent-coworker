@@ -8,6 +8,8 @@ type CreateJsonRpcLegacyEventProjectorOptions = {
   threadId: string;
   send: (message: JsonRpcOutboundMessage) => void;
   shouldSendNotification?: (method: string) => boolean;
+  initialActiveTurnId?: string | null;
+  initialAgentText?: string | null;
   onServerRequest?: (request: {
     id: string;
     threadId: string;
@@ -22,12 +24,16 @@ function makeItemId(prefix: string, seed: string): string {
 }
 
 export function createJsonRpcLegacyEventProjector(opts: CreateJsonRpcLegacyEventProjectorOptions) {
-  let activeTurnId: string | null = null;
+  let activeTurnId: string | null = opts.initialActiveTurnId ?? null;
   let lastUserMessageText: string | null = null;
   let lastUserMessageClientMessageId: string | null = null;
   const userItemIdByTurn = new Map<string, string>();
   const agentItemIdByTurn = new Map<string, string>();
   const agentTextByTurn = new Map<string, string>();
+  if (activeTurnId) {
+    agentItemIdByTurn.set(activeTurnId, makeItemId("agentMessage", activeTurnId));
+    agentTextByTurn.set(activeTurnId, opts.initialAgentText ?? "");
+  }
 
   const shouldSendNotification = (method: string) => opts.shouldSendNotification?.(method) ?? true;
   const sendNotification = (method: string, params?: unknown) => {

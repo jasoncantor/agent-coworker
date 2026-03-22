@@ -533,8 +533,8 @@ export function createControlSocketHelpers(
         model: thread.model,
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
-        messageCount: existingThread?.messageCount ?? 0,
-        lastEventSeq: existingThread?.lastEventSeq ?? 0,
+        messageCount: thread.messageCount ?? existingThread?.messageCount ?? 0,
+        lastEventSeq: thread.lastEventSeq ?? existingThread?.lastEventSeq ?? 0,
         hasPendingAsk: false,
         hasPendingApproval: false,
       };

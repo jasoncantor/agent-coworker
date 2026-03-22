@@ -13,8 +13,8 @@ The Electron desktop app now uses the JSON-RPC mode exclusively for live workspa
 
 - URL: `ws://127.0.0.1:{port}/ws`
 - Session resume: `?resumeSessionId=<sessionId>`
-- Current protocol version: `7.28`
-- Legacy protocol version: `7.28`
+- Current protocol version: `7.29`
+- Legacy protocol version: `7.29`
 - Default WebSocket protocol mode: `legacy` unless overridden by `COWORK_WS_DEFAULT_PROTOCOL` or `--ws-protocol-default`
 
 ## Protocol negotiation
@@ -216,8 +216,9 @@ The desktop JSON-RPC path now uses this namespace so one workspace connection ca
 
 ### JSON-RPC replay and read model
 
+- `thread/list` now returns `messageCount` and `lastEventSeq` on every thread summary
 - `thread/read` can return a journal-projected `turns` array when `includeTurns: true`
-- `thread/resume` accepts `afterSeq` to replay journaled notifications after a known cursor
+- `thread/resume` accepts `afterSeq` to replay journaled notifications after a known cursor, then reattaches the live thread sink so reconnecting clients do not receive the same journaled events twice
 - Cowork persists canonical thread journal events in sqlite so reconnect / restart replay is no longer limited to an in-memory socket buffer
 
 ### JSON-RPC overload behavior
@@ -280,6 +281,11 @@ Changes in `7.28`:
 - New client message: `apply_session_defaults`.
 - Clients can now apply provider/model, editable session defaults, and MCP enablement in one composite write instead of replaying `set_model`, `set_config`, and `set_enable_mcp` separately.
 - The harness now serializes session-db bootstrap and write mutations across processes so desktop and CLI instances can safely share the same per-user SQLite database.
+
+Changes in `7.29`:
+
+- `thread/list`, `thread/start`, `thread/resume`, and `thread/read` thread payloads now include `messageCount` and `lastEventSeq` directly on the wire.
+- Desktop clients should treat the thread list payload as authoritative for list badges and counters instead of backfilling from renderer cache.
 
 Changes in `7.27`:
 

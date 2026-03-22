@@ -421,6 +421,8 @@ export const jsonRpcNotificationSchemas = {
       cwd: z.string(),
       createdAt: z.string(),
       updatedAt: z.string(),
+      messageCount: z.number().int().nonnegative(),
+      lastEventSeq: z.number().int().nonnegative(),
       status: z.object({
         type: z.string(),
       }).strict(),

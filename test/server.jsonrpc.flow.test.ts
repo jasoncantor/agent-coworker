@@ -130,6 +130,54 @@ describe("server JSON-RPC flows", () => {
     }
   });
 
+  test("thread/list includes wire counts for live and persisted threads", async () => {
+    const tmpDir = await makeTmpProject();
+    let threadId = "";
+    const liveServer = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async () => ({
+        text: "streamed reply",
+        responseMessages: [],
+      })) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(liveServer.url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      threadId = started.result.thread.id as string;
+
+      await rpc.sendRequest("turn/start", {
+        threadId,
+        clientMessageId: "msg-1",
+        input: [{ type: "text", text: "hello there" }],
+      });
+      await rpc.waitFor((message) => message.method === "turn/completed");
+
+      const liveListed = await rpc.sendRequest("thread/list", { cwd: tmpDir });
+      const liveThread = liveListed.result.threads.find((thread: any) => thread.id === threadId);
+      expect(liveThread).toBeDefined();
+      expect(liveThread.messageCount).toBeGreaterThan(0);
+      expect(liveThread.lastEventSeq).toBeGreaterThan(0);
+
+      rpc.close();
+    } finally {
+      liveServer.server.stop();
+    }
+
+    const persistedServer = await startAgentServer(serverOpts(tmpDir));
+    try {
+      const rpc = await connectJsonRpc(persistedServer.url);
+      const persistedListed = await rpc.sendRequest("thread/list", { cwd: tmpDir });
+      const persistedThread = persistedListed.result.threads.find((thread: any) => thread.id === threadId);
+      expect(persistedThread).toBeDefined();
+      expect(persistedThread.status.type).toBe("notLoaded");
+      expect(persistedThread.messageCount).toBeGreaterThan(0);
+      expect(persistedThread.lastEventSeq).toBeGreaterThan(0);
+      rpc.close();
+    } finally {
+      persistedServer.server.stop();
+    }
+  });
+
   test("turn/start streams turn and item notifications", async () => {
     const tmpDir = await makeTmpProject();
     const { server, url } = await startAgentServer(serverOpts(tmpDir, {
@@ -337,6 +385,74 @@ describe("server JSON-RPC flows", () => {
       replayRpc.close();
       rpc.close();
     } finally {
+      server.stop();
+    }
+  });
+
+  test("thread/resume replays a journal cursor once before reattaching the live thread sink", async () => {
+    const tmpDir = await makeTmpProject();
+    let releaseSecondChunk: (() => void) | undefined;
+    const runTurnImpl = async (params: any) => {
+      await params.onModelStreamPart?.({ type: "start" });
+      await params.onModelStreamPart?.({ type: "text-delta", id: "txt_resume", text: "before disconnect" });
+      await new Promise<void>((resolve) => {
+        releaseSecondChunk = resolve;
+      });
+      await params.onModelStreamPart?.({ type: "text-delta", id: "txt_resume", text: "after disconnect" });
+      await params.onModelStreamPart?.({ type: "finish", finishReason: "stop" });
+      return {
+        text: "after disconnect",
+        responseMessages: [],
+      };
+    };
+
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: runTurnImpl as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+      const beforeTurnRead = await rpc.sendRequest("thread/read", {
+        threadId: started.result.thread.id,
+        includeTurns: true,
+      });
+      await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "build the journal" }],
+      });
+      await rpc.waitFor((message) =>
+        message.method === "item/agentMessage/delta" && message.params.delta === "before disconnect",
+      );
+
+      expect(beforeTurnRead.result.journalTailSeq).toBeGreaterThan(0);
+      rpc.close();
+
+      const replayRpc = await connectJsonRpc(url);
+      const resumeResponse = replayRpc.sendRequest("thread/resume", {
+        threadId: started.result.thread.id,
+        afterSeq: beforeTurnRead.result.journalTailSeq,
+      });
+      await replayRpc.waitFor((message) => message.method === "thread/started");
+      releaseSecondChunk?.();
+
+      const replayedDelta = await replayRpc.waitFor((message) =>
+        message.method === "item/agentMessage/delta" && message.params.delta === "after disconnect",
+      );
+      const resumed = await resumeResponse;
+
+      expect(resumed.result.thread.id).toBe(started.result.thread.id);
+      expect(replayedDelta.params.delta).toBe("after disconnect");
+      await expect(
+        replayRpc.waitFor(
+          (message) => message.method === "item/agentMessage/delta" && message.params.delta === "after disconnect",
+          250,
+        ),
+      ).rejects.toThrow(/Timed out waiting for JSON-RPC message/);
+      replayRpc.close();
+    } finally {
+      releaseSecondChunk?.();
       server.stop();
     }
   });
