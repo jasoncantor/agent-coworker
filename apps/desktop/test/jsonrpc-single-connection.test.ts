@@ -470,6 +470,7 @@ describe("desktop JSON-RPC single connection path", () => {
     expect(MockJsonRpcSocket.instances).toHaveLength(1);
     expect(jsonRpcRequests.map((entry) => entry.method)).toEqual([
       "thread/list",
+      "cowork/session/state/read",
       "cowork/provider/catalog/read",
       "cowork/provider/authMethods/read",
       "cowork/provider/status/refresh",
@@ -561,6 +562,7 @@ describe("desktop JSON-RPC single connection path", () => {
     expect(MockJsonRpcSocket.instances).toHaveLength(1);
     expect(jsonRpcRequests.map((entry) => entry.method)).toEqual([
       "thread/list",
+      "cowork/session/state/read",
       "cowork/provider/catalog/read",
       "cowork/provider/authMethods/read",
       "cowork/provider/status/refresh",
@@ -588,6 +590,7 @@ describe("desktop JSON-RPC single connection path", () => {
 
     expect(jsonRpcRequests.map((entry) => entry.method)).toEqual([
       "thread/list",
+      "cowork/session/state/read",
       "cowork/provider/catalog/read",
       "cowork/provider/authMethods/read",
       "cowork/provider/status/refresh",
@@ -626,6 +629,7 @@ describe("desktop JSON-RPC single connection path", () => {
 
     expect(jsonRpcRequests.map((entry) => entry.method)).toEqual([
       "thread/list",
+      "cowork/session/state/read",
       "cowork/provider/catalog/read",
       "cowork/provider/authMethods/read",
       "cowork/provider/status/refresh",

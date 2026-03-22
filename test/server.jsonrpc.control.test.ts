@@ -74,6 +74,34 @@ async function connectJsonRpc(url: string) {
 }
 
 describe("server JSON-RPC control methods", () => {
+  test("session state read returns the workspace control config bundle", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const response = await rpc.request("cowork/session/state/read", {
+        cwd: tmpDir,
+      });
+
+      expect(response.result.events.map((event: any) => event.type)).toEqual([
+        "config_updated",
+        "session_settings",
+        "session_config",
+      ]);
+      const configUpdated = response.result.events[0];
+      const sessionSettings = response.result.events[1];
+      const sessionConfig = response.result.events[2];
+      expect(configUpdated.config.provider).toBe("google");
+      expect(configUpdated.config.workingDirectory).toBe(tmpDir);
+      expect(sessionSettings.enableMcp).toBe(true);
+      expect(sessionConfig.config.defaultBackupsEnabled).toBe(true);
+      rpc.close();
+    } finally {
+      server.stop();
+    }
+  });
+
   test("provider catalog read returns a legacy-compatible provider_catalog event payload", async () => {
     const tmpDir = await makeTmpProject();
     const { server, url } = await startAgentServer(serverOpts(tmpDir));

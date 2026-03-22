@@ -501,6 +501,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
       await ensureServerRunning(get, set, workspaceId);
       ensureControlSocket(get, set, workspaceId);
       const controlReady = await waitForControlSession(get, set, workspaceId);
+      const workspacePath = get().workspaces.find((workspace) => workspace.id === workspaceId)?.path;
       const workspace = controlReady
         ? resolveWorkspaceDefaults(workspaceId)
         : get().workspaces.find((w) => w.id === workspaceId);
@@ -557,13 +558,39 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
 
       const persisted = controlReady
         ? (!controlMessage || await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/session/defaults/apply", {
-            cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,
+            cwd: workspacePath,
             ...(controlMessage.provider !== undefined ? { provider: controlMessage.provider } : {}),
             ...(controlMessage.model !== undefined ? { model: controlMessage.model } : {}),
             ...(controlMessage.enableMcp !== undefined ? { enableMcp: controlMessage.enableMcp } : {}),
             ...(controlMessage.config !== undefined ? { config: controlMessage.config } : {}),
           }))
         : false;
+
+      if (persisted && controlMessage) {
+        set((s) => {
+          const workspaceRuntime = s.workspaceRuntimeById[workspaceId];
+          const workingDirectory = workspacePath ?? workspaceRuntime.controlConfig?.workingDirectory;
+          const nextControlConfig =
+            controlMessage.provider !== undefined && controlMessage.model !== undefined && workingDirectory
+              ? {
+                  ...(workspaceRuntime.controlConfig ?? {}),
+                  provider: controlMessage.provider,
+                  model: controlMessage.model,
+                  workingDirectory,
+                }
+              : workspaceRuntime.controlConfig;
+          return {
+            workspaceRuntimeById: {
+              ...s.workspaceRuntimeById,
+              [workspaceId]: {
+                ...workspaceRuntime,
+                ...(nextControlConfig ? { controlConfig: nextControlConfig } : {}),
+                ...(controlMessage.enableMcp !== undefined ? { controlEnableMcp: controlMessage.enableMcp } : {}),
+              },
+            },
+          };
+        });
+      }
 
       if (!persisted) {
         set((s) => ({

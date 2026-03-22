@@ -1250,6 +1250,30 @@ export async function startAgentServer(
     sendJsonRpc(ws, buildJsonRpcResultResponse(id, { event }));
   };
 
+  const emitControlResultEvents = (
+    ws: Bun.ServerWebSocket<StartServerSocketData>,
+    id: string | number,
+    events: ServerEvent[],
+  ) => {
+    sendJsonRpc(ws, buildJsonRpcResultResponse(id, { events }));
+  };
+
+  const buildControlSessionStateEvents = (session: AgentSession): ServerEvent[] => [
+    {
+      type: "config_updated",
+      sessionId: session.id,
+      config: session.getPublicConfig(),
+    },
+    {
+      type: "session_settings",
+      sessionId: session.id,
+      enableMcp: session.getEnableMcp(),
+      enableMemory: session.getEnableMemory(),
+      memoryRequireApproval: session.getMemoryRequireApproval(),
+    },
+    session.getSessionConfigEvent(),
+  ];
+
   const routeJsonRpcResponse = (
     ws: Bun.ServerWebSocket<StartServerSocketData>,
     message: { id: string | number; result?: unknown; error?: { code: number; message: string } },
@@ -1613,6 +1637,13 @@ export async function startAgentServer(
           (event): event is Extract<ServerEvent, { type: "session_info" }> => event.type === "session_info",
         );
         emitControlResult(ws, message.id, event);
+        return;
+      }
+      case "cowork/session/state/read": {
+        const cwd = requireWorkspacePath(params, message.method);
+        await withWorkspaceControlSession(cwd, async (_binding, session) => {
+          emitControlResultEvents(ws, message.id, buildControlSessionStateEvents(session));
+        });
         return;
       }
       case "cowork/session/model/set": {

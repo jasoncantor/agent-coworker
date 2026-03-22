@@ -53,6 +53,9 @@ export function createControlSocketHelpers(
   const jsonRpcBootstrapPromises = new Map<string, Promise<void>>();
   const controlStoreGettersByWorkspace = new Map<string, StoreGet>();
   const controlStoreSettersByWorkspace = new Map<string, StoreSet>();
+  const controlSessionWaiters = new Set<symbol>();
+  const workspaceSessionWaiters = new Set<symbol>();
+  const sessionSnapshotWaiters = new Set<symbol>();
 
   function upsertWorkspaceThreads(
     allThreads: ThreadRecord[],
@@ -209,6 +212,42 @@ export function createControlSocketHelpers(
     });
   }
 
+  function waitForPromiseCompletion(promise: Promise<unknown>, timeoutMs = requestTimeoutMs): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      }, timeoutMs);
+
+      void promise.then(
+        () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(true);
+        },
+        () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(false);
+        },
+      );
+    });
+  }
+
+  async function withPendingWaiterCount<T>(waiters: Set<symbol>, task: () => Promise<T>): Promise<T> {
+    const token = Symbol("pending-waiter");
+    waiters.add(token);
+    try {
+      return await task();
+    } finally {
+      waiters.delete(token);
+    }
+  }
+
   function clearWorkspaceControlRuntime(get: StoreGet, set: StoreSet, workspaceId: string) {
     const installWaiter = RUNTIME.skillInstallWaiters.get(workspaceId);
     if (installWaiter) {
@@ -305,11 +344,27 @@ export function createControlSocketHelpers(
   }
 
   async function waitForControlSession(get: StoreGet, set: StoreSet, workspaceId: string, timeoutMs = 3_000): Promise<boolean> {
-    const socket = RUNTIME.jsonRpcSockets.get(workspaceId) ?? ensureControlSocket(get, set, workspaceId);
-    if (!socket) {
-      return false;
-    }
-    return await waitForReady(socket, timeoutMs);
+    return await withPendingWaiterCount(controlSessionWaiters, async () => {
+      const socket = RUNTIME.jsonRpcSockets.get(workspaceId) ?? ensureControlSocket(get, set, workspaceId);
+      if (!socket) {
+        return false;
+      }
+      const startedAt = Date.now();
+      const ready = await waitForReady(socket, timeoutMs);
+      if (!ready) {
+        return false;
+      }
+      const bootstrap = jsonRpcBootstrapPromises.get(workspaceId);
+      if (!bootstrap) {
+        return true;
+      }
+      const elapsedMs = Date.now() - startedAt;
+      const remainingMs = Math.max(0, timeoutMs - elapsedMs);
+      if (remainingMs <= 0) {
+        return false;
+      }
+      return await waitForPromiseCompletion(bootstrap, remainingMs);
+    });
   }
 
   async function requestWorkspaceSessions(
@@ -317,63 +372,65 @@ export function createControlSocketHelpers(
     set: StoreSet,
     workspaceId: string,
   ): Promise<Extract<ServerEvent, { type: "sessions" }>["sessions"] | null> {
-    let threads: any[] = [];
-    try {
-      threads = await requestJsonRpcThreadList(get, set, workspaceId);
-    } catch {
-      return null;
-    }
-    const sessions = threads.map((thread) => {
-      const existingThread = get().threads.find((entry) =>
-        entry.workspaceId === workspaceId
-        && (entry.id === thread.id || entry.sessionId === thread.id),
-      );
-      return {
-        sessionId: thread.id,
-        title: thread.title ?? "New session",
-        titleSource: existingThread?.titleSource ?? "manual" as const,
-        titleModel: null,
-        provider: thread.modelProvider,
-        model: thread.model,
-        createdAt: thread.createdAt,
-        updatedAt: thread.updatedAt,
-        messageCount: thread.messageCount ?? existingThread?.messageCount ?? 0,
-        lastEventSeq: thread.lastEventSeq ?? existingThread?.lastEventSeq ?? 0,
-        hasPendingAsk: false,
-        hasPendingApproval: false,
-      };
+    return await withPendingWaiterCount(workspaceSessionWaiters, async () => {
+      let threads: any[] = [];
+      try {
+        threads = await requestJsonRpcThreadList(get, set, workspaceId);
+      } catch {
+        return null;
+      }
+      const sessions = threads.map((thread) => {
+        const existingThread = get().threads.find((entry) =>
+          entry.workspaceId === workspaceId
+          && (entry.id === thread.id || entry.sessionId === thread.id),
+        );
+        return {
+          sessionId: thread.id,
+          title: thread.title ?? "New session",
+          titleSource: existingThread?.titleSource ?? "manual" as const,
+          titleModel: null,
+          provider: thread.modelProvider,
+          model: thread.model,
+          createdAt: thread.createdAt,
+          updatedAt: thread.updatedAt,
+          messageCount: thread.messageCount ?? existingThread?.messageCount ?? 0,
+          lastEventSeq: thread.lastEventSeq ?? existingThread?.lastEventSeq ?? 0,
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+        };
+      });
+      let removedSessionSnapshotIds: string[] = [];
+      set((s) => {
+        removedSessionSnapshotIds = pruneRemovedWorkspaceSessionSnapshots(
+          s.threads,
+          s.threadRuntimeById,
+          workspaceId,
+          sessions,
+        );
+        const nextThreads = upsertWorkspaceThreads(
+          s.threads,
+          s.threadRuntimeById,
+          workspaceId,
+          sessions,
+        );
+        const selectedThreadId = reconcileSelectedThreadId(
+          s.threads,
+          nextThreads,
+          workspaceId,
+          s.selectedWorkspaceId,
+          s.selectedThreadId,
+        );
+        return {
+          threads: nextThreads,
+          selectedThreadId,
+        };
+      });
+      for (const sessionId of removedSessionSnapshotIds) {
+        RUNTIME.sessionSnapshots.delete(sessionId);
+      }
+      void deps.persist(get);
+      return sessions;
     });
-    let removedSessionSnapshotIds: string[] = [];
-    set((s) => {
-      removedSessionSnapshotIds = pruneRemovedWorkspaceSessionSnapshots(
-        s.threads,
-        s.threadRuntimeById,
-        workspaceId,
-        sessions,
-      );
-      const nextThreads = upsertWorkspaceThreads(
-        s.threads,
-        s.threadRuntimeById,
-        workspaceId,
-        sessions,
-      );
-      const selectedThreadId = reconcileSelectedThreadId(
-        s.threads,
-        nextThreads,
-        workspaceId,
-        s.selectedWorkspaceId,
-        s.selectedThreadId,
-      );
-      return {
-        threads: nextThreads,
-        selectedThreadId,
-      };
-    });
-    for (const sessionId of removedSessionSnapshotIds) {
-      RUNTIME.sessionSnapshots.delete(sessionId);
-    }
-    void deps.persist(get);
-    return sessions;
   }
 
   async function requestSessionSnapshot(
@@ -382,11 +439,13 @@ export function createControlSocketHelpers(
     workspaceId: string,
     targetSessionId: string,
   ): Promise<SessionSnapshot | null> {
-    try {
-      return await requestJsonRpcThreadRead(get, set, workspaceId, targetSessionId);
-    } catch {
-      return null;
-    }
+    return await withPendingWaiterCount(sessionSnapshotWaiters, async () => {
+      try {
+        return await requestJsonRpcThreadRead(get, set, workspaceId, targetSessionId);
+      } catch {
+        return null;
+      }
+    });
   }
 
   async function bootstrapJsonRpcControlState(get: StoreGet, set: StoreSet, workspaceId: string): Promise<void> {
@@ -411,6 +470,7 @@ export function createControlSocketHelpers(
 
     await Promise.allSettled([
       requestWorkspaceSessions(get, set, workspaceId),
+      requestJsonRpcControlEvent(get, set, workspaceId, "cowork/session/state/read", { cwd }),
       requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/catalog/read", { cwd }),
       requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/authMethods/read", { cwd }),
       requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/status/refresh", { cwd }),
@@ -456,6 +516,20 @@ export function createControlSocketHelpers(
   }
 
   function applyJsonRpcControlEvent(get: StoreGet, set: StoreSet, workspaceId: string, evt: ServerEvent) {
+    if (evt.type === "config_updated") {
+      set((s) => ({
+        workspaceRuntimeById: {
+          ...s.workspaceRuntimeById,
+          [workspaceId]: {
+            ...s.workspaceRuntimeById[workspaceId],
+            controlSessionId: evt.sessionId,
+            controlConfig: evt.config,
+          },
+        },
+      }));
+      return;
+    }
+
     if (evt.type === "session_settings") {
       set((s) => ({
         workspaces: s.workspaces.map((workspace) =>
@@ -467,6 +541,7 @@ export function createControlSocketHelpers(
           ...s.workspaceRuntimeById,
           [workspaceId]: {
             ...s.workspaceRuntimeById[workspaceId],
+            controlSessionId: evt.sessionId,
             controlEnableMcp: evt.enableMcp,
           },
         },
@@ -499,11 +574,25 @@ export function createControlSocketHelpers(
           ...s.workspaceRuntimeById,
           [workspaceId]: {
             ...s.workspaceRuntimeById[workspaceId],
+            controlSessionId: evt.sessionId,
             controlSessionConfig: evt.config,
           },
         },
       }));
       void deps.persist(get);
+      return;
+    }
+
+    if (evt.type === "session_info") {
+      set((s) => ({
+        workspaceRuntimeById: {
+          ...s.workspaceRuntimeById,
+          [workspaceId]: {
+            ...s.workspaceRuntimeById[workspaceId],
+            controlSessionId: evt.sessionId,
+          },
+        },
+      }));
       return;
     }
 
@@ -957,12 +1046,26 @@ export function createControlSocketHelpers(
   ): Promise<boolean> {
     try {
       const result = await requestJsonRpc(get, set, workspaceId, method, params);
+      const events = Array.isArray((result as { events?: ServerEvent[] }).events)
+        ? (result as { events: ServerEvent[] }).events
+        : [];
       const event = (result as { event?: ServerEvent }).event;
-      if (!event) {
+      const normalizedEvents = events.length > 0
+        ? events
+        : event
+          ? [event]
+          : [];
+      if (normalizedEvents.length === 0) {
         return true;
       }
-      applyJsonRpcControlEvent(get, set, workspaceId, event);
-      return event.type !== "error";
+      let ok = true;
+      for (const nextEvent of normalizedEvents) {
+        applyJsonRpcControlEvent(get, set, workspaceId, nextEvent);
+        if (nextEvent.type === "error") {
+          ok = false;
+        }
+      }
+      return ok;
     } catch {
       return false;
     }
@@ -976,9 +1079,9 @@ export function createControlSocketHelpers(
     requestJsonRpcControlEvent,
     __internal: {
       getPendingWaiterCounts: () => ({
-        controlSessionWaiters: 0,
-        workspaceSessionWaiters: 0,
-        sessionSnapshotWaiters: 0,
+        controlSessionWaiters: controlSessionWaiters.size,
+        workspaceSessionWaiters: workspaceSessionWaiters.size,
+        sessionSnapshotWaiters: sessionSnapshotWaiters.size,
       }),
     },
   };

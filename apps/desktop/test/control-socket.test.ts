@@ -375,6 +375,125 @@ describe("control socket helpers over JSON-RPC", () => {
     });
   });
 
+  test("waitForControlSession waits for JSON-RPC control bootstrap to hydrate control state", async () => {
+    const workspaceId = "ws-control-state";
+    const { state, get, set } = createState(workspaceId);
+    const sessionState = Promise.withResolvers<any>();
+    jsonRpcHandlers.set("cowork/session/state/read", async () => await sessionState.promise);
+
+    const helpers = createControlSocketHelpers(deps);
+    helpers.ensureControlSocket(get as any, set as any, workspaceId);
+
+    let settled = false;
+    const readyPromise = helpers.waitForControlSession(get as any, set as any, workspaceId, 1_000).then((ready) => {
+      settled = true;
+      return ready;
+    });
+
+    await flushAsyncWork();
+    expect(settled).toBe(false);
+    expect(jsonRpcRequests.some((entry) => entry.method === "cowork/session/state/read")).toBe(true);
+
+    sessionState.resolve({
+      events: [
+        {
+          type: "config_updated",
+          sessionId: "control-session-1",
+          config: {
+            provider: "openai",
+            model: "gpt-5.2",
+            workingDirectory: "/tmp/workspace",
+          },
+        },
+        {
+          type: "session_settings",
+          sessionId: "control-session-1",
+          enableMcp: false,
+          enableMemory: true,
+          memoryRequireApproval: false,
+        },
+        {
+          type: "session_config",
+          sessionId: "control-session-1",
+          config: {
+            yolo: false,
+            observabilityEnabled: false,
+            backupsEnabled: true,
+            defaultBackupsEnabled: true,
+            enableMemory: true,
+            memoryRequireApproval: false,
+            preferredChildModel: "gpt-5.2",
+            childModelRoutingMode: "same-provider",
+            preferredChildModelRef: "openai:gpt-5.2",
+            allowedChildModelRefs: [],
+            maxSteps: 100,
+          },
+        },
+      ],
+    });
+
+    expect(await readyPromise).toBe(true);
+    expect(state.workspaceRuntimeById[workspaceId].controlSessionId).toBe("control-session-1");
+    expect(state.workspaceRuntimeById[workspaceId].controlConfig).toEqual({
+      provider: "openai",
+      model: "gpt-5.2",
+      workingDirectory: "/tmp/workspace",
+    });
+    expect(state.workspaceRuntimeById[workspaceId].controlEnableMcp).toBe(false);
+    expect(state.workspaceRuntimeById[workspaceId].controlSessionConfig?.preferredChildModel).toBe("gpt-5.2");
+  });
+
+  test("pending waiter diagnostics reflect in-flight JSON-RPC waits", async () => {
+    const workspaceId = "ws-waiters";
+    const { get, set } = createState(workspaceId);
+    const ready = Promise.withResolvers<void>();
+    RUNTIME.jsonRpcSockets.set(workspaceId, {
+      readyPromise: ready.promise,
+      request: async () => ({}),
+      respond: () => true,
+      close: () => {},
+    } as any);
+
+    const helpers = createControlSocketHelpers(deps);
+    const readyPromise = helpers.waitForControlSession(get as any, set as any, workspaceId, 1_000);
+    expect(helpers.__internal.getPendingWaiterCounts().controlSessionWaiters).toBe(1);
+    ready.resolve();
+    expect(await readyPromise).toBe(true);
+    expect(helpers.__internal.getPendingWaiterCounts().controlSessionWaiters).toBe(0);
+
+    const sessions = Promise.withResolvers<any>();
+    installFakeSocket(workspaceId, async (method) => {
+      expect(method).toBe("thread/list");
+      return await sessions.promise;
+    });
+    const sessionsPromise = helpers.requestWorkspaceSessions(get as any, set as any, workspaceId);
+    expect(helpers.__internal.getPendingWaiterCounts().workspaceSessionWaiters).toBe(1);
+    sessions.resolve({
+      threads: [makeThreadListEntry("session-1")],
+    });
+    expect((await sessionsPromise)?.map((entry: any) => entry.sessionId)).toEqual(["session-1"]);
+    expect(helpers.__internal.getPendingWaiterCounts().workspaceSessionWaiters).toBe(0);
+
+    const snapshot = Promise.withResolvers<any>();
+    installFakeSocket(workspaceId, async (method) => {
+      expect(method).toBe("thread/read");
+      return await snapshot.promise;
+    });
+    const snapshotPromise = helpers.requestSessionSnapshot(get as any, set as any, workspaceId, "session-1");
+    expect(helpers.__internal.getPendingWaiterCounts().sessionSnapshotWaiters).toBe(1);
+    snapshot.resolve({
+      coworkSnapshot: {
+        sessionId: "session-1",
+        title: "Snapshot title",
+      },
+    });
+    expect(await snapshotPromise).toEqual({
+      sessionId: "session-1",
+      title: "Snapshot title",
+    });
+    expect(helpers.__internal.getPendingWaiterCounts().sessionSnapshotWaiters).toBe(0);
+  });
+
   test("requestJsonRpcControlEvent resolves matching skill install waiters", async () => {
     const workspaceId = "ws-skills";
     const { state, get, set } = createState(workspaceId, {

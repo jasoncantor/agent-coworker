@@ -117,6 +117,7 @@ Currently implemented `cowork/*` methods include:
 
 - session/thread controls
   - `cowork/session/title/set`
+  - `cowork/session/state/read`
   - `cowork/session/model/set`
   - `cowork/session/usageBudget/set`
   - `cowork/session/config/set`
@@ -178,6 +179,8 @@ The desktop JSON-RPC path now uses this namespace so one workspace connection ca
 - MCP management
 - memories
 - workspace backups
+
+`cowork/session/state/read` returns the current workspace control session state as a bundle of legacy-compatible `config_updated`, `session_settings`, and `session_config` events so JSON-RPC clients can hydrate provider/model defaults before diffing local settings.
 
 `cowork/session/defaults/apply` remains the composite "apply provider/model, editable defaults, and MCP enablement" write. Supplying only `cwd` targets the workspace control session; supplying `threadId` as well applies the same composite write directly to that loaded thread session.
 

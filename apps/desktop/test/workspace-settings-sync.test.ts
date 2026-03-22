@@ -210,6 +210,47 @@ class MockJsonRpcSocket {
       };
     }
 
+    if (method === "cowork/session/state/read") {
+      return {
+        events: [
+          {
+            type: "config_updated",
+            sessionId: "jsonrpc-control",
+            config: {
+              provider: "openai",
+              model: "gpt-5.2",
+              workingDirectory: "/tmp/workspace",
+            },
+          },
+          {
+            type: "session_settings",
+            sessionId: "jsonrpc-control",
+            enableMcp: true,
+            enableMemory: true,
+            memoryRequireApproval: false,
+          },
+          {
+            type: "session_config",
+            sessionId: "jsonrpc-control",
+            config: {
+              yolo: false,
+              observabilityEnabled: false,
+              backupsEnabled: true,
+              defaultBackupsEnabled: true,
+              enableMemory: true,
+              memoryRequireApproval: false,
+              preferredChildModel: "gpt-5.2",
+              childModelRoutingMode: "same-provider",
+              preferredChildModelRef: "openai:gpt-5.2",
+              allowedChildModelRefs: [],
+              maxSteps: 100,
+              toolOutputOverflowChars: 25000,
+            },
+          },
+        ],
+      };
+    }
+
     return {};
   }
 
@@ -1076,11 +1117,7 @@ describe("workspace settings sync", () => {
 
     expect(latestRequest("cowork/session/defaults/apply")?.params).toMatchObject({
       cwd: "/tmp/workspace",
-      enableMcp: true,
       config: {
-        backupsEnabled: true,
-        toolOutputOverflowChars: 25000,
-        preferredChildModel: "gpt-5.2",
         userName: "Taylor",
         userProfile: {
           instructions: "Keep answers terse.",
@@ -1357,6 +1394,44 @@ describe("workspace settings sync", () => {
       maxSteps: 100,
       clearToolOutputOverflowChars: true,
     });
+    jsonRpcResponseOverrides.set("cowork/session/state/read", async () => ({
+      events: [
+        {
+          type: "config_updated",
+          sessionId: "jsonrpc-control",
+          config: {
+            provider: "openai",
+            model: "gpt-5.2",
+            workingDirectory: "/tmp/workspace",
+          },
+        },
+        {
+          type: "session_settings",
+          sessionId: "jsonrpc-control",
+          enableMcp: true,
+          enableMemory: true,
+          memoryRequireApproval: false,
+        },
+        {
+          type: "session_config",
+          sessionId: "jsonrpc-control",
+          config: {
+            yolo: false,
+            observabilityEnabled: false,
+            backupsEnabled: true,
+            defaultBackupsEnabled: true,
+            defaultToolOutputOverflowChars: 12000,
+            enableMemory: true,
+            memoryRequireApproval: false,
+            preferredChildModel: "gpt-5.2",
+            childModelRoutingMode: "same-provider",
+            preferredChildModelRef: "openai:gpt-5.2",
+            allowedChildModelRefs: [],
+            maxSteps: 100,
+          },
+        },
+      ],
+    }));
     jsonRpcRequests.length = 0;
 
     await useAppStore.getState().updateWorkspaceDefaults(workspaceId, {
@@ -1373,5 +1448,62 @@ describe("workspace settings sync", () => {
         clearToolOutputOverflowChars: true,
       },
     });
+  });
+
+  test("updateWorkspaceDefaults keeps control runtime in sync after a workspace control apply", async () => {
+    primeWorkspaceConnection();
+    useAppStore.setState((state) => ({
+      ...state,
+      workspaceRuntimeById: {
+        ...state.workspaceRuntimeById,
+        [workspaceId]: {
+          ...state.workspaceRuntimeById[workspaceId],
+          controlSessionId: `jsonrpc:${workspaceId}`,
+          controlConfig: {
+            provider: "google",
+            model: "gemini-3-pro",
+            workingDirectory: "/tmp/workspace",
+          },
+          controlSessionConfig: {
+            defaultBackupsEnabled: true,
+          },
+          controlEnableMcp: true,
+        },
+      },
+    }));
+    setControlSessionConfigResponse({
+      yolo: false,
+      observabilityEnabled: false,
+      backupsEnabled: true,
+      defaultBackupsEnabled: true,
+      enableMemory: true,
+      memoryRequireApproval: false,
+      preferredChildModel: "gpt-5.2",
+      childModelRoutingMode: "same-provider",
+      preferredChildModelRef: "openai:gpt-5.2",
+      allowedChildModelRefs: [],
+      maxSteps: 100,
+      toolOutputOverflowChars: 25000,
+    });
+    jsonRpcRequests.length = 0;
+
+    await useAppStore.getState().updateWorkspaceDefaults(workspaceId, {
+      defaultProvider: "openai",
+      defaultModel: "gpt-5.2",
+      defaultEnableMcp: false,
+    });
+
+    const runtimeAfterFirstApply = useAppStore.getState().workspaceRuntimeById[workspaceId];
+    expect(runtimeAfterFirstApply?.controlConfig).toEqual({
+      provider: "openai",
+      model: "gpt-5.2",
+      workingDirectory: "/tmp/workspace",
+    });
+    expect(runtimeAfterFirstApply?.controlEnableMcp).toBe(false);
+
+    jsonRpcRequests.length = 0;
+    await useAppStore.getState().updateWorkspaceDefaults(workspaceId, {});
+
+    expect(requestsFor("cowork/session/defaults/apply")).toHaveLength(0);
   });
 });

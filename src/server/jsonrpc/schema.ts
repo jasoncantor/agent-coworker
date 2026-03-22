@@ -6,6 +6,7 @@ const targetScopeSchema = z.enum(["project", "global"]);
 const workspaceMemoryScopeSchema = z.enum(["workspace", "user"]);
 const anyObjectSchema = z.record(z.string(), z.unknown());
 const legacyEventEnvelope = <T extends z.ZodTypeAny>(eventSchema: T) => z.object({ event: eventSchema }).strict();
+const legacyEventsEnvelope = <T extends z.ZodTypeAny>(eventSchema: T) => z.object({ events: z.array(eventSchema).min(1) }).strict();
 const providerCatalogEventSchema = z.object({
   type: z.literal("provider_catalog"),
   all: z.array(z.unknown()),
@@ -210,6 +211,9 @@ export const jsonRpcRequestSchemas = {
   "cowork/session/title/set": z.object({
     threadId: nonEmptyTrimmedStringSchema,
     title: z.string(),
+  }).strict(),
+  "cowork/session/state/read": z.object({
+    cwd: nonEmptyTrimmedStringSchema,
   }).strict(),
   "cowork/session/model/set": z.object({
     threadId: nonEmptyTrimmedStringSchema,
@@ -550,6 +554,11 @@ export const jsonRpcResultSchemas = {
   }).strict(),
   "turn/interrupt": z.object({}).strict(),
   "cowork/session/title/set": legacyEventEnvelope(sessionInfoEventSchema),
+  "cowork/session/state/read": legacyEventsEnvelope(z.union([
+    configUpdatedEventSchema,
+    sessionSettingsEventSchema,
+    sessionConfigEventSchema,
+  ])),
   "cowork/session/model/set": legacyEventEnvelope(configUpdatedEventSchema),
   "cowork/session/usageBudget/set": legacyEventEnvelope(sessionUsageEventSchema),
   "cowork/session/config/set": legacyEventEnvelope(sessionConfigEventSchema),
