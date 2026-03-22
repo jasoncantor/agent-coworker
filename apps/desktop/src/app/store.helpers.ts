@@ -289,6 +289,7 @@ export type AppStoreState = {
   refreshProviderStatus: () => Promise<void>;
   requestUserConfig: () => Promise<void>;
   setGlobalOpenAiProxyBaseUrl: (baseUrl: string | null) => Promise<void>;
+  setAwsBedrockProxyEnabled: (enabled: boolean) => Promise<void>;
   setLmStudioEnabled: (enabled: boolean) => Promise<void>;
   setLmStudioModelVisible: (modelId: string, visible: boolean) => Promise<void>;
 

@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 const startWorkspaceServerMock = mock(async () => ({ url: "ws://mock" }));
+const saveStateMock = mock(async () => {
+  throw new Error("disk full");
+});
 
 mock.module("../src/lib/desktopCommands", () => ({
   appendTranscriptBatch: async () => {},
@@ -10,9 +13,7 @@ mock.module("../src/lib/desktopCommands", () => ({
   loadState: async () => ({ version: 1, workspaces: [], threads: [] }),
   pickWorkspaceDirectory: async () => null,
   readTranscript: async () => [],
-  saveState: async () => {
-    throw new Error("disk full");
-  },
+  saveState: saveStateMock,
   startWorkspaceServer: startWorkspaceServerMock,
   stopWorkspaceServer: async () => {},
   showContextMenu: async () => null,
@@ -85,6 +86,9 @@ type TestState = {
   providerStatusLastUpdatedAt: string | null;
   providerStatusRefreshing: boolean;
   providerUiState: {
+    awsBedrockProxy: {
+      enabled: boolean;
+    };
     lmstudio: {
       enabled: boolean;
       hiddenModels: string[];
@@ -119,6 +123,9 @@ function createState(): TestState {
     providerStatusLastUpdatedAt: null,
     providerStatusRefreshing: false,
     providerUiState: {
+      awsBedrockProxy: {
+        enabled: true,
+      },
       lmstudio: {
         enabled: false,
         hiddenModels: [],
@@ -161,6 +168,10 @@ describe("provider store actions", () => {
     RUNTIME.sessionSnapshots.clear();
     startWorkspaceServerMock.mockReset();
     startWorkspaceServerMock.mockImplementation(async () => ({ url: "ws://mock" }));
+    saveStateMock.mockReset();
+    saveStateMock.mockImplementation(async () => {
+      throw new Error("disk full");
+    });
   });
 
   test("refreshProviderStatus notifies when control session cannot be prepared", async () => {
@@ -206,6 +217,30 @@ describe("provider store actions", () => {
     expect(refreshProviderStatus).toHaveBeenCalledTimes(0);
     expect(state.notifications).toHaveLength(1);
     expect(state.notifications[0]?.detail).toBe("Unable to save LM Studio settings.");
+  });
+
+  test("setAwsBedrockProxyEnabled persists local state when save succeeds", async () => {
+    saveStateMock.mockImplementation(async () => {});
+    const state = createState();
+    const { get, set } = createStoreHarness(state);
+    const actions = createProviderActions(set as any, get as any);
+
+    await actions.setAwsBedrockProxyEnabled(false);
+
+    expect(state.providerUiState.awsBedrockProxy.enabled).toBe(false);
+    expect(state.notifications).toHaveLength(0);
+  });
+
+  test("setAwsBedrockProxyEnabled rolls back local state when persist fails", async () => {
+    const state = createState();
+    const { get, set } = createStoreHarness(state);
+    const actions = createProviderActions(set as any, get as any);
+
+    await actions.setAwsBedrockProxyEnabled(false);
+
+    expect(state.providerUiState.awsBedrockProxy.enabled).toBe(true);
+    expect(state.notifications).toHaveLength(1);
+    expect(state.notifications[0]?.detail).toBe("Unable to save AWS Bedrock Proxy settings.");
   });
 
   test("setLmStudioModelVisible rolls back hidden models when persist fails", async () => {

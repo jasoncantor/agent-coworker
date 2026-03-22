@@ -47,7 +47,7 @@ import {
 } from "../store.helpers";
 import type { ThreadRecord, WorkspaceRecord } from "../types";
 
-export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "connectProvider" | "setProviderApiKey" | "copyProviderApiKey" | "authorizeProviderAuth" | "logoutProviderAuth" | "callbackProviderAuth" | "requestProviderCatalog" | "requestProviderAuthMethods" | "refreshProviderStatus" | "requestUserConfig" | "setGlobalOpenAiProxyBaseUrl" | "setLmStudioEnabled" | "setLmStudioModelVisible"> {
+export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "connectProvider" | "setProviderApiKey" | "copyProviderApiKey" | "authorizeProviderAuth" | "logoutProviderAuth" | "callbackProviderAuth" | "requestProviderCatalog" | "requestProviderAuthMethods" | "refreshProviderStatus" | "requestUserConfig" | "setGlobalOpenAiProxyBaseUrl" | "setAwsBedrockProxyEnabled" | "setLmStudioEnabled" | "setLmStudioModelVisible"> {
   const resolveProviderWorkspaceId = (): string | null =>
     get().selectedWorkspaceId ?? get().workspaces[0]?.id ?? null;
 
@@ -500,6 +500,40 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
             kind: "error",
             title: "Not connected",
             detail: "Unable to update global user config.",
+          }),
+        }));
+      }
+    },
+
+    setAwsBedrockProxyEnabled: async (enabled) => {
+      const previousEnabled = get().providerUiState.awsBedrockProxy.enabled;
+      set((s) => ({
+        providerUiState: {
+          ...s.providerUiState,
+          awsBedrockProxy: {
+            ...s.providerUiState.awsBedrockProxy,
+            enabled,
+          },
+        },
+      }));
+      try {
+        await persistNow(get);
+      } catch (error) {
+        console.error("Failed to persist AWS Bedrock Proxy enabled state", error);
+        set((s) => ({
+          providerUiState: {
+            ...s.providerUiState,
+            awsBedrockProxy: {
+              ...s.providerUiState.awsBedrockProxy,
+              enabled: previousEnabled,
+            },
+          },
+          notifications: pushNotification(s.notifications, {
+            id: makeId(),
+            ts: nowIso(),
+            kind: "error",
+            title: "Save failed",
+            detail: "Unable to save AWS Bedrock Proxy settings.",
           }),
         }));
       }

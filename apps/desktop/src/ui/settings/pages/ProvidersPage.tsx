@@ -129,6 +129,32 @@ function describeLmStudioCard(opts: {
   };
 }
 
+function describeAwsBedrockProxyCard(opts: {
+  enabled: boolean;
+  connected: boolean;
+  status?: ProviderStatus;
+  modelCount: number;
+}): {
+  badgeLabel: string;
+  subtitle: string;
+} {
+  if (!opts.enabled) {
+    return {
+      badgeLabel: "Disabled",
+      subtitle: "Disabled providers stay out of provider and model selectors until you re-enable them here.",
+    };
+  }
+
+  return {
+    badgeLabel: providerStatusLabel(opts.status),
+    subtitle: opts.connected
+      ? opts.status?.account
+        ? formatAccount(opts.status.account)
+        : `${opts.modelCount} model${opts.modelCount !== 1 ? "s" : ""} available`
+      : "Click to set up",
+  };
+}
+
 function formatRateLimitName(entry: any): string {
   const raw: string = typeof entry?.limitName === "string" && entry.limitName.trim() ? entry.limitName.trim() : "";
   if (raw) return raw;
@@ -314,6 +340,7 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
   const userConfigLastResultFromStore = useAppStore((s) => s.userConfigLastResult);
   const workspaceRuntimeByIdFromStore = useAppStore((s) => s.workspaceRuntimeById);
   const providerUiStateFromStore = useAppStore((s) => s.providerUiState);
+  const setAwsBedrockProxyEnabled = useAppStore((s) => s.setAwsBedrockProxyEnabled);
   const setLmStudioEnabled = useAppStore((s) => s.setLmStudioEnabled);
   const setLmStudioModelVisible = useAppStore((s) => s.setLmStudioModelVisible);
   const providerStatusByName = serverState?.providerStatusByName ?? providerStatusByNameFromStore;
@@ -363,12 +390,18 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
     const sortProviders = (providers: ProviderName[]) => [...providers].sort((a, b) => {
       const aStatus = providerStatusByName[a];
       const bStatus = providerStatusByName[b];
-      const aConnected = a === "lmstudio"
-        ? providerUiState.lmstudio.enabled && Boolean(aStatus?.verified || aStatus?.authorized)
-        : Boolean(aStatus?.verified || aStatus?.authorized);
-      const bConnected = b === "lmstudio"
-        ? providerUiState.lmstudio.enabled && Boolean(bStatus?.verified || bStatus?.authorized)
-        : Boolean(bStatus?.verified || bStatus?.authorized);
+      const aEnabled = a === "lmstudio"
+        ? providerUiState.lmstudio.enabled
+        : a === "aws-bedrock-proxy"
+          ? providerUiState.awsBedrockProxy.enabled
+          : true;
+      const bEnabled = b === "lmstudio"
+        ? providerUiState.lmstudio.enabled
+        : b === "aws-bedrock-proxy"
+          ? providerUiState.awsBedrockProxy.enabled
+          : true;
+      const aConnected = aEnabled && Boolean(aStatus?.verified || aStatus?.authorized);
+      const bConnected = bEnabled && Boolean(bStatus?.verified || bStatus?.authorized);
 
       // 1. Connected vs Disconnected
       if (aConnected && !bConnected) return -1;
@@ -733,9 +766,18 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
     const connected = Boolean(status?.authorized || status?.verified);
     const providerDisplayName = catalogNameByProvider.get(provider) ?? displayProviderName(provider);
     const isOpenAiProxy = provider === "aws-bedrock-proxy";
+    const awsBedrockProxyEnabled = isOpenAiProxy ? providerUiState.awsBedrockProxy.enabled : true;
     const models = isOpenAiProxy
       ? (modelChoices[provider] ?? [])
       : (modelChoices[provider] ?? []).slice(0, 8);
+    const bedrockCard = isOpenAiProxy
+      ? describeAwsBedrockProxyCard({
+          enabled: awsBedrockProxyEnabled,
+          connected,
+          status,
+          modelCount: models.length,
+        })
+      : null;
     const visibleRateLimits = Array.isArray(status?.usage?.rateLimits)
       ? status.usage.rateLimits.filter(isVisibleUsageRateLimit)
       : [];
@@ -887,7 +929,9 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-foreground">{providerDisplayName}</div>
             <div className="mt-0.5 truncate text-xs text-muted-foreground">
-              {connected
+              {bedrockCard
+                ? bedrockCard.subtitle
+                : connected
                 ? status?.account
                   ? formatAccount(status.account)
                   : `${models.length} model${models.length !== 1 ? "s" : ""} available`
@@ -895,13 +939,33 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Badge variant={connected ? "default" : "secondary"}>{label}</Badge>
+            <Badge variant={connected && awsBedrockProxyEnabled ? "default" : "secondary"}>
+              {bedrockCard ? bedrockCard.badgeLabel : label}
+            </Badge>
             <span className="text-xs text-muted-foreground">{isExpanded ? "▾" : "▸"}</span>
           </div>
         </button>
 
         {isExpanded ? (
           <CardContent id={`provider-panel-${provider}`} className="space-y-3.5 border-t border-border/70 px-4 py-3.5">
+            {isOpenAiProxy ? (
+              <div className="space-y-3">
+                <div className="text-sm text-muted-foreground">
+                  Keep AWS Bedrock Proxy configured while hiding it from provider and model selectors until you re-enable it here.
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      void setAwsBedrockProxyEnabled(!awsBedrockProxyEnabled);
+                    }}
+                  >
+                    {awsBedrockProxyEnabled ? "Disable" : "Enable"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
             {methods.map((method) =>
               renderAuthMethod({
                 provider,
