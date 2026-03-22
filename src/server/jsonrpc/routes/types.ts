@@ -29,10 +29,16 @@ export type JsonRpcThreadSummaryFilter = {
   executionState?: string | null;
 };
 
+export type JsonRpcPendingPromptEvent =
+  | Extract<ServerEvent, { type: "ask" }>
+  | Extract<ServerEvent, { type: "approval" }>;
+
 export type JsonRpcThreadSubscriptionOptions = {
   initialActiveTurnId?: string | null;
   initialAgentText?: string | null;
   drainDisconnectedReplayBuffer?: boolean;
+  pendingPromptEvents?: ReadonlyArray<JsonRpcPendingPromptEvent>;
+  skipPendingPromptRequestIds?: ReadonlySet<string>;
 };
 
 export type JsonRpcRequestHandler = (
@@ -77,7 +83,7 @@ export interface JsonRpcRouteContext {
     enqueue(event: Omit<PersistedThreadJournalEvent, "seq">): Promise<unknown>;
     waitForIdle(threadId: string): Promise<void>;
     list(threadId: string, opts?: { afterSeq?: number; limit?: number }): PersistedThreadJournalEvent[];
-    replay(ws: StartServerSocket, threadId: string, afterSeq?: number, limit?: number): void;
+    replay(ws: StartServerSocket, threadId: string, afterSeq?: number, limit?: number): ReadonlySet<string>;
   };
   events: {
     capture<T extends ServerEvent>(

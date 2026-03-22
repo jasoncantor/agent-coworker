@@ -81,11 +81,13 @@ export function createThreadAndTurnRouteHandlers(
         return;
       }
       const thread = context.utils.buildThreadFromSession(binding.session);
+      let replayedRequestIds: ReadonlySet<string> | undefined;
       if (afterSeq > 0) {
         await context.journal.waitForIdle(threadId);
         binding.session.ensureDisconnectedReplayBuffer();
-        context.journal.replay(ws, threadId, afterSeq);
+        replayedRequestIds = context.journal.replay(ws, threadId, afterSeq);
       }
+      const pendingPromptEvents = binding.session.getPendingPromptEventsForReplay();
       context.threads.subscribe(
         ws,
         threadId,
@@ -97,6 +99,8 @@ export function createThreadAndTurnRouteHandlers(
               }
             : {}),
           ...(afterSeq > 0 ? { drainDisconnectedReplayBuffer: true } : {}),
+          pendingPromptEvents,
+          ...(replayedRequestIds?.size ? { skipPendingPromptRequestIds: replayedRequestIds } : {}),
         },
       );
       context.jsonrpc.sendResult(ws, message.id, { thread });

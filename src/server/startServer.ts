@@ -39,6 +39,7 @@ import {
   JSONRPC_ERROR_CODES,
 } from "./jsonrpc/protocol";
 import { createJsonRpcRequestRouter } from "./jsonrpc/routes";
+import type { JsonRpcPendingPromptEvent, JsonRpcThreadSubscriptionOptions } from "./jsonrpc/routes/types";
 import {
   buildControlSessionStateEvents,
   buildJsonRpcThreadFromRecord,
@@ -1000,14 +1001,41 @@ export async function startAgentServer(
     return binding;
   };
 
+  const isJsonRpcPendingPromptEvent = (event: ServerEvent): event is JsonRpcPendingPromptEvent => (
+    event.type === "ask" || event.type === "approval"
+  );
+
+  const sendJsonRpcServerRequest = (
+    ws: Bun.ServerWebSocket<StartServerSocketData>,
+    request: {
+      id: string | number;
+      threadId: string;
+      type: "ask" | "approval";
+      requestId: string;
+      method: string;
+      params: unknown;
+    },
+  ) => {
+    if (ws.data.rpc?.pendingServerRequests.has(request.id)) {
+      return false;
+    }
+    ws.data.rpc?.pendingServerRequests.set(request.id, {
+      threadId: request.threadId,
+      type: request.type,
+      requestId: request.requestId,
+    });
+    sendJsonRpc(ws, {
+      id: request.id,
+      method: request.method,
+      params: request.params,
+    });
+    return true;
+  };
+
   const subscribeJsonRpcThread = (
     ws: Bun.ServerWebSocket<StartServerSocketData>,
     threadId: string,
-    opts?: {
-      initialActiveTurnId?: string | null;
-      initialAgentText?: string | null;
-      drainDisconnectedReplayBuffer?: boolean;
-    },
+    opts?: JsonRpcThreadSubscriptionOptions,
   ): SessionBinding | null => {
     const connectionId = ws.data.connectionId;
     if (!connectionId) {
@@ -1038,13 +1066,11 @@ export async function startAgentServer(
           }
         : {}),
       onServerRequest: (request) => {
-        ws.data.rpc?.pendingServerRequests.set(request.id, {
+        sendJsonRpcServerRequest(ws, {
+          id: request.id,
           threadId: request.threadId,
           type: request.type,
           requestId: request.id,
-        });
-        sendJsonRpc(ws, {
-          id: request.id,
           method: request.method,
           params: request.params,
         });
@@ -1055,6 +1081,17 @@ export async function startAgentServer(
     subscriptions.set(threadId, { sinkId });
     if (shouldReplayBufferedEvents) {
       for (const event of binding.session.drainDisconnectedReplayEvents()) {
+        if (opts?.pendingPromptEvents && isJsonRpcPendingPromptEvent(event)) {
+          continue;
+        }
+        projector.handle(event);
+      }
+    }
+    if (opts?.pendingPromptEvents) {
+      for (const event of opts.pendingPromptEvents) {
+        if (opts.skipPendingPromptRequestIds?.has(event.requestId)) {
+          continue;
+        }
         projector.handle(event);
       }
     }
@@ -1090,21 +1127,22 @@ export async function startAgentServer(
   const cleanupJsonRpcConnection = (ws: Bun.ServerWebSocket<StartServerSocketData>) => {
     const connectionId = ws.data.connectionId;
     if (!connectionId) {
+      ws.data.rpc?.pendingServerRequests.clear();
       return;
     }
     const subscriptions = jsonRpcSubscriptionsByConnectionId.get(connectionId);
-    if (!subscriptions) {
-      return;
-    }
-    for (const [threadId, subscription] of subscriptions) {
-      const binding = sessionBindings.get(threadId);
-      if (!binding) continue;
-      removeBindingSink(binding, subscription.sinkId);
-      if (!binding.socket && countLiveConnectionSinks(binding) === 0 && binding.session) {
-        binding.session.beginDisconnectedReplayBuffer();
+    if (subscriptions) {
+      for (const [threadId, subscription] of subscriptions) {
+        const binding = sessionBindings.get(threadId);
+        if (!binding) continue;
+        removeBindingSink(binding, subscription.sinkId);
+        if (!binding.socket && countLiveConnectionSinks(binding) === 0 && binding.session) {
+          binding.session.beginDisconnectedReplayBuffer();
+        }
       }
+      jsonRpcSubscriptionsByConnectionId.delete(connectionId);
     }
-    jsonRpcSubscriptionsByConnectionId.delete(connectionId);
+    ws.data.rpc?.pendingServerRequests.clear();
   };
 
   const readThreadSnapshot = (threadId: string) => {
@@ -1125,6 +1163,7 @@ export async function startAgentServer(
     let remaining = typeof limit === "number" && Number.isFinite(limit)
       ? Math.max(0, Math.floor(limit))
       : null;
+    const replayedRequestIds = new Set<string>();
 
     while (remaining === null || remaining > 0) {
       const batchLimit = remaining === null
@@ -1135,24 +1174,31 @@ export async function startAgentServer(
         limit: batchLimit,
       });
       if (journalEvents.length === 0) {
-        return;
+        return replayedRequestIds;
       }
 
       for (const event of journalEvents) {
         if (event.eventType.startsWith("request:")) {
           const method = event.eventType.slice("request:".length);
           if (event.requestId) {
-            ws.data.rpc?.pendingServerRequests.set(event.requestId, {
+            const sent = sendJsonRpcServerRequest(ws, {
+              id: event.requestId,
               threadId,
               type: method === "item/commandExecution/requestApproval" ? "approval" : "ask",
               requestId: event.requestId,
+              method,
+              params: event.payload,
+            });
+            if (sent) {
+              replayedRequestIds.add(event.requestId);
+            }
+          } else {
+            sendJsonRpc(ws, {
+              id: `${threadId}:${event.seq}`,
+              method,
+              params: event.payload,
             });
           }
-          sendJsonRpc(ws, {
-            id: event.requestId ?? `${threadId}:${event.seq}`,
-            method,
-            params: event.payload,
-          });
           continue;
         }
         if (!shouldSendJsonRpcNotification(ws, event.eventType)) {
@@ -1169,9 +1215,10 @@ export async function startAgentServer(
         remaining -= journalEvents.length;
       }
       if (journalEvents.length < batchLimit) {
-        return;
+        return replayedRequestIds;
       }
     }
+    return replayedRequestIds;
   };
 
   const withWorkspaceControlSession = async <T>(

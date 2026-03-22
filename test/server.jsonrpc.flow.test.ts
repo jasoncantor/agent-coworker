@@ -549,6 +549,193 @@ describe("server JSON-RPC flows", () => {
     }
   });
 
+  test("thread/resume replays a pending user input request after reconnect", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async (params: any) => {
+        const answer = await params.askUser("Pick one", ["a", "b"]);
+        return {
+          text: `answer:${answer}`,
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "start ask reconnect flow" }],
+      });
+
+      const request = await rpc.waitFor((message) => message.method === "item/tool/requestUserInput");
+      expect(request.params.question).toBe("Pick one");
+      rpc.close();
+
+      const replayRpc = await connectJsonRpc(url);
+      const resumeResponse = replayRpc.sendRequest("thread/resume", {
+        threadId: started.result.thread.id,
+      });
+      const replayedRequest = await replayRpc.waitFor((message) => message.method === "item/tool/requestUserInput");
+      const replayedThreadStarted = await replayRpc.waitFor((message) => message.method === "thread/started");
+      const resumed = await resumeResponse;
+
+      expect(resumed.result.thread.id).toBe(started.result.thread.id);
+      expect(replayedThreadStarted.params.thread.id).toBe(started.result.thread.id);
+      expect(replayedRequest.id).toBe(request.id);
+      expect(replayedRequest.params.requestId).toBe(request.params.requestId);
+      await expect(
+        replayRpc.waitFor(
+          (message) =>
+            message.method === "item/tool/requestUserInput"
+            && message.params.requestId === request.params.requestId,
+          250,
+        ),
+      ).rejects.toThrow(/Timed out waiting for JSON-RPC message/);
+
+      replayRpc.sendResponse(replayedRequest.id, { answer: "b" });
+      const resolved = await replayRpc.waitFor((message) => message.method === "serverRequest/resolved");
+      const agentCompleted = await replayRpc.waitFor((message) =>
+        message.method === "item/completed" && message.params.item.type === "agentMessage",
+      );
+      expect(resolved.params.threadId).toBe(started.result.thread.id);
+      expect(resolved.params.requestId).toBe(request.params.requestId);
+      expect(agentCompleted.params.item.text).toBe("answer:b");
+      replayRpc.close();
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("thread/resume replays a pending approval request after reconnect", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async (params: any) => {
+        const approved = await params.approveCommand("rm -rf /tmp/example");
+        return {
+          text: approved ? "approved" : "denied",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "start approval reconnect flow" }],
+      });
+
+      const request = await rpc.waitFor((message) => message.method === "item/commandExecution/requestApproval");
+      expect(request.params.command).toBe("rm -rf /tmp/example");
+      rpc.close();
+
+      const replayRpc = await connectJsonRpc(url);
+      const resumeResponse = replayRpc.sendRequest("thread/resume", {
+        threadId: started.result.thread.id,
+      });
+      const replayedRequest = await replayRpc.waitFor((message) => message.method === "item/commandExecution/requestApproval");
+      const replayedThreadStarted = await replayRpc.waitFor((message) => message.method === "thread/started");
+      const resumed = await resumeResponse;
+
+      expect(resumed.result.thread.id).toBe(started.result.thread.id);
+      expect(replayedThreadStarted.params.thread.id).toBe(started.result.thread.id);
+      expect(replayedRequest.id).toBe(request.id);
+      expect(replayedRequest.params.requestId).toBe(request.params.requestId);
+      await expect(
+        replayRpc.waitFor(
+          (message) =>
+            message.method === "item/commandExecution/requestApproval"
+            && message.params.requestId === request.params.requestId,
+          250,
+        ),
+      ).rejects.toThrow(/Timed out waiting for JSON-RPC message/);
+
+      replayRpc.sendResponse(replayedRequest.id, { decision: "accept" });
+      const resolved = await replayRpc.waitFor((message) => message.method === "serverRequest/resolved");
+      const agentCompleted = await replayRpc.waitFor((message) =>
+        message.method === "item/completed" && message.params.item.type === "agentMessage",
+      );
+      expect(resolved.params.threadId).toBe(started.result.thread.id);
+      expect(resolved.params.requestId).toBe(request.params.requestId);
+      expect(agentCompleted.params.item.text).toBe("approved");
+      replayRpc.close();
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("thread/resume does not duplicate a pending user input request when afterSeq also replays it", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async (params: any) => {
+        const answer = await params.askUser("Pick one", ["a", "b"]);
+        return {
+          text: `answer:${answer}`,
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+      const beforeTurnRead = await rpc.sendRequest("thread/read", {
+        threadId: started.result.thread.id,
+        includeTurns: true,
+      });
+
+      await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "start ask replay dedupe flow" }],
+      });
+
+      const request = await rpc.waitFor((message) => message.method === "item/tool/requestUserInput");
+      expect(beforeTurnRead.result.journalTailSeq).toBeGreaterThan(0);
+      rpc.close();
+
+      const replayRpc = await connectJsonRpc(url);
+      const resumeResponse = replayRpc.sendRequest("thread/resume", {
+        threadId: started.result.thread.id,
+        afterSeq: beforeTurnRead.result.journalTailSeq,
+      });
+      const replayedRequest = await replayRpc.waitFor((message) => message.method === "item/tool/requestUserInput");
+      const replayedThreadStarted = await replayRpc.waitFor((message) => message.method === "thread/started");
+      const resumed = await resumeResponse;
+
+      expect(resumed.result.thread.id).toBe(started.result.thread.id);
+      expect(replayedThreadStarted.params.thread.id).toBe(started.result.thread.id);
+      expect(replayedRequest.id).toBe(request.id);
+      expect(replayedRequest.params.requestId).toBe(request.params.requestId);
+      await expect(
+        replayRpc.waitFor(
+          (message) =>
+            message.method === "item/tool/requestUserInput"
+            && message.params.requestId === request.params.requestId,
+          250,
+        ),
+      ).rejects.toThrow(/Timed out waiting for JSON-RPC message/);
+
+      replayRpc.sendResponse(replayedRequest.id, { answer: "a" });
+      const resolved = await replayRpc.waitFor((message) => message.method === "serverRequest/resolved");
+      const agentCompleted = await replayRpc.waitFor((message) =>
+        message.method === "item/completed" && message.params.item.type === "agentMessage",
+      );
+      expect(resolved.params.requestId).toBe(request.params.requestId);
+      expect(agentCompleted.params.item.text).toBe("answer:a");
+      replayRpc.close();
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("thread/read can include journal-projected turns and thread/resume can replay from a journal cursor", async () => {
     const tmpDir = await makeTmpProject();
     const { server, url } = await startAgentServer(serverOpts(tmpDir, {

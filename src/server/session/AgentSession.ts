@@ -33,7 +33,7 @@ import {
 } from "../sessionStore";
 import { DEFAULT_SESSION_TITLE, generateSessionTitle } from "../sessionTitleService";
 import { HistoryManager } from "./HistoryManager";
-import { InteractionManager } from "./InteractionManager";
+import { InteractionManager, type PendingPromptReplayEvent } from "./InteractionManager";
 import { McpManager } from "./McpManager";
 import { PersistenceManager } from "./PersistenceManager";
 import { ProviderAuthManager } from "./ProviderAuthManager";
@@ -819,6 +819,10 @@ export class AgentSession {
 
   replayPendingPrompts() {
     this.interactionManager.replayPendingPrompts();
+  }
+
+  getPendingPromptEventsForReplay(): ReadonlyArray<PendingPromptReplayEvent> {
+    return this.interactionManager.getPendingPromptEventsForReplay();
   }
 
   beginDisconnectedReplayBuffer() {
