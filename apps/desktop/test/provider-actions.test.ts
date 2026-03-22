@@ -92,7 +92,7 @@ type TestState = {
   };
   notifications: Array<{ detail?: string }>;
   userConfigLastResult: Record<string, unknown> | null;
-  pendingUserConfigSave: boolean;
+  pendingUserConfigSave: { workspaceId: string; sessionId: string } | null;
   threads: Array<{ draft?: boolean }>;
   developerMode: boolean;
   showHiddenFiles: boolean;
@@ -126,7 +126,7 @@ function createState(): TestState {
     },
     notifications: [],
     userConfigLastResult: null,
-    pendingUserConfigSave: false,
+    pendingUserConfigSave: null,
     threads: [],
     developerMode: false,
     showHiddenFiles: false,
@@ -182,7 +182,7 @@ describe("provider store actions", () => {
 
     await actions.setGlobalOpenAiProxyBaseUrl("https://proxy.example.com/v1");
 
-    expect(state.pendingUserConfigSave).toBe(false);
+    expect(state.pendingUserConfigSave).toBeNull();
     expect(state.userConfigLastResult).toEqual({
       type: "user_config_result",
       sessionId: "",

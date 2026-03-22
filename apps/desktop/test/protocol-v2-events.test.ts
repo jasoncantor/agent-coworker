@@ -214,7 +214,7 @@ describe("desktop protocol v2 mapping", () => {
       providerLastAuthResult: null,
       userConfig: {},
       userConfigLastResult: null,
-      pendingUserConfigSave: false,
+      pendingUserConfigSave: null,
       view: "chat",
       startupError: null,
       ready: true,
@@ -253,7 +253,7 @@ describe("desktop protocol v2 mapping", () => {
     await useAppStore.getState().setGlobalOpenAiProxyBaseUrl("https://proxy.example.com/v1");
 
     const state = useAppStore.getState();
-    expect(state.pendingUserConfigSave).toBe(false);
+    expect(state.pendingUserConfigSave).toBeNull();
     expect(state.userConfigLastResult).toEqual({
       type: "user_config_result",
       sessionId: "control-session",
@@ -280,19 +280,119 @@ describe("desktop protocol v2 mapping", () => {
 
     await useAppStore.getState().setGlobalOpenAiProxyBaseUrl("https://proxy.example.com/v1");
 
-    expect(useAppStore.getState().pendingUserConfigSave).toBe(true);
+    expect(useAppStore.getState().pendingUserConfigSave).toEqual({
+      workspaceId,
+      sessionId: "control-session",
+    });
     expect(useAppStore.getState().userConfigLastResult).toBeNull();
 
     controlSocket.close();
 
     const state = useAppStore.getState();
-    expect(state.pendingUserConfigSave).toBe(false);
+    expect(state.pendingUserConfigSave).toBeNull();
     expect(state.userConfigLastResult).toEqual({
       type: "user_config_result",
       sessionId: "control-session",
       ok: false,
       message: "Control connection closed before global user config save completed.",
     });
+  });
+
+  test("control socket close in another workspace does not fail the active user config save", async () => {
+    const otherWorkspaceId = `ws-${crypto.randomUUID()}`;
+    useAppStore.setState((s) => ({
+      ...s,
+      workspaces: [
+        ...s.workspaces,
+        {
+          id: otherWorkspaceId,
+          name: "Workspace 2",
+          path: "/tmp/workspace-2",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          lastOpenedAt: "2024-01-01T00:00:00.000Z",
+          defaultEnableMcp: true,
+          defaultBackupsEnabled: true,
+          yolo: false,
+        },
+      ],
+    }));
+
+    await useAppStore.getState().newThread({ workspaceId, mode: "session" });
+    const workspaceAControlSocket = socketByClient("desktop-control");
+    emitServerHello(workspaceAControlSocket, "control-session-a");
+
+    await useAppStore.getState().newThread({ workspaceId: otherWorkspaceId, mode: "session" });
+    const workspaceBControlSocket = socketByClient("desktop-control");
+    emitServerHello(workspaceBControlSocket, "control-session-b");
+
+    useAppStore.setState((s) => ({
+      ...s,
+      selectedWorkspaceId: workspaceId,
+    }));
+    await useAppStore.getState().setGlobalOpenAiProxyBaseUrl("https://proxy.example.com/v1");
+
+    expect(useAppStore.getState().pendingUserConfigSave).toEqual({
+      workspaceId,
+      sessionId: "control-session-a",
+    });
+
+    workspaceBControlSocket.close();
+
+    const state = useAppStore.getState();
+    expect(state.pendingUserConfigSave).toEqual({
+      workspaceId,
+      sessionId: "control-session-a",
+    });
+    expect(state.userConfigLastResult).toBeNull();
+  });
+
+  test("control session error in another workspace does not fail the active user config save", async () => {
+    const otherWorkspaceId = `ws-${crypto.randomUUID()}`;
+    useAppStore.setState((s) => ({
+      ...s,
+      workspaces: [
+        ...s.workspaces,
+        {
+          id: otherWorkspaceId,
+          name: "Workspace 2",
+          path: "/tmp/workspace-2",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          lastOpenedAt: "2024-01-01T00:00:00.000Z",
+          defaultEnableMcp: true,
+          defaultBackupsEnabled: true,
+          yolo: false,
+        },
+      ],
+    }));
+
+    await useAppStore.getState().newThread({ workspaceId, mode: "session" });
+    const workspaceAControlSocket = socketByClient("desktop-control");
+    emitServerHello(workspaceAControlSocket, "control-session-a");
+
+    await useAppStore.getState().newThread({ workspaceId: otherWorkspaceId, mode: "session" });
+    const workspaceBControlSocket = socketByClient("desktop-control");
+    emitServerHello(workspaceBControlSocket, "control-session-b");
+
+    useAppStore.setState((s) => ({
+      ...s,
+      selectedWorkspaceId: workspaceId,
+    }));
+    await useAppStore.getState().setGlobalOpenAiProxyBaseUrl("https://proxy.example.com/v1");
+
+    workspaceBControlSocket.emit({
+      type: "error",
+      sessionId: "control-session-b",
+      code: "internal_error",
+      source: "session",
+      message: "control session failed",
+    });
+
+    const state = useAppStore.getState();
+    expect(state.pendingUserConfigSave).toEqual({
+      workspaceId,
+      sessionId: "control-session-a",
+    });
+    expect(state.userConfigLastResult).toBeNull();
   });
 
   test("server_hello init send failures are logged and clear bootstrap loading state", async () => {

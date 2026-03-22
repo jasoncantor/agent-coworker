@@ -1,7 +1,7 @@
 import { AgentSocket } from "../../lib/agentSocket";
 import { VERSION } from "../../lib/version";
 import type { ClientMessage, ProviderName, ServerEvent } from "../../lib/wsProtocol";
-import type { StoreGet, StoreSet } from "../store.helpers";
+import type { PendingUserConfigSaveState, StoreGet, StoreSet } from "../store.helpers";
 import { normalizeWorkspaceProviderOptions } from "../openaiCompatibleProviderOptions";
 import { normalizeWorkspaceUserProfile } from "../types";
 import type { Notification, SessionSnapshot, ThreadRecord } from "../types";
@@ -31,6 +31,19 @@ function sanitizeProviderAuthChallenge(evt: ProviderAuthChallengeEvent): Provide
       url: undefined,
     },
   };
+}
+
+function matchesPendingUserConfigSave(
+  pending: PendingUserConfigSaveState | null,
+  workspaceId: string,
+  sessionId: string | null | undefined,
+): boolean {
+  return Boolean(
+    pending
+    && sessionId
+    && pending.workspaceId === workspaceId
+    && pending.sessionId === sessionId,
+  );
 }
 
 type ControlSocketDeps = {
@@ -380,7 +393,7 @@ export function createControlSocketHelpers(
             },
             providerStatusRefreshing: true,
             providerLastAuthChallenge: null,
-            pendingUserConfigSave: false,
+            pendingUserConfigSave: s.pendingUserConfigSave,
           }));
           if (workspaceMirrored) {
             void deps.persist(get);
@@ -845,18 +858,28 @@ export function createControlSocketHelpers(
         }
 
         if (evt.type === "user_config_result") {
-          set((s) => ({
-            pendingUserConfigSave: false,
-            userConfigLastResult: evt,
-            ...(evt.config ? { userConfig: evt.config } : {}),
-            notifications: deps.pushNotification(s.notifications, {
-              id: deps.makeId(),
-              ts: deps.nowIso(),
-              kind: evt.ok ? "info" : "error",
-              title: evt.ok ? "Global user config updated" : "Global user config update failed",
-              detail: evt.message,
-            }),
-          }));
+          set((s) => {
+            const matchedPendingUserConfigSave = matchesPendingUserConfigSave(
+              s.pendingUserConfigSave,
+              workspaceId,
+              evt.sessionId,
+            );
+            const shouldPublishResult = matchedPendingUserConfigSave || s.pendingUserConfigSave === null;
+            return {
+              pendingUserConfigSave: matchedPendingUserConfigSave ? null : s.pendingUserConfigSave,
+              userConfigLastResult: shouldPublishResult ? evt : s.userConfigLastResult,
+              ...(evt.config ? { userConfig: evt.config } : {}),
+              notifications: shouldPublishResult
+                ? deps.pushNotification(s.notifications, {
+                    id: deps.makeId(),
+                    ts: deps.nowIso(),
+                    kind: evt.ok ? "info" : "error",
+                    title: evt.ok ? "Global user config updated" : "Global user config update failed",
+                    detail: evt.message,
+                  })
+                : s.notifications,
+            };
+          });
           return;
         }
 
@@ -946,7 +969,12 @@ export function createControlSocketHelpers(
               workspaceRuntime.workspaceBackupsLoading
               || Object.keys(workspaceRuntime.workspaceBackupPendingActionKeys).length > 0;
             const hasPendingBackupDelta = workspaceRuntime.workspaceBackupDeltaLoading;
-            const userConfigLastResult = s.pendingUserConfigSave
+            const matchedPendingUserConfigSave = matchesPendingUserConfigSave(
+              s.pendingUserConfigSave,
+              workspaceId,
+              evt.sessionId,
+            );
+            const userConfigLastResult = matchedPendingUserConfigSave
               ? {
                   type: "user_config_result" as const,
                   sessionId: evt.sessionId,
@@ -963,7 +991,7 @@ export function createControlSocketHelpers(
                 detail: `${evt.source}/${evt.code}: ${evt.message}`,
               }),
               providerStatusRefreshing: false,
-              pendingUserConfigSave: false,
+              pendingUserConfigSave: matchedPendingUserConfigSave ? null : s.pendingUserConfigSave,
               userConfigLastResult,
               workspaceRuntimeById: {
                 ...s.workspaceRuntimeById,
@@ -1037,7 +1065,12 @@ export function createControlSocketHelpers(
         set((s) => {
           const workspaceRuntime = s.workspaceRuntimeById[workspaceId];
           const hadPendingMemories = workspaceRuntime?.memoriesLoading ?? false;
-          const userConfigLastResult = s.pendingUserConfigSave
+          const matchedPendingUserConfigSave = matchesPendingUserConfigSave(
+            s.pendingUserConfigSave,
+            workspaceId,
+            workspaceRuntime?.controlSessionId,
+          );
+          const userConfigLastResult = matchedPendingUserConfigSave
             ? {
                 type: "user_config_result" as const,
                 sessionId: workspaceRuntime?.controlSessionId ?? "",
@@ -1048,7 +1081,7 @@ export function createControlSocketHelpers(
           return {
             providerStatusRefreshing: false,
             providerLastAuthChallenge: null,
-            pendingUserConfigSave: false,
+            pendingUserConfigSave: matchedPendingUserConfigSave ? null : s.pendingUserConfigSave,
             userConfigLastResult,
             notifications: hadPendingMemories
               ? deps.pushNotification(s.notifications, {

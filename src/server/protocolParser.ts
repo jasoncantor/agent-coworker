@@ -239,29 +239,29 @@ function setConfigIssueMessage(issue: z.ZodIssue): string {
   const path = issue.path.map((part) => String(part));
   const [field, provider, option, nestedOption, nestedField] = path;
 
-    if (field === "providerOptions") {
-      if (issue.code === "unrecognized_keys") {
-        if (provider === undefined) {
-          return "set_config config.providerOptions only supports openai, codex-cli, aws-bedrock-proxy, google, and lmstudio";
-        }
-        if (provider === "codex-cli" && option === "webSearch" && nestedOption === "location") {
-          return "set_config config.providerOptions.codex-cli.webSearch.location only supports country, region, city, and timezone";
+  if (field === "providerOptions") {
+    if (issue.code === "unrecognized_keys") {
+      if (provider === undefined) {
+        return "set_config config.providerOptions only supports openai, codex-cli, aws-bedrock-proxy, google, and lmstudio";
+      }
+      if (provider === "codex-cli" && option === "webSearch" && nestedOption === "location") {
+        return "set_config config.providerOptions.codex-cli.webSearch.location only supports country, region, city, and timezone";
       }
       if (provider === "codex-cli" && option === "webSearch") {
         return "set_config config.providerOptions.codex-cli.webSearch only supports contextSize, allowedDomains, and location";
       }
-        if (provider === "codex-cli") {
-          return "set_config config.providerOptions.codex-cli only supports reasoningEffort, reasoningSummary, textVerbosity, webSearchBackend, webSearchMode, and webSearch";
-        }
-        if (provider === "google") {
-          return "set_config config.providerOptions.google only supports nativeWebSearch and thinkingConfig";
-        }
-        if (provider === "aws-bedrock-proxy") {
-          return "set_config config.providerOptions.aws-bedrock-proxy only supports reasoningEffort, reasoningSummary, textVerbosity, baseUrl, and promptCaching";
-        }
-        if (provider === "lmstudio") {
-          return "set_config config.providerOptions.lmstudio only supports baseUrl, contextLength, autoLoad, and reloadOnContextMismatch";
-        }
+      if (provider === "codex-cli") {
+        return "set_config config.providerOptions.codex-cli only supports reasoningEffort, reasoningSummary, textVerbosity, webSearchBackend, webSearchMode, and webSearch";
+      }
+      if (provider === "google") {
+        return "set_config config.providerOptions.google only supports nativeWebSearch and thinkingConfig";
+      }
+      if (provider === "aws-bedrock-proxy") {
+        return "set_config config.providerOptions.aws-bedrock-proxy only supports reasoningEffort, reasoningSummary, textVerbosity, baseUrl, and promptCaching";
+      }
+      if (provider === "lmstudio") {
+        return "set_config config.providerOptions.lmstudio only supports baseUrl, contextLength, autoLoad, and reloadOnContextMismatch";
+      }
       return `set_config config.providerOptions.${provider} only supports reasoningEffort, reasoningSummary, and textVerbosity`;
     }
 
@@ -325,7 +325,7 @@ function setConfigIssueMessage(issue: z.ZodIssue): string {
     }
 
     if (provider === "aws-bedrock-proxy" && option === "baseUrl") {
-      return "set_config config.providerOptions.aws-bedrock-proxy.baseUrl must be a non-empty string";
+      return "set_config config.providerOptions.aws-bedrock-proxy.baseUrl must be a valid http(s) URL";
     }
 
     if (provider === "aws-bedrock-proxy" && option === "promptCaching" && !nestedOption) {
@@ -351,12 +351,29 @@ function setConfigIssueMessage(issue: z.ZodIssue): string {
     if (provider === "lmstudio" && (option === "autoLoad" || option === "reloadOnContextMismatch")) {
       return `set_config config.providerOptions.lmstudio.${option} must be boolean`;
     }
-
-    return "set_config missing/invalid config";
   }
 
   const message = setConfigFieldErrorMessages[field] ?? "set_config missing/invalid config";
   return message;
+}
+
+function validateAwsBedrockProxyProviderOptionsBaseUrl(
+  ctx: z.RefinementCtx,
+  config: z.infer<typeof setConfigPayloadSchema>,
+  messagePrefix: "set_config" | "apply_session_defaults",
+) {
+  const rawBaseUrl = config.providerOptions?.["aws-bedrock-proxy"]?.baseUrl;
+  if (!rawBaseUrl) return;
+
+  if (resolveAwsBedrockProxyBaseUrl({ baseUrl: rawBaseUrl, env: {} })) {
+    return;
+  }
+
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["config", "providerOptions", "aws-bedrock-proxy", "baseUrl"],
+    message: `${messagePrefix} config.providerOptions.aws-bedrock-proxy.baseUrl must be a valid http(s) URL`,
+  });
 }
 
 function schemaWithType<TType extends string>(
@@ -535,6 +552,7 @@ const applySessionDefaultsSchema = schemaWithType("apply_session_defaults", {
 
   const parsedConfig = setConfigPayloadSchema.safeParse(value.config);
   if (parsedConfig.success) {
+    validateAwsBedrockProxyProviderOptionsBaseUrl(ctx, parsedConfig.data, "apply_session_defaults");
     if (
       parsedConfig.data.toolOutputOverflowChars !== undefined
       && parsedConfig.data.clearToolOutputOverflowChars === true
@@ -939,6 +957,7 @@ const setConfigSchema = schemaWithType("set_config", {
 
   const parsedConfig = setConfigPayloadSchema.safeParse(value.config);
   if (parsedConfig.success) {
+    validateAwsBedrockProxyProviderOptionsBaseUrl(ctx, parsedConfig.data, "set_config");
     if (
       parsedConfig.data.toolOutputOverflowChars !== undefined
       && parsedConfig.data.clearToolOutputOverflowChars === true
