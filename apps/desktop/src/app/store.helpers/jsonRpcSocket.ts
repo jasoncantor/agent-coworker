@@ -18,6 +18,8 @@ const workspaceRouters = new Map<string, Set<WorkspaceNotificationRouter>>();
 const workspaceLifecycleListeners = new Map<string, Set<WorkspaceLifecycleListener>>();
 const workspaceStoreSetters = new Map<string, StoreSet>();
 const noopSet: StoreSet = () => {};
+const DESKTOP_JSONRPC_OPEN_TIMEOUT_MS = 1_500;
+const DESKTOP_JSONRPC_HANDSHAKE_TIMEOUT_MS = 1_500;
 
 type JsonRpcSocketConstructor = new (...args: any[]) => any;
 type WorkspaceJsonRpcSocket = JsonRpcSocket & {
@@ -154,7 +156,10 @@ export function ensureWorkspaceJsonRpcSocket(
       title: "Cowork Desktop",
       version: "0.1.0",
     },
+    allowQueryProtocolFallback: true,
     autoReconnect: true,
+    openTimeoutMs: DESKTOP_JSONRPC_OPEN_TIMEOUT_MS,
+    handshakeTimeoutMs: DESKTOP_JSONRPC_HANDSHAKE_TIMEOUT_MS,
     onNotification: (message: any) => {
       emitToWorkspaceRouters(workspaceId, { kind: "notification", method: message.method, params: message.params });
     },

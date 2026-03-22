@@ -179,12 +179,12 @@ describe("server JSON-RPC websocket mode", () => {
     }
   });
 
-  test("multi-offer websocket clients receive the negotiated JSON-RPC subprotocol on the wire", async () => {
+  test("multi-offer websocket clients preserve a supported first-offer JSON-RPC subprotocol on the wire", async () => {
     const tmpDir = await makeTmpProject();
     const { server, url } = await startAgentServer(serverOpts(tmpDir));
 
     try {
-      const ws = new NodeWebSocket(url, ["foo", "cowork.jsonrpc.v1"]);
+      const ws = new NodeWebSocket(url, ["cowork.jsonrpc.v1", "foo"]);
       await waitForNodeWsOpen(ws);
       expect(ws.protocol).toBe("cowork.jsonrpc.v1");
 

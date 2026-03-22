@@ -492,26 +492,44 @@ export class SessionDbRepository {
   }
 
   appendThreadJournalEvent(opts: Omit<PersistedThreadJournalEvent, "seq">): number {
-    const run = this.db.transaction((input: Omit<PersistedThreadJournalEvent, "seq">) => {
-      const row = this.db
-        .query("SELECT COALESCE(MAX(seq), 0) AS seq FROM thread_journal_events WHERE thread_id = ?")
-        .get(input.threadId) as Record<string, unknown> | null;
-      const nextSeq = parseNonNegativeInteger(row?.seq ?? 0, "thread_journal_events.seq") + 1;
-      const ts = parseRequiredIsoTimestamp(input.ts, "thread_journal_events.ts");
-      this.db
-        .query(
-          `INSERT INTO thread_journal_events (
-             thread_id,
-             seq,
-             ts,
-             event_type,
-             turn_id,
-             item_id,
-             request_id,
-             payload_json
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
+    return this.appendThreadJournalEvents([opts])[0]!;
+  }
+
+  appendThreadJournalEvents(opts: Array<Omit<PersistedThreadJournalEvent, "seq">>): number[] {
+    if (opts.length === 0) {
+      return [];
+    }
+    const run = this.db.transaction((inputs: Array<Omit<PersistedThreadJournalEvent, "seq">>) => {
+      const selectLatestSeq = this.db.query(
+        `SELECT seq
+         FROM thread_journal_events
+         WHERE thread_id = ?
+         ORDER BY seq DESC
+         LIMIT 1`,
+      );
+      const insert = this.db.query(
+        `INSERT INTO thread_journal_events (
+           thread_id,
+           seq,
+           ts,
+           event_type,
+           turn_id,
+           item_id,
+           request_id,
+           payload_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const nextSeqByThread = new Map<string, number>();
+      const insertedSeqs: number[] = [];
+
+      for (const input of inputs) {
+        let nextSeq = nextSeqByThread.get(input.threadId);
+        if (nextSeq === undefined) {
+          const row = selectLatestSeq.get(input.threadId) as Record<string, unknown> | null;
+          nextSeq = parseNonNegativeInteger(row?.seq ?? 0, "thread_journal_events.seq") + 1;
+        }
+        const ts = parseRequiredIsoTimestamp(input.ts, "thread_journal_events.ts");
+        insert.run(
           input.threadId,
           nextSeq,
           ts,
@@ -521,7 +539,11 @@ export class SessionDbRepository {
           input.requestId ?? null,
           toJsonString(input.payload),
         );
-      return nextSeq;
+        insertedSeqs.push(nextSeq);
+        nextSeqByThread.set(input.threadId, nextSeq + 1);
+      }
+
+      return insertedSeqs;
     });
 
     return run(opts);

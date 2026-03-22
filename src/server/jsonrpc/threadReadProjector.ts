@@ -6,7 +6,7 @@ type ProjectedTurn = {
   items: Array<Record<string, unknown>>;
 };
 
-export function projectThreadTurnsFromJournal(events: PersistedThreadJournalEvent[]): ProjectedTurn[] {
+export function createThreadTurnProjector() {
   const turns = new Map<string, { id: string; status: string; items: Map<string, Record<string, unknown>> }>();
   const order: string[] = [];
 
@@ -23,12 +23,12 @@ export function projectThreadTurnsFromJournal(events: PersistedThreadJournalEven
     return turn;
   };
 
-  for (const event of events) {
+  const handle = (event: PersistedThreadJournalEvent) => {
     const payload = event.payload as Record<string, any>;
     switch (event.eventType) {
       case "turn/started": {
         const turn = payload.turn as { id?: unknown; status?: unknown } | undefined;
-        if (typeof turn?.id !== "string") continue;
+        if (typeof turn?.id !== "string") return;
         ensureTurn(turn.id).status = typeof turn.status === "string" ? turn.status : "inProgress";
         break;
       }
@@ -36,7 +36,7 @@ export function projectThreadTurnsFromJournal(events: PersistedThreadJournalEven
       case "item/completed": {
         const turnId = typeof payload.turnId === "string" ? payload.turnId : event.turnId;
         const item = payload.item as Record<string, unknown> | undefined;
-        if (!turnId || !item || typeof item.id !== "string") continue;
+        if (!turnId || !item || typeof item.id !== "string") return;
         ensureTurn(turnId).items.set(item.id, { ...item });
         break;
       }
@@ -44,7 +44,7 @@ export function projectThreadTurnsFromJournal(events: PersistedThreadJournalEven
         const turnId = typeof payload.turnId === "string" ? payload.turnId : event.turnId;
         const itemId = typeof payload.itemId === "string" ? payload.itemId : event.itemId;
         const delta = typeof payload.delta === "string" ? payload.delta : "";
-        if (!turnId || !itemId) continue;
+        if (!turnId || !itemId) return;
         const turn = ensureTurn(turnId);
         const existing = turn.items.get(itemId) ?? { id: itemId, type: "agentMessage", text: "" };
         const currentText = typeof existing.text === "string" ? existing.text : "";
@@ -59,7 +59,7 @@ export function projectThreadTurnsFromJournal(events: PersistedThreadJournalEven
         const itemId = typeof payload.itemId === "string" ? payload.itemId : event.itemId;
         const delta = typeof payload.delta === "string" ? payload.delta : "";
         const mode = payload.mode === "summary" ? "summary" : "reasoning";
-        if (!turnId || !itemId) continue;
+        if (!turnId || !itemId) return;
         const turn = ensureTurn(turnId);
         const existing = turn.items.get(itemId) ?? { id: itemId, type: "reasoning", mode, text: "" };
         const currentText = typeof existing.text === "string" ? existing.text : "";
@@ -74,16 +74,16 @@ export function projectThreadTurnsFromJournal(events: PersistedThreadJournalEven
       case "turn/completed": {
         const turn = payload.turn as { id?: unknown; status?: unknown } | undefined;
         const turnId = typeof turn?.id === "string" ? turn.id : event.turnId;
-        if (!turnId) continue;
+        if (!turnId) return;
         ensureTurn(turnId).status = typeof turn?.status === "string" ? turn.status : "completed";
         break;
       }
       default:
         break;
     }
-  }
+  };
 
-  return order.map((turnId) => {
+  const build = (): ProjectedTurn[] => order.map((turnId) => {
     const turn = turns.get(turnId)!;
     return {
       id: turn.id,
@@ -91,4 +91,17 @@ export function projectThreadTurnsFromJournal(events: PersistedThreadJournalEven
       items: [...turn.items.values()],
     };
   });
+
+  return {
+    handle,
+    build,
+  };
+}
+
+export function projectThreadTurnsFromJournal(events: PersistedThreadJournalEvent[]): ProjectedTurn[] {
+  const projector = createThreadTurnProjector();
+  for (const event of events) {
+    projector.handle(event);
+  }
+  return projector.build();
 }

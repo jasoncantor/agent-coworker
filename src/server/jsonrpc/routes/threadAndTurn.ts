@@ -1,7 +1,7 @@
 import type { AgentConfig } from "../../../types";
 import type { ServerEvent } from "../../protocol";
 import { JSONRPC_ERROR_CODES } from "../protocol";
-import { projectThreadTurnsFromJournal } from "../threadReadProjector";
+import { createThreadTurnProjector } from "../threadReadProjector";
 
 import { toJsonRpcParams } from "./shared";
 import type { JsonRpcRequestHandlerMap, JsonRpcRouteContext } from "./types";
@@ -13,6 +13,8 @@ type JsonRpcTurnStartOutcome =
 type JsonRpcTurnSteerOutcome =
   | Extract<ServerEvent, { type: "steer_accepted" }>
   | JsonRpcSessionError;
+
+const THREAD_READ_JOURNAL_BATCH_SIZE = 250;
 
 function sendSessionMutationError(
   context: JsonRpcRouteContext,
@@ -148,17 +150,38 @@ export function createThreadAndTurnRouteHandlers(
         ? context.utils.buildThreadFromSession(binding.session)
         : context.utils.buildThreadFromRecord(context.threads.getPersisted(threadId)!);
       await context.journal.waitForIdle(threadId);
-      const journalEvents = params.includeTurns === true
-        ? context.journal.list(threadId)
-        : [];
+      let journalTailSeq = 0;
+      let turns: ReturnType<ReturnType<typeof createThreadTurnProjector>["build"]> | undefined;
+      if (params.includeTurns === true) {
+        const projector = createThreadTurnProjector();
+        let afterSeq = 0;
+        while (true) {
+          const batch = context.journal.list(threadId, {
+            afterSeq,
+            limit: THREAD_READ_JOURNAL_BATCH_SIZE,
+          });
+          if (batch.length === 0) {
+            break;
+          }
+          for (const event of batch) {
+            projector.handle(event);
+          }
+          journalTailSeq = batch.at(-1)?.seq ?? journalTailSeq;
+          if (batch.length < THREAD_READ_JOURNAL_BATCH_SIZE) {
+            break;
+          }
+          afterSeq = journalTailSeq;
+        }
+        turns = projector.build();
+      }
       context.jsonrpc.sendResult(ws, message.id, {
         thread: {
           ...thread,
-          ...(params.includeTurns === true ? { turns: projectThreadTurnsFromJournal(journalEvents) } : {}),
+          ...(turns ? { turns } : {}),
         },
         coworkSnapshot: snapshot,
         ...(params.includeTurns === true
-          ? { journalTailSeq: journalEvents.at(-1)?.seq ?? 0 }
+          ? { journalTailSeq }
           : {}),
       });
     },

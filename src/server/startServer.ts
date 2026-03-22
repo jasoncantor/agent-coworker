@@ -23,7 +23,7 @@ import { resolveAuthHomeDir } from "../utils/authHome";
 import { AgentControl } from "./agents/AgentControl";
 import { AgentSession } from "./session/AgentSession";
 import { createLegacySessionSnapshot } from "./session/SessionSnapshotProjector";
-import { SessionDb, type PersistedSessionRecord } from "./sessionDb";
+import { SessionDb, type PersistedSessionRecord, type PersistedThreadJournalEvent } from "./sessionDb";
 import { WorkspaceBackupService } from "./workspaceBackups";
 import {
   WEBSOCKET_PROTOCOL_VERSION,
@@ -908,6 +908,8 @@ export async function startAgentServer(
 
   const jsonRpcSubscriptionsByConnectionId = new Map<string, Map<string, { sinkId: string }>>();
   const threadJournalWriteQueues = new Map<string, Promise<void>>();
+  const threadJournalPendingEvents = new Map<string, Array<Omit<PersistedThreadJournalEvent, "seq">>>();
+  const threadJournalReplayBatchSize = 250;
 
   const sendJsonRpc = (ws: Bun.ServerWebSocket<StartServerSocketData>, payload: unknown) => {
     try {
@@ -921,25 +923,34 @@ export async function startAgentServer(
     !ws.data.rpc?.capabilities.optOutNotificationMethods.includes(method)
   );
 
-  const enqueueThreadJournalEvent = (event: {
-    threadId: string;
-    ts: string;
-    eventType: string;
-    turnId: string | null;
-    itemId: string | null;
-    requestId: string | null;
-    payload: unknown;
-  }) => {
-    const previous = threadJournalWriteQueues.get(event.threadId) ?? Promise.resolve();
-    const next = previous
-      .catch(() => {
-        // keep queue alive after prior failure
-      })
-      .then(async () => {
-        await sessionDb.appendThreadJournalEvent(event);
-      });
-    threadJournalWriteQueues.set(event.threadId, next);
-    return next;
+  const enqueueThreadJournalEvent = (event: Omit<PersistedThreadJournalEvent, "seq">) => {
+    const pending = threadJournalPendingEvents.get(event.threadId) ?? [];
+    pending.push(event);
+    threadJournalPendingEvents.set(event.threadId, pending);
+
+    const existing = threadJournalWriteQueues.get(event.threadId);
+    if (existing) {
+      return existing;
+    }
+
+    const flush = (async () => {
+      while (true) {
+        const batch = threadJournalPendingEvents.get(event.threadId);
+        if (!batch || batch.length === 0) {
+          threadJournalPendingEvents.delete(event.threadId);
+          threadJournalWriteQueues.delete(event.threadId);
+          return;
+        }
+        threadJournalPendingEvents.set(event.threadId, []);
+        await sessionDb.appendThreadJournalEvents(batch);
+      }
+    })().catch((error) => {
+      threadJournalWriteQueues.delete(event.threadId);
+      throw error;
+    });
+
+    threadJournalWriteQueues.set(event.threadId, flush);
+    return flush;
   };
 
   const waitForThreadJournalIdle = async (threadId: string) => {
@@ -1109,33 +1120,56 @@ export async function startAgentServer(
     afterSeq = 0,
     limit?: number,
   ) => {
-    const journalEvents = limit === undefined
-      ? sessionDb.listThreadJournalEvents(threadId, { afterSeq })
-      : sessionDb.listThreadJournalEvents(threadId, { afterSeq, limit });
-    for (const event of journalEvents) {
-      if (event.eventType.startsWith("request:")) {
-        const method = event.eventType.slice("request:".length);
-        if (event.requestId) {
-          ws.data.rpc?.pendingServerRequests.set(event.requestId, {
-            threadId,
-            type: method === "item/commandExecution/requestApproval" ? "approval" : "ask",
-            requestId: event.requestId,
+    let cursor = Math.max(0, Math.floor(afterSeq));
+    let remaining = typeof limit === "number" && Number.isFinite(limit)
+      ? Math.max(0, Math.floor(limit))
+      : null;
+
+    while (remaining === null || remaining > 0) {
+      const batchLimit = remaining === null
+        ? threadJournalReplayBatchSize
+        : Math.min(threadJournalReplayBatchSize, remaining);
+      const journalEvents = sessionDb.listThreadJournalEvents(threadId, {
+        afterSeq: cursor,
+        limit: batchLimit,
+      });
+      if (journalEvents.length === 0) {
+        return;
+      }
+
+      for (const event of journalEvents) {
+        if (event.eventType.startsWith("request:")) {
+          const method = event.eventType.slice("request:".length);
+          if (event.requestId) {
+            ws.data.rpc?.pendingServerRequests.set(event.requestId, {
+              threadId,
+              type: method === "item/commandExecution/requestApproval" ? "approval" : "ask",
+              requestId: event.requestId,
+            });
+          }
+          sendJsonRpc(ws, {
+            id: event.requestId ?? `${threadId}:${event.seq}`,
+            method,
+            params: event.payload,
           });
+          continue;
+        }
+        if (!shouldSendJsonRpcNotification(ws, event.eventType)) {
+          continue;
         }
         sendJsonRpc(ws, {
-          id: event.requestId ?? `${threadId}:${event.seq}`,
-          method,
+          method: event.eventType,
           params: event.payload,
         });
-        continue;
       }
-      if (!shouldSendJsonRpcNotification(ws, event.eventType)) {
-        continue;
+
+      cursor = journalEvents.at(-1)?.seq ?? cursor;
+      if (remaining !== null) {
+        remaining -= journalEvents.length;
       }
-      sendJsonRpc(ws, {
-        method: event.eventType,
-        params: event.payload,
-      });
+      if (journalEvents.length < batchLimit) {
+        return;
+      }
     }
   };
 
@@ -1301,18 +1335,27 @@ export async function startAgentServer(
         if (url.pathname === "/ws") {
           const resumeSessionIdRaw = url.searchParams.get("resumeSessionId");
           const resumeSessionId = resumeSessionIdRaw && resumeSessionIdRaw.trim() ? resumeSessionIdRaw.trim() : undefined;
+          const offeredSubprotocols = splitWebSocketSubprotocolHeader(req.headers.get("sec-websocket-protocol"));
           const protocolResult = resolveWsProtocol({
-            offeredSubprotocols: splitWebSocketSubprotocolHeader(req.headers.get("sec-websocket-protocol")),
+            offeredSubprotocols,
             requestedProtocol: url.searchParams.get("protocol"),
             defaultProtocol: wsProtocolDefault,
           });
           if (!protocolResult.ok) {
             return new Response(protocolResult.error, { status: 400 });
           }
+          // Bun reliably auto-echoes the first offered subprotocol during upgrade, but manually
+          // setting the response header can break single-offer connections on current releases.
+          const selectedSubprotocolHeader = (
+            protocolResult.protocol.selectedSubprotocol
+            && offeredSubprotocols[0] !== protocolResult.protocol.selectedSubprotocol
+          )
+            ? protocolResult.protocol.selectedSubprotocol
+            : undefined;
           const upgraded = srv.upgrade(req, {
-            headers: protocolResult.protocol.selectedSubprotocol
+            headers: selectedSubprotocolHeader
               ? {
-                  "Sec-WebSocket-Protocol": protocolResult.protocol.selectedSubprotocol,
+                  "Sec-WebSocket-Protocol": selectedSubprotocolHeader,
                 }
               : undefined,
             data: {

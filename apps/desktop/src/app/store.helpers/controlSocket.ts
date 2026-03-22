@@ -373,6 +373,11 @@ export function createControlSocketHelpers(
     workspaceId: string,
   ): Promise<Extract<ServerEvent, { type: "sessions" }>["sessions"] | null> {
     return await withPendingWaiterCount(workspaceSessionWaiters, async () => {
+      const socket = RUNTIME.jsonRpcSockets.get(workspaceId) ?? ensureControlSocket(get, set, workspaceId);
+      if (!socket) {
+        return null;
+      }
+      await waitForReady(socket);
       let threads: any[] = [];
       try {
         threads = await requestJsonRpcThreadList(get, set, workspaceId);

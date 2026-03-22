@@ -34,7 +34,7 @@ jobs:
         run: bun run docs:check
 
       - name: Unit tests
-        run: bun test
+        run: bun test --max-concurrency 4
 
       - name: Remote MCP smoke
         env:

@@ -402,8 +402,8 @@ describe("sessionDb", () => {
         },
       });
 
-      for (let index = 0; index < 1_005; index += 1) {
-        await db.appendThreadJournalEvent({
+      await db.appendThreadJournalEvents(
+        Array.from({ length: 1_005 }, (_, index) => ({
           threadId: "thread-1",
           ts: now,
           eventType: "item/agentMessage/delta",
@@ -416,8 +416,8 @@ describe("sessionDb", () => {
             itemId: `item-${index}`,
             delta: `chunk-${index}`,
           },
-        });
-      }
+        })),
+      );
 
       expect(db.listThreadJournalEvents("thread-1")).toHaveLength(1_005);
       expect(db.listThreadJournalEvents("thread-1", { limit: 10 })).toHaveLength(10);

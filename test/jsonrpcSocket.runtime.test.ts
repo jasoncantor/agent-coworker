@@ -105,20 +105,41 @@ function parseSentMessages(ws: FakeWebSocket): Array<Record<string, unknown>> {
 }
 
 function createManualTimers() {
-  const timeoutCallbacks: Array<() => void> = [];
+  let nextId = 0;
+  const timeoutCallbacks = new Map<number, () => void>();
+  const intervalCallbacks = new Map<number, () => void>();
 
   return {
-    timeoutCallbacks,
+    get timeoutCallbacks() {
+      return [...timeoutCallbacks.values()];
+    },
     scheduler: {
       setTimeout(callback: () => void) {
-        timeoutCallbacks.push(callback);
-        return { kind: "timeout", id: timeoutCallbacks.length };
+        const id = ++nextId;
+        timeoutCallbacks.set(id, callback);
+        return { kind: "timeout", id };
       },
-      clearTimeout() {},
-      setInterval() {
-        return { kind: "interval", id: 1 };
+      clearTimeout(handle: unknown) {
+        const id = typeof handle === "object" && handle !== null && "id" in handle
+          ? Number((handle as { id?: unknown }).id)
+          : NaN;
+        if (Number.isFinite(id)) {
+          timeoutCallbacks.delete(id);
+        }
       },
-      clearInterval() {},
+      setInterval(callback: () => void) {
+        const id = ++nextId;
+        intervalCallbacks.set(id, callback);
+        return { kind: "interval", id };
+      },
+      clearInterval(handle: unknown) {
+        const id = typeof handle === "object" && handle !== null && "id" in handle
+          ? Number((handle as { id?: unknown }).id)
+          : NaN;
+        if (Number.isFinite(id)) {
+          intervalCallbacks.delete(id);
+        }
+      },
     },
   };
 }
@@ -341,6 +362,56 @@ describe("JsonRpcSocket runtime", () => {
 
     await expect(ready).rejects.toThrow("initialize failed");
     expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+  });
+
+  test("falls back to query-param JSON-RPC when the subprotocol handshake times out", async () => {
+    FakeWebSocket.instances = [];
+    const timers = createManualTimers();
+    const socket = new JsonRpcSocket({
+      url: "ws://example.test/socket",
+      clientInfo: { name: "desktop" },
+      WebSocketImpl: FakeWebSocket as any,
+      timers: timers.scheduler as any,
+      openTimeoutMs: 1_000,
+      handshakeTimeoutMs: 1_000,
+    });
+
+    socket.connect();
+    const ready = socket.readyPromise;
+    await flushMicrotasks();
+
+    const ws1 = FakeWebSocket.instances[0]!;
+    expect(ws1.url).toBe("ws://example.test/socket");
+    expect(ws1.protocols).toBe("cowork.jsonrpc.v1");
+
+    timers.timeoutCallbacks[0]!();
+    await flushMicrotasks();
+
+    const ws2 = FakeWebSocket.instances[1]!;
+    expect(ws2.url).toBe("ws://example.test/socket?protocol=jsonrpc");
+    expect(ws2.protocols).toBeUndefined();
+    expect(parseSentMessages(ws2)).toEqual([
+      {
+        id: 2,
+        method: "initialize",
+        params: {
+          clientInfo: {
+            name: "desktop",
+          },
+          capabilities: {
+            experimentalApi: false,
+          },
+        },
+      },
+    ]);
+
+    await ws2.emitMessage(JSON.stringify({ id: 2, result: { protocolVersion: "0.1" } }));
+    await flushMicrotasks();
+
+    await expect(ready).resolves.toBeUndefined();
+    expect(parseSentMessages(ws2)[1]).toEqual({
+      method: "initialized",
+    });
   });
 
   test("preserves queued retryable requests across a transient reconnect handshake failure", async () => {

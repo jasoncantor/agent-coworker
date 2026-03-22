@@ -288,6 +288,20 @@ export class SessionDb {
     );
   }
 
+  async appendThreadJournalEvents(opts: Array<Omit<PersistedThreadJournalEvent, "seq">>): Promise<number[]> {
+    if (opts.length === 0) {
+      return [];
+    }
+    return await this.writeCoordinator.runExclusive(
+      "append_thread_journal_events",
+      async () => this.repository.appendThreadJournalEvents(opts),
+      {
+        threadId: opts[0]?.threadId ?? "unknown",
+        batchSize: opts.length,
+      },
+    );
+  }
+
   listThreadJournalEvents(threadId: string, opts?: { afterSeq?: number; limit?: number }): PersistedThreadJournalEvent[] {
     return this.repository.listThreadJournalEvents(threadId, opts);
   }
