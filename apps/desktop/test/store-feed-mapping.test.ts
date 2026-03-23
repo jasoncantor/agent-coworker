@@ -2,12 +2,23 @@ import { describe, expect, test } from "bun:test";
 
 import type { TranscriptEvent } from "../src/app/types";
 import {
+  createThreadModelStreamRuntime,
   extractAgentStateFromTranscript,
   extractUsageStateFromTranscript,
   mapTranscriptToFeed,
+  reasoningInsertBeforeAssistantAfterStreamReplay,
 } from "../src/app/store.feedMapping";
 
 describe("desktop transcript feed mapping", () => {
+  test("anchors late final reasoning before streamed assistant output", () => {
+    const runtime = createThreadModelStreamRuntime();
+    runtime.lastAssistantTurnId = "turn-live";
+    runtime.lastAssistantStreamKeyByTurn.set("turn-live", "assistant:turn-live");
+    runtime.assistantItemIdByStream.set("assistant:turn-live", "assistant-item-1");
+
+    expect(reasoningInsertBeforeAssistantAfterStreamReplay(runtime)).toBe("assistant-item-1");
+  });
+
   test("dedupes streamed reasoning against legacy reasoning finals while preserving trace order", () => {
     const transcript: TranscriptEvent[] = [
       {
@@ -240,6 +251,110 @@ describe("desktop transcript feed mapping", () => {
     expect(tools.map((tool) => tool.args)).toEqual([{ query: "NVIDIA GTC 2026" }, { query: "NVIDIA GTC 2027" }]);
     expect(tools.map((tool) => tool.result)).toEqual(["result", "result-2"]);
     expect(feed.map((item) => item.kind)).toEqual(["message", "reasoning", "tool", "reasoning", "tool", "message"]);
+  });
+
+  test("dedupes aggregate final reasoning across streamed steps on normalized turns", () => {
+    const transcript: TranscriptEvent[] = [
+      {
+        ts: "2024-01-01T00:00:00.000Z",
+        threadId: "thread-1",
+        direction: "client",
+        payload: { type: "user_message", text: "what changed?" },
+      },
+      {
+        ts: "2024-01-01T00:00:01.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-agg-1",
+          index: 0,
+          provider: "opencode-zen",
+          model: "minimax-m2.5-free",
+          partType: "start",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:02.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-agg-1",
+          index: 1,
+          provider: "opencode-zen",
+          model: "minimax-m2.5-free",
+          partType: "reasoning_delta",
+          part: { id: "s0", mode: "reasoning", text: "First check." },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:03.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-agg-1",
+          index: 2,
+          provider: "opencode-zen",
+          model: "minimax-m2.5-free",
+          partType: "start",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:04.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-agg-1",
+          index: 3,
+          provider: "opencode-zen",
+          model: "minimax-m2.5-free",
+          partType: "reasoning_delta",
+          part: { id: "s1", mode: "reasoning", text: "Second check." },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:05.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-agg-1",
+          index: 4,
+          provider: "opencode-zen",
+          model: "minimax-m2.5-free",
+          partType: "text_delta",
+          part: { id: "a0", text: "Final answer." },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:06.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: { type: "reasoning", kind: "reasoning", text: "First check.\n\nSecond check." },
+      },
+      {
+        ts: "2024-01-01T00:00:07.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: { type: "assistant_message", text: "Final answer." },
+      },
+    ];
+
+    const feed = mapTranscriptToFeed(transcript);
+    const reasoning = feed.filter((item) => item.kind === "reasoning");
+
+    expect(reasoning.map((item) => item.text)).toEqual(["First check.", "Second check."]);
+    expect(feed.map((item) => item.kind)).toEqual(["message", "reasoning", "reasoning", "message"]);
   });
 
   test("allows final reasoning after a repeated start when the latest step had no streamed reasoning", () => {
@@ -2095,6 +2210,152 @@ describe("desktop transcript feed mapping", () => {
 
     expect(assistant).toHaveLength(2);
     expect(assistant.map((item) => item.text)).toEqual(["progress note", "final answer"]);
+  });
+
+  test("skips a merged assistant_message when streamed assistant text only differs by leading boundary whitespace", () => {
+    const transcript: TranscriptEvent[] = [
+      {
+        ts: "2024-01-01T00:00:00.000Z",
+        threadId: "thread-1",
+        direction: "client",
+        payload: { type: "user_message", text: "research it" },
+      },
+      {
+        ts: "2024-01-01T00:00:01.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-leading-boundary-merge",
+          index: 0,
+          provider: "lmstudio",
+          model: "local-model",
+          partType: "start",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:02.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-leading-boundary-merge",
+          index: 1,
+          provider: "lmstudio",
+          model: "local-model",
+          partType: "text_delta",
+          part: { id: "s1", text: "\n\n" },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:03.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-leading-boundary-merge",
+          index: 2,
+          provider: "lmstudio",
+          model: "local-model",
+          partType: "text_end",
+          part: { id: "s1" },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:04.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-leading-boundary-merge",
+          index: 3,
+          provider: "lmstudio",
+          model: "local-model",
+          partType: "finish",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:05.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-leading-boundary-merge",
+          index: 4,
+          provider: "lmstudio",
+          model: "local-model",
+          partType: "start",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:06.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-leading-boundary-merge",
+          index: 5,
+          provider: "lmstudio",
+          model: "local-model",
+          partType: "text_delta",
+          part: { id: "s1", text: "\n\nfinal answer" },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:07.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-leading-boundary-merge",
+          index: 6,
+          provider: "lmstudio",
+          model: "local-model",
+          partType: "text_end",
+          part: { id: "s1" },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:08.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "model_stream_chunk",
+          sessionId: "thread-session",
+          turnId: "turn-leading-boundary-merge",
+          index: 7,
+          provider: "lmstudio",
+          model: "local-model",
+          partType: "finish",
+          part: {},
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:09.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "assistant_message",
+          text: "final answer",
+        },
+      },
+    ];
+
+    const feed = mapTranscriptToFeed(transcript);
+    const assistant = feed.filter((item) => item.kind === "message" && item.role === "assistant");
+
+    expect(assistant).toHaveLength(1);
+    expect(assistant.map((item) => item.text)).toEqual(["\n\nfinal answer"]);
   });
 
   test("inserts a late legacy reasoning summary before the raw-backed final assistant message", () => {

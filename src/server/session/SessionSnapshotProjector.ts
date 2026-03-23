@@ -28,6 +28,7 @@ type ProjectionModelStreamRuntime = {
   reasoningItemIdByStream: Map<string, string>;
   reasoningTextByStream: Map<string, string>;
   reasoningTextsSeenInTurn: Set<string>;
+  reasoningTextHistoryInTurn: string[];
   reasoningTurns: Set<string>;
   toolItemIdByKey: Map<string, string>;
   latestToolKeyByTurnAndName: Map<string, string>;
@@ -46,6 +47,7 @@ function createProjectionModelStreamRuntime(): ProjectionModelStreamRuntime {
     reasoningItemIdByStream: new Map(),
     reasoningTextByStream: new Map(),
     reasoningTextsSeenInTurn: new Set(),
+    reasoningTextHistoryInTurn: [],
     reasoningTurns: new Set(),
     toolItemIdByKey: new Map(),
     latestToolKeyByTurnAndName: new Map(),
@@ -60,6 +62,7 @@ function clearProjectionModelStreamRuntime(runtime: ProjectionModelStreamRuntime
   runtime.activeTurnId = null;
   clearStepLocalModelStreamRuntime(runtime, { snapshotReasoning: false });
   runtime.reasoningTextsSeenInTurn.clear();
+  runtime.reasoningTextHistoryInTurn = [];
   runtime.reasoningTurns.clear();
   runtime.toolItemIdByKey.clear();
   runtime.latestToolKeyByTurnAndName.clear();
@@ -79,12 +82,16 @@ function normalizeReasoningText(text: string): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function rememberStreamedReasoningText(runtime: ProjectionModelStreamRuntime, text: string) {
+  const normalized = normalizeReasoningText(text);
+  if (!normalized) return;
+  runtime.reasoningTextsSeenInTurn.add(normalized);
+  runtime.reasoningTextHistoryInTurn.push(normalized);
+}
+
 function rememberStreamedReasoningTexts(runtime: ProjectionModelStreamRuntime) {
   for (const text of runtime.reasoningTextByStream.values()) {
-    const normalized = normalizeReasoningText(text);
-    if (normalized) {
-      runtime.reasoningTextsSeenInTurn.add(normalized);
-    }
+    rememberStreamedReasoningText(runtime, text);
   }
 }
 
@@ -116,6 +123,16 @@ function hasMatchingStreamedReasoningText(
     if (normalizeReasoningText(current) === normalized) {
       return true;
     }
+  }
+
+  const aggregate = normalizeTranscriptReplayText([
+    ...runtime.reasoningTextHistoryInTurn,
+    ...[...runtime.reasoningTextByStream.values()]
+      .map((current) => normalizeReasoningText(current))
+      .filter((current): current is string => current !== null),
+  ].join("\n\n"));
+  if (aggregate && aggregate === normalizeTranscriptReplayText(normalized)) {
+    return true;
   }
   return false;
 }
@@ -184,7 +201,6 @@ function reasoningInsertBeforeAssistantAfterStreamReplay(
 ): string | null {
   const turnId = runtime.lastAssistantTurnId;
   if (!turnId) return null;
-  if (!runtime.replay.rawBackedTurns.has(turnId)) return null;
 
   const assistantKey = runtime.lastAssistantStreamKeyByTurn.get(turnId);
   if (!assistantKey) return null;
@@ -549,6 +565,10 @@ export class SessionSnapshotProjector {
 
   getSnapshot(): SessionSnapshot {
     return structuredClone(this.snapshot);
+  }
+
+  peekSnapshot(): SessionSnapshot {
+    return this.snapshot;
   }
 
   syncSessionState(patch: Partial<Omit<SessionSnapshot, "feed" | "agents" | "todos" | "sessionUsage" | "lastTurnUsage">>): void {

@@ -22,10 +22,13 @@ export type ThreadModelStreamRuntime = {
   activeTurnId: string | null;
   assistantItemIdByStream: Map<string, string>;
   assistantTextByStream: Map<string, string>;
+  assistantTextHistoryInTurn: string[];
   lastAssistantStreamKeyByTurn: Map<string, string>;
+  completedAssistantStreamKeys: Set<string>;
   reasoningItemIdByStream: Map<string, string>;
   reasoningTextByStream: Map<string, string>;
   reasoningTextsSeenInTurn: Set<string>;
+  reasoningTextHistoryInTurn: string[];
   reasoningTurns: Set<string>;
   toolItemIdByKey: Map<string, string>;
   latestToolKeyByTurnAndName: Map<string, string>;
@@ -153,10 +156,13 @@ export function createThreadModelStreamRuntime(): ThreadModelStreamRuntime {
     activeTurnId: null,
     assistantItemIdByStream: new Map(),
     assistantTextByStream: new Map(),
+    assistantTextHistoryInTurn: [],
     lastAssistantStreamKeyByTurn: new Map(),
+    completedAssistantStreamKeys: new Set(),
     reasoningItemIdByStream: new Map(),
     reasoningTextByStream: new Map(),
     reasoningTextsSeenInTurn: new Set(),
+    reasoningTextHistoryInTurn: [],
     reasoningTurns: new Set(),
     toolItemIdByKey: new Map(),
     latestToolKeyByTurnAndName: new Map(),
@@ -169,8 +175,11 @@ export function createThreadModelStreamRuntime(): ThreadModelStreamRuntime {
 
 export function clearThreadModelStreamRuntime(runtime: ThreadModelStreamRuntime) {
   runtime.activeTurnId = null;
-  clearStepLocalModelStreamRuntime(runtime, { snapshotReasoning: false });
+  clearStepLocalModelStreamRuntime(runtime, { snapshotReasoning: false, snapshotAssistant: false });
+  runtime.completedAssistantStreamKeys.clear();
+  runtime.assistantTextHistoryInTurn = [];
   runtime.reasoningTextsSeenInTurn.clear();
+  runtime.reasoningTextHistoryInTurn = [];
   runtime.reasoningTurns.clear();
   runtime.toolItemIdByKey.clear();
   runtime.latestToolKeyByTurnAndName.clear();
@@ -184,19 +193,37 @@ function normalizeReasoningText(text: string): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function rememberStreamedReasoningText(runtime: ThreadModelStreamRuntime, text: string) {
+  const normalized = normalizeReasoningText(text);
+  if (!normalized) return;
+  runtime.reasoningTextsSeenInTurn.add(normalized);
+  runtime.reasoningTextHistoryInTurn.push(normalized);
+}
+
+function rememberStreamedAssistantText(runtime: ThreadModelStreamRuntime, text: string) {
+  if (!hasVisibleAssistantText(text)) return;
+  runtime.assistantTextHistoryInTurn.push(text);
+}
+
 function rememberStreamedReasoningTexts(runtime: ThreadModelStreamRuntime) {
   for (const text of runtime.reasoningTextByStream.values()) {
-    const normalized = normalizeReasoningText(text);
-    if (normalized) {
-      runtime.reasoningTextsSeenInTurn.add(normalized);
-    }
+    rememberStreamedReasoningText(runtime, text);
+  }
+}
+
+function rememberStreamedAssistantTexts(runtime: ThreadModelStreamRuntime) {
+  for (const text of runtime.assistantTextByStream.values()) {
+    rememberStreamedAssistantText(runtime, text);
   }
 }
 
 function clearStepLocalModelStreamRuntime(
   runtime: ThreadModelStreamRuntime,
-  opts: { snapshotReasoning?: boolean } = {},
+  opts: { snapshotReasoning?: boolean; snapshotAssistant?: boolean } = {},
 ) {
+  if (opts.snapshotAssistant !== false) {
+    rememberStreamedAssistantTexts(runtime);
+  }
   if (opts.snapshotReasoning !== false) {
     rememberStreamedReasoningTexts(runtime);
   }
@@ -221,6 +248,16 @@ export function hasMatchingStreamedReasoningText(
     if (normalizeReasoningText(current) === normalized) {
       return true;
     }
+  }
+
+  const aggregate = normalizeTranscriptReplayText([
+    ...runtime.reasoningTextHistoryInTurn,
+    ...[...runtime.reasoningTextByStream.values()]
+      .map((current) => normalizeReasoningText(current))
+      .filter((current): current is string => current !== null),
+  ].join("\n\n"));
+  if (aggregate && aggregate === normalizeTranscriptReplayText(normalized)) {
+    return true;
   }
   return false;
 }
@@ -485,6 +522,18 @@ export function shouldSkipAssistantMessageAfterStreamReplay(
     }
   }
 
+  const exactStreamedAssistantText = normalizeTranscriptReplayText([
+    ...stream.assistantTextHistoryInTurn,
+    ...stream.assistantTextByStream.values(),
+  ].join(""));
+  if (exactStreamedAssistantText) {
+    if (normalizedAssistantText === exactStreamedAssistantText) return true;
+
+    if (stream.lastAssistantTurnId && stream.replay.rawBackedTurns.has(stream.lastAssistantTurnId)) {
+      return normalizedAssistantText.endsWith(exactStreamedAssistantText);
+    }
+  }
+
   const aggregatedAssistantText = normalizeTranscriptReplayText(recentAssistantTextSinceLastUser(feed));
   if (!aggregatedAssistantText) return false;
   if (normalizedAssistantText === aggregatedAssistantText) return true;
@@ -501,7 +550,6 @@ export function reasoningInsertBeforeAssistantAfterStreamReplay(
 ): string | null {
   const turnId = stream.lastAssistantTurnId;
   if (!turnId) return null;
-  if (!stream.replay.rawBackedTurns.has(turnId)) return null;
 
   const assistantKey = stream.lastAssistantStreamKeyByTurn.get(turnId);
   if (!assistantKey) return null;
@@ -597,6 +645,7 @@ function applyModelStreamUpdate(
     }
     stream.lastAssistantTurnId = update.turnId;
     const assistantKey = `${update.turnId}:${update.streamId}`;
+    stream.completedAssistantStreamKeys.delete(assistantKey);
     stream.lastAssistantStreamKeyByTurn.set(update.turnId, assistantKey);
     const itemId = stream.assistantItemIdByStream.get(assistantKey);
     const nextText = `${stream.assistantTextByStream.get(assistantKey) ?? ""}${update.text}`;
@@ -624,10 +673,10 @@ function applyModelStreamUpdate(
       ops.updateFeedItem(itemId, (item) =>
         item.kind === "reasoning" ? { ...item, mode: update.mode, text: nextText } : item
       );
-    } else {
+    } else if (nextText) {
       const id = ops.makeId();
       stream.reasoningItemIdByStream.set(key, id);
-      push({ id, kind: "reasoning", mode: update.mode, ts: ops.nowIso(), text: update.text });
+      push({ id, kind: "reasoning", mode: update.mode, ts: ops.nowIso(), text: nextText });
     }
     return;
   }

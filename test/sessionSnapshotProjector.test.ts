@@ -164,4 +164,107 @@ describe("SessionSnapshotProjector", () => {
       hasPendingApproval: false,
     });
   });
+
+  test("dedupes aggregate late reasoning after normalized streamed steps", () => {
+    const projector = new SessionSnapshotProjector(makeSnapshot({
+      provider: "opencode-zen",
+      model: "minimax-m2.5-free",
+    }));
+
+    projector.applyEvent(
+      {
+        type: "user_message",
+        sessionId: "session-1",
+        text: "what changed?",
+      },
+      "2026-03-20T00:00:01.000Z",
+    );
+    projector.applyEvent(
+      {
+        type: "model_stream_chunk",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        index: 0,
+        provider: "opencode-zen",
+        model: "minimax-m2.5-free",
+        partType: "start",
+        part: {},
+      },
+      "2026-03-20T00:00:02.000Z",
+    );
+    projector.applyEvent(
+      {
+        type: "model_stream_chunk",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        index: 1,
+        provider: "opencode-zen",
+        model: "minimax-m2.5-free",
+        partType: "reasoning_delta",
+        part: { id: "s0", mode: "reasoning", text: "First check." },
+      },
+      "2026-03-20T00:00:03.000Z",
+    );
+    projector.applyEvent(
+      {
+        type: "model_stream_chunk",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        index: 2,
+        provider: "opencode-zen",
+        model: "minimax-m2.5-free",
+        partType: "start",
+        part: {},
+      },
+      "2026-03-20T00:00:04.000Z",
+    );
+    projector.applyEvent(
+      {
+        type: "model_stream_chunk",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        index: 3,
+        provider: "opencode-zen",
+        model: "minimax-m2.5-free",
+        partType: "reasoning_delta",
+        part: { id: "s1", mode: "reasoning", text: "Second check." },
+      },
+      "2026-03-20T00:00:05.000Z",
+    );
+    projector.applyEvent(
+      {
+        type: "model_stream_chunk",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        index: 4,
+        provider: "opencode-zen",
+        model: "minimax-m2.5-free",
+        partType: "text_delta",
+        part: { id: "a0", text: "Final answer." },
+      },
+      "2026-03-20T00:00:06.000Z",
+    );
+    projector.applyEvent(
+      {
+        type: "reasoning",
+        sessionId: "session-1",
+        kind: "reasoning",
+        text: "First check.\n\nSecond check.",
+      },
+      "2026-03-20T00:00:07.000Z",
+    );
+    projector.applyEvent(
+      {
+        type: "assistant_message",
+        sessionId: "session-1",
+        text: "Final answer.",
+      },
+      "2026-03-20T00:00:08.000Z",
+    );
+
+    const snapshot = projector.getSnapshot();
+    expect(snapshot.feed.map((item) => item.kind)).toEqual(["message", "reasoning", "reasoning", "message"]);
+    const reasoning = snapshot.feed.filter((item) => item.kind === "reasoning");
+    expect(reasoning.map((item) => item.text)).toEqual(["First check.", "Second check."]);
+  });
 });
