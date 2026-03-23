@@ -624,10 +624,10 @@ function applyModelStreamUpdate(
       ops.updateFeedItem(itemId, (item) =>
         item.kind === "reasoning" ? { ...item, mode: update.mode, text: nextText } : item
       );
-    } else {
+    } else if (nextText) {
       const id = ops.makeId();
       stream.reasoningItemIdByStream.set(key, id);
-      push({ id, kind: "reasoning", mode: update.mode, ts: ops.nowIso(), text: update.text });
+      push({ id, kind: "reasoning", mode: update.mode, ts: ops.nowIso(), text: nextText });
     }
     return;
   }
