@@ -686,6 +686,143 @@ describe("desktop JSON-RPC event mapping", () => {
     });
   });
 
+  test("shared JSON-RPC follow-up activity segments repeated assistant raw ids while streaming", async () => {
+    const socket = await reconnectThreadAndGetSocket();
+
+    socket.notify("turn/started", {
+      threadId: sessionId,
+      turn: { id: "turn-1", status: "inProgress", items: [] },
+    });
+    socket.notify("item/agentMessage/delta", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      itemId: "assistant-raw",
+      delta: "Let me rewrite the script.\n",
+    });
+    socket.notify("item/started", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: {
+        id: "reasoning-1",
+        type: "reasoning",
+        mode: "reasoning",
+        text: "",
+      },
+    });
+    socket.notify("item/reasoning/delta", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      itemId: "reasoning-1",
+      mode: "reasoning",
+      delta: "I should inspect the current file first.",
+    });
+    socket.notify("item/completed", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: {
+        id: "reasoning-1",
+        type: "reasoning",
+        mode: "reasoning",
+        text: "I should inspect the current file first.",
+      },
+    });
+    socket.notify("item/completed", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: {
+        id: "tool-1",
+        type: "toolCall",
+        toolName: "Read",
+        state: "output-available",
+        args: { filePath: "/tmp/create_smci_report.py" },
+        result: { path: "/tmp/create_smci_report.py", receivedChars: 17037 },
+      },
+    });
+    socket.notify("item/agentMessage/delta", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      itemId: "assistant-raw",
+      delta: "Now let me run the updated script.\n",
+    });
+    socket.notify("item/completed", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: {
+        id: "tool-2",
+        type: "toolCall",
+        toolName: "Bash",
+        state: "output-error",
+        args: { command: "python create_smci_report.py" },
+        result: { error: "Exit code: 1" },
+      },
+    });
+    socket.notify("item/agentMessage/delta", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      itemId: "assistant-raw",
+      delta: "I need to fix the parameter and run it again.\n",
+    });
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const liveFeed = useAppStore.getState().threadRuntimeById[threadId]?.feed.filter((item) =>
+      item.kind === "reasoning" || item.kind === "tool" || item.kind === "message"
+    ) ?? [];
+    expect(liveFeed.map((item) => item.kind)).toEqual(["message", "reasoning", "tool", "message", "tool", "message"]);
+    expect(liveFeed[0]).toMatchObject({
+      kind: "message",
+      role: "assistant",
+      text: "Let me rewrite the script.\n",
+    });
+    expect(liveFeed[1]).toMatchObject({
+      kind: "reasoning",
+      text: "I should inspect the current file first.",
+    });
+    expect(liveFeed[2]).toMatchObject({
+      kind: "tool",
+      name: "Read",
+      state: "output-available",
+    });
+    expect(liveFeed[3]).toMatchObject({
+      kind: "message",
+      role: "assistant",
+      text: "Now let me run the updated script.\n",
+    });
+    expect(liveFeed[4]).toMatchObject({
+      kind: "tool",
+      name: "Bash",
+      state: "output-error",
+    });
+    expect(liveFeed[5]).toMatchObject({
+      kind: "message",
+      role: "assistant",
+      text: "I need to fix the parameter and run it again.\n",
+    });
+
+    socket.notify("item/completed", {
+      threadId: sessionId,
+      turnId: "turn-1",
+      item: {
+        id: "assistant-raw",
+        type: "agentMessage",
+        text: [
+          "Let me rewrite the script.",
+          "",
+          "Now let me run the updated script.",
+          "",
+          "I need to fix the parameter and run it again.",
+        ].join("\n"),
+      },
+    });
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const completedFeed = useAppStore.getState().threadRuntimeById[threadId]?.feed.filter((item) =>
+      item.kind === "reasoning" || item.kind === "tool" || item.kind === "message"
+    ) ?? [];
+    expect(completedFeed.map((item) => item.kind)).toEqual(["message", "reasoning", "tool", "message", "tool", "message"]);
+  });
+
   test("shared JSON-RPC notifications hydrate live session metadata immediately", async () => {
     const socket = await reconnectThreadAndGetSocket();
 

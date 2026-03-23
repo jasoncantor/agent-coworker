@@ -95,6 +95,10 @@ function upsertAgentSummary(agents: ThreadAgentSummary[], nextAgent: ThreadAgent
   return sortAgentSummaries(nextAgents);
 }
 
+function occurrenceItemId(baseId: string, occurrence: number): string {
+  return occurrence <= 1 ? baseId : `${baseId}:${occurrence}`;
+}
+
 type ThreadEventReducerDeps = {
   nowIso: () => string;
   makeId: () => string;
@@ -116,6 +120,8 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
   const jsonRpcThreadConnectPromises = new Map<string, Promise<void>>();
   const threadStoreGettersByWorkspace = new Map<string, StoreGet>();
   const disposedWorkspaces = new Set<string>();
+  const liveJsonRpcAssistantOccurrencesByThread = new Map<string, Map<string, number>>();
+  const liveJsonRpcAssistantStreamIdsByThread = new Map<string, Map<string, string>>();
 
   function isWorkspaceDisposed(workspaceId: string): boolean {
     return disposedWorkspaces.has(workspaceId);
@@ -127,6 +133,84 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
 
   function hasPendingWorkspaceDefaultApply(threadId: string): boolean {
     return Boolean(RUNTIME.pendingWorkspaceDefaultApplyByThread.get(threadId));
+  }
+
+  function jsonRpcAssistantRawKey(turnId: string, rawItemId: string): string {
+    return `${turnId}:${rawItemId}`;
+  }
+
+  function ensureLiveJsonRpcAssistantMaps(threadId: string) {
+    const occurrences = liveJsonRpcAssistantOccurrencesByThread.get(threadId) ?? new Map<string, number>();
+    liveJsonRpcAssistantOccurrencesByThread.set(threadId, occurrences);
+    const streamIds = liveJsonRpcAssistantStreamIdsByThread.get(threadId) ?? new Map<string, string>();
+    liveJsonRpcAssistantStreamIdsByThread.set(threadId, streamIds);
+    return { occurrences, streamIds };
+  }
+
+  function currentLiveJsonRpcAssistantStreamId(threadId: string, turnId: string, rawItemId: string): string {
+    const rawKey = jsonRpcAssistantRawKey(turnId, rawItemId);
+    const current = liveJsonRpcAssistantStreamIdsByThread.get(threadId)?.get(rawKey);
+    if (current) return current;
+    const occurrence = liveJsonRpcAssistantOccurrencesByThread.get(threadId)?.get(rawKey);
+    return occurrenceItemId(rawItemId, occurrence ?? 1);
+  }
+
+  function ensureLiveJsonRpcAssistantStreamId(threadId: string, turnId: string, rawItemId: string): string {
+    const stream = getModelStreamRuntime(threadId);
+    const rawKey = jsonRpcAssistantRawKey(turnId, rawItemId);
+    const { occurrences, streamIds } = ensureLiveJsonRpcAssistantMaps(threadId);
+    const current = streamIds.get(rawKey);
+    if (current) {
+      const assistantKey = `${turnId}:${current}`;
+      if (!stream.completedAssistantStreamKeys.has(assistantKey)) {
+        return current;
+      }
+    }
+
+    const nextOccurrence = (occurrences.get(rawKey) ?? 0) + 1;
+    occurrences.set(rawKey, nextOccurrence);
+    const nextStreamId = occurrenceItemId(rawItemId, nextOccurrence);
+    streamIds.set(rawKey, nextStreamId);
+    return nextStreamId;
+  }
+
+  function completeActiveLiveJsonRpcAssistantSegment(threadId: string, turnId: string) {
+    const stream = getModelStreamRuntime(threadId);
+    const assistantKey = stream.lastAssistantStreamKeyByTurn.get(turnId);
+    if (!assistantKey || stream.completedAssistantStreamKeys.has(assistantKey)) {
+      return;
+    }
+    stream.completedAssistantStreamKeys.add(assistantKey);
+  }
+
+  function clearLiveJsonRpcAssistantSegmentation(threadId: string) {
+    liveJsonRpcAssistantOccurrencesByThread.delete(threadId);
+    liveJsonRpcAssistantStreamIdsByThread.delete(threadId);
+  }
+
+  function resetLiveModelStreamRuntime(threadId: string) {
+    clearLiveJsonRpcAssistantSegmentation(threadId);
+    resetModelStreamRuntime(threadId);
+  }
+
+  function rekeyLiveJsonRpcAssistantSegmentation(fromThreadId: string, toThreadId: string) {
+    if (!fromThreadId || !toThreadId || fromThreadId === toThreadId) {
+      return;
+    }
+    const occurrences = liveJsonRpcAssistantOccurrencesByThread.get(fromThreadId);
+    if (occurrences) {
+      liveJsonRpcAssistantOccurrencesByThread.delete(fromThreadId);
+      if (!liveJsonRpcAssistantOccurrencesByThread.has(toThreadId)) {
+        liveJsonRpcAssistantOccurrencesByThread.set(toThreadId, occurrences);
+      }
+    }
+    const streamIds = liveJsonRpcAssistantStreamIdsByThread.get(fromThreadId);
+    if (streamIds) {
+      liveJsonRpcAssistantStreamIdsByThread.delete(fromThreadId);
+      if (!liveJsonRpcAssistantStreamIdsByThread.has(toThreadId)) {
+        liveJsonRpcAssistantStreamIdsByThread.set(toThreadId, streamIds);
+      }
+    }
   }
 
   function buildJsonRpcModelStreamChunk(
@@ -369,6 +453,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
 
       if (message.method === "item/started" && params.item?.type === "reasoning") {
         const turnId = String(params.turnId ?? "jsonrpc-turn");
+        completeActiveLiveJsonRpcAssistantSegment(mappedThreadId, turnId);
         const streamId = String(params.item?.id ?? `jsonrpc-reasoning:${turnId}`);
         const mode = params.item?.mode === "summary" ? "summary" : "reasoning";
         handleThreadEvent(get, set, mappedThreadId, buildJsonRpcModelStreamChunk(
@@ -393,6 +478,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
 
       if (message.method === "item/reasoning/delta") {
         const turnId = String(params.turnId ?? "jsonrpc-turn");
+        completeActiveLiveJsonRpcAssistantSegment(mappedThreadId, turnId);
         const streamId = String(params.itemId ?? `jsonrpc-reasoning:${turnId}`);
         const mode = params.mode === "summary" ? "summary" : "reasoning";
         handleThreadEvent(get, set, mappedThreadId, {
@@ -409,14 +495,16 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
       }
 
       if (message.method === "item/agentMessage/delta") {
+        const turnId = String(params.turnId ?? "jsonrpc-turn");
+        const rawItemId = String(params.itemId ?? `jsonrpc-assistant:${turnId}`);
         handleThreadEvent(get, set, mappedThreadId, buildJsonRpcModelStreamChunk(
           get,
           mappedThreadId,
           mappedSessionId,
-          String(params.turnId ?? "jsonrpc-turn"),
+          turnId,
           "text_delta",
           {
-            id: String(params.itemId ?? `jsonrpc-assistant:${String(params.turnId ?? "jsonrpc-turn")}`),
+            id: ensureLiveJsonRpcAssistantStreamId(mappedThreadId, turnId, rawItemId),
             text: String(params.delta ?? ""),
           },
         ));
@@ -470,7 +558,8 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
 
       if (message.method === "item/completed" && params.item?.type === "agentMessage") {
         const turnId = String(params.turnId ?? "jsonrpc-turn");
-        const streamId = String(params.item?.id ?? `jsonrpc-assistant:${turnId}`);
+        const rawItemId = String(params.item?.id ?? `jsonrpc-assistant:${turnId}`);
+        const streamId = currentLiveJsonRpcAssistantStreamId(mappedThreadId, turnId, rawItemId);
         markAssistantStreamCompleted(mappedThreadId, turnId, streamId);
         handleThreadEvent(get, set, mappedThreadId, {
           type: "assistant_message",
@@ -482,6 +571,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
 
       if (message.method === "item/started" && params.item?.type === "toolCall") {
         const turnId = String(params.turnId ?? "jsonrpc-turn");
+        completeActiveLiveJsonRpcAssistantSegment(mappedThreadId, turnId);
         const itemId = String(params.item?.id ?? `jsonrpc-tool:${turnId}`);
         handleThreadEvent(get, set, mappedThreadId, buildJsonRpcModelStreamChunk(
           get,
@@ -499,6 +589,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
 
       if (message.method === "item/completed" && params.item?.type === "toolCall") {
         const turnId = String(params.turnId ?? "jsonrpc-turn");
+        completeActiveLiveJsonRpcAssistantSegment(mappedThreadId, turnId);
         const itemId = String(params.item?.id ?? `jsonrpc-tool:${turnId}`);
         const toolName = jsonRpcToolName(params.item as Record<string, unknown>);
         const stream = getModelStreamRuntime(mappedThreadId);
@@ -711,6 +802,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
 
     const workspaceId = workspaceIdForThread(get, fromThreadId) ?? workspaceIdForThread(get, toThreadId);
     rekeyThreadRuntimeMaps(fromThreadId, toThreadId);
+    rekeyLiveJsonRpcAssistantSegmentation(fromThreadId, toThreadId);
     if (workspaceId) {
       forgetThreadForReconnect(workspaceId, fromThreadId);
       rememberThreadForReconnect(workspaceId, toThreadId);
@@ -1266,7 +1358,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     const stream = getModelStreamRuntime(threadId);
 
     if (evt.type === "server_hello") {
-      resetModelStreamRuntime(threadId);
+      resetLiveModelStreamRuntime(threadId);
       const resumedBusy = evt.isResume ? Boolean(evt.busy) : false;
       const prevRt = get().threadRuntimeById[threadId];
       const draftModelSelection =
@@ -1382,7 +1474,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     }
 
     if (evt.type === "session_busy") {
-      resetModelStreamRuntime(threadId);
+      resetLiveModelStreamRuntime(threadId);
       set((s) => {
         const rt = s.threadRuntimeById[threadId];
         if (!rt) return {};
@@ -1660,7 +1752,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     }
 
     if (evt.type === "user_message") {
-      resetModelStreamRuntime(threadId);
+      resetLiveModelStreamRuntime(threadId);
       const cmid = typeof evt.clientMessageId === "string" ? evt.clientMessageId : null;
       if (cmid && hasPendingThreadSteer(threadId, cmid)) {
         clearPendingThreadSteer(threadId, cmid);
@@ -2003,6 +2095,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     jsonRpcLifecycleCleanupByWorkspace.delete(workspaceId);
     for (const threadId of trackedThreadIdsForWorkspace(workspaceId, getOverride)) {
       jsonRpcThreadConnectPromises.delete(threadId);
+      clearLiveJsonRpcAssistantSegmentation(threadId);
     }
     jsonRpcReconnectThreadsByWorkspace.delete(workspaceId);
     threadStoreGettersByWorkspace.delete(workspaceId);

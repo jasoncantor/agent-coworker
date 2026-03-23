@@ -1,5 +1,18 @@
 # Task Plan
 
+## Fix Live JSON-RPC Follow-Up Activity Streaming
+
+- [x] Confirm the refresh view is already correct and isolate the remaining defect to the desktop live JSON-RPC reducer rather than the replay/journal projector.
+- [x] Patch the live reducer so reused raw `item/agentMessage/delta` ids are segmented into distinct assistant feed items whenever streamed reasoning or tool activity resumes within the same turn.
+- [x] Add a focused live desktop regression for repeated raw assistant ids across reasoning/tool follow-up steps, then rerun the affected desktop verification slice plus `bun run typecheck`.
+
+## Fix Live JSON-RPC Follow-Up Activity Streaming Review
+
+- `apps/desktop/src/app/store.helpers/threadEventReducer.ts` now tracks occurrence-stable live assistant stream ids per raw JSON-RPC assistant item id, so follow-up turns no longer keep one assistant feed item open across multiple reasoning/tool phases.
+- The live reducer now closes the current assistant segment when streamed reasoning starts/deltas or tool activity begins/completes, which makes the live feed match the already-correct post-refresh snapshot ordering for assistant -> reasoning/tool -> assistant follow-up steps.
+- `apps/desktop/test/protocol-v2-events.test.ts` now asserts the interleaved follow-up sequence while the turn is still streaming and verifies that the final aggregate `item/completed` assistant payload does not append a duplicate answer.
+- Verification passed with `bun test apps/desktop/test/protocol-v2-events.test.ts` and `bun run typecheck`.
+
 ## Fix Follow-Up JSON-RPC Assistant Segments
 
 - [x] Inspect the latest affected session in `~/.cowork/sessions.db` and confirm the remaining live-only bug is caused by the server JSON-RPC projector collapsing multiple assistant segments in one turn onto a single `agentMessage` item.
