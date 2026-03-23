@@ -1,4 +1,4 @@
-import type { JsonRpcSocket } from "../../lib/agentSocket";
+import { AgentSocket } from "../../lib/agentSocket";
 import type { ProviderName } from "../../lib/wsProtocol";
 import {
   clearThreadModelStreamRuntime,
@@ -25,8 +25,6 @@ export type DraftModelSelection = {
 export type PendingWorkspaceDefaultApply = {
   mode: WorkspaceDefaultApplyMode;
   draftModelSelection: DraftModelSelection | null;
-  allowBeforeHydration?: boolean;
-  inFlight?: boolean;
 };
 
 export type SkillInstallWaiter = {
@@ -36,10 +34,10 @@ export type SkillInstallWaiter = {
 };
 
 export type RuntimeMaps = {
-  jsonRpcSockets: Map<string, JsonRpcSocket>;
-  workspaceJsonRpcSocketGenerations: Map<string, number>;
+  controlSockets: Map<string, AgentSocket>;
   /** Latest in-flight skill install per workspace; resolved when `skills_catalog` completes the matching pending key. */
   skillInstallWaiters: Map<string, SkillInstallWaiter>;
+  threadSockets: Map<string, AgentSocket>;
   optimisticUserMessageIds: Map<string, Set<string>>;
   pendingThreadMessages: Map<string, string[]>;
   pendingThreadSteers: Map<string, Map<string, PendingThreadSteer>>;
@@ -51,14 +49,12 @@ export type RuntimeMaps = {
   modelStreamByThread: Map<string, ThreadModelStreamRuntime>;
   sessionSnapshots: Map<string, CachedSessionSnapshot>;
   workspacePickerOpen: boolean;
-  /** Monotonic counter so overlapping provider status refreshes do not clear `providerStatusRefreshing` early. */
-  providerStatusRefreshGeneration: number;
 };
 
 export const RUNTIME: RuntimeMaps = {
-  jsonRpcSockets: new Map(),
-  workspaceJsonRpcSocketGenerations: new Map(),
+  controlSockets: new Map(),
   skillInstallWaiters: new Map(),
+  threadSockets: new Map(),
   optimisticUserMessageIds: new Map(),
   pendingThreadMessages: new Map(),
   pendingThreadSteers: new Map(),
@@ -70,7 +66,6 @@ export const RUNTIME: RuntimeMaps = {
   modelStreamByThread: new Map(),
   sessionSnapshots: new Map(),
   workspacePickerOpen: false,
-  providerStatusRefreshGeneration: 0,
 };
 
 export function getModelStreamRuntime(threadId: string): ThreadModelStreamRuntime {
@@ -115,14 +110,6 @@ export function shiftPendingThreadMessage(threadId: string): string | undefined 
     RUNTIME.pendingThreadMessages.set(threadId, existing);
   }
   return next;
-}
-
-export function prependPendingThreadMessage(threadId: string, text: string) {
-  const trimmed = text.trim();
-  if (!trimmed) return;
-  const existing = RUNTIME.pendingThreadMessages.get(threadId) ?? [];
-  existing.unshift(trimmed);
-  RUNTIME.pendingThreadMessages.set(threadId, existing);
 }
 
 export function rememberPendingThreadSteer(threadId: string, steer: PendingThreadSteer) {
@@ -173,6 +160,7 @@ export function rekeyThreadRuntimeMaps(fromThreadId: string, toThreadId: string)
     return;
   }
 
+  moveMapEntry(RUNTIME.threadSockets, fromThreadId, toThreadId);
   moveMapEntry(RUNTIME.optimisticUserMessageIds, fromThreadId, toThreadId);
   moveMapEntry(RUNTIME.pendingThreadMessages, fromThreadId, toThreadId);
   moveMapEntry(RUNTIME.pendingThreadSteers, fromThreadId, toThreadId);
@@ -272,20 +260,6 @@ export function defaultThreadRuntime(): ThreadRuntime {
     hydrating: false,
     transcriptOnly: false,
   };
-}
-
-export function getWorkspaceJsonRpcSocketGeneration(workspaceId: string): number {
-  return RUNTIME.workspaceJsonRpcSocketGenerations.get(workspaceId) ?? 0;
-}
-
-export function bumpWorkspaceJsonRpcSocketGeneration(workspaceId: string): number {
-  const next = getWorkspaceJsonRpcSocketGeneration(workspaceId) + 1;
-  RUNTIME.workspaceJsonRpcSocketGenerations.set(workspaceId, next);
-  return next;
-}
-
-export function clearWorkspaceJsonRpcSocketGeneration(workspaceId: string): void {
-  RUNTIME.workspaceJsonRpcSocketGenerations.delete(workspaceId);
 }
 
 export function getWorkspaceStartGeneration(workspaceId: string): number {

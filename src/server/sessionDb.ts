@@ -126,17 +126,6 @@ export type PersistedModelStreamChunk = {
   rawEvent: unknown;
 };
 
-export type PersistedThreadJournalEvent = {
-  threadId: string;
-  seq: number;
-  ts: string;
-  eventType: string;
-  turnId: string | null;
-  itemId: string | null;
-  requestId: string | null;
-  payload: unknown;
-};
-
 type SessionDbOptions = {
   paths: Pick<AiCoworkerPaths, "rootDir" | "sessionsDir">;
   dbPath?: string;
@@ -278,32 +267,6 @@ export class SessionDb {
 
   listModelStreamChunks(sessionId: string, turnId?: string): PersistedModelStreamChunk[] {
     return this.repository.listModelStreamChunks(sessionId, turnId);
-  }
-
-  async appendThreadJournalEvent(opts: Omit<PersistedThreadJournalEvent, "seq">): Promise<number> {
-    return await this.writeCoordinator.runExclusive(
-      "append_thread_journal_event",
-      async () => this.repository.appendThreadJournalEvent(opts),
-      { threadId: opts.threadId, eventType: opts.eventType },
-    );
-  }
-
-  async appendThreadJournalEvents(opts: Array<Omit<PersistedThreadJournalEvent, "seq">>): Promise<number[]> {
-    if (opts.length === 0) {
-      return [];
-    }
-    return await this.writeCoordinator.runExclusive(
-      "append_thread_journal_events",
-      async () => this.repository.appendThreadJournalEvents(opts),
-      {
-        threadId: opts[0]?.threadId ?? "unknown",
-        batchSize: opts.length,
-      },
-    );
-  }
-
-  listThreadJournalEvents(threadId: string, opts?: { afterSeq?: number; limit?: number }): PersistedThreadJournalEvent[] {
-    return this.repository.listThreadJournalEvents(threadId, opts);
   }
 
   async persistSessionSnapshot(sessionId: string, snapshot: SessionSnapshot): Promise<void> {

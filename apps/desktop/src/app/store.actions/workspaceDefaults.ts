@@ -37,111 +37,29 @@ import {
   persistNow,
   providerAuthMethodsFor,
   pushNotification,
-  prependPendingThreadMessage,
-  requestJsonRpcControlEvent,
+  queuePendingThreadMessage,
+  sendControl,
   sendThread,
   sendUserMessageToThread,
   normalizeThreadTitleSource,
   truncateTitle,
   waitForControlSession,
-  shiftPendingThreadMessage,
 } from "../store.helpers";
-import { requestJsonRpc } from "../store.helpers/jsonRpcSocket";
 import { mergeWorkspaceProviderOptions, normalizeWorkspaceProviderOptions } from "../openaiCompatibleProviderOptions";
 import type { DraftModelSelection } from "../store.helpers/runtimeState";
 import { normalizeWorkspaceUserProfile } from "../types";
 import type { ThreadRecord, WorkspaceDefaultsPatch, WorkspaceRecord } from "../types";
 
 export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "applyWorkspaceDefaultsToThread" | "updateWorkspaceDefaults"> {
-  type ApplySessionDefaultsMessage = Extract<ClientMessage, { type: "apply_session_defaults" }>;
   type DefaultsTargetState = {
     config: { provider?: unknown; model?: unknown } | null | undefined;
     sessionConfig: any;
     enableMcp: boolean | null | undefined;
   };
-  type ThreadJsonRpcApplyResult = {
-    ok: boolean;
-    errorMessage?: string;
-  };
-  class ThreadDefaultsApplyResponseError extends Error {}
 
   const stringArrayEqual = (left: string[] | undefined, right: string[] | undefined): boolean => {
     if ((left?.length ?? 0) !== (right?.length ?? 0)) return false;
     return (left ?? []).every((value, index) => value === (right ?? [])[index]);
-  };
-
-  const applyThreadJsonRpcResponseState = (
-    threadId: string,
-    sessionId: string,
-    result: unknown,
-  ): ThreadJsonRpcApplyResult => {
-    const events = Array.isArray((result as { events?: unknown[] })?.events)
-      ? (result as { events: unknown[] }).events
-      : (result as { event?: unknown })?.event !== undefined
-        ? [(result as { event: unknown }).event]
-        : [];
-    if (events.length === 0) {
-      return { ok: true };
-    }
-
-    const unset = Symbol("thread-response-state-unset");
-    let nextConfig: Record<string, unknown> | typeof unset = unset;
-    let nextSessionConfig: Record<string, unknown> | typeof unset = unset;
-    let nextEnableMcp: boolean | typeof unset = unset;
-    let errorMessage: string | undefined;
-
-    for (const event of events) {
-      if (!event || typeof event !== "object") continue;
-      const candidate = event as {
-        type?: string;
-        sessionId?: unknown;
-        message?: unknown;
-        config?: unknown;
-        enableMcp?: unknown;
-      };
-      if (candidate.type === "error") {
-        errorMessage = typeof candidate.message === "string" && candidate.message.trim()
-          ? candidate.message
-          : "Unable to apply workspace defaults to the active thread.";
-        continue;
-      }
-      if (candidate.sessionId !== sessionId) {
-        continue;
-      }
-      if (candidate.type === "config_updated" && candidate.config && typeof candidate.config === "object") {
-        nextConfig = candidate.config as Record<string, unknown>;
-        continue;
-      }
-      if (candidate.type === "session_config" && candidate.config && typeof candidate.config === "object") {
-        nextSessionConfig = candidate.config as Record<string, unknown>;
-        continue;
-      }
-      if (candidate.type === "session_settings" && typeof candidate.enableMcp === "boolean") {
-        nextEnableMcp = candidate.enableMcp;
-      }
-    }
-
-    if (nextConfig !== unset || nextSessionConfig !== unset || nextEnableMcp !== unset) {
-      set((state) => {
-        const runtime = state.threadRuntimeById[threadId];
-        if (!runtime || runtime.sessionId !== sessionId) {
-          return {};
-        }
-        return {
-          threadRuntimeById: {
-            ...state.threadRuntimeById,
-            [threadId]: {
-              ...runtime,
-              ...(nextConfig !== unset ? { config: nextConfig as typeof runtime.config } : {}),
-              ...(nextSessionConfig !== unset ? { sessionConfig: nextSessionConfig as typeof runtime.sessionConfig } : {}),
-              ...(nextEnableMcp !== unset ? { enableMcp: nextEnableMcp } : {}),
-            },
-          },
-        };
-      });
-    }
-
-    return errorMessage ? { ok: false, errorMessage } : { ok: true };
   };
 
   const userProfileEqual = (
@@ -160,7 +78,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
   const buildApplySessionDefaultsMessage = (opts: {
     sessionId: string;
     current: DefaultsTargetState;
-      desired: {
+    desired: {
       provider?: ProviderName;
       model?: string;
       enableMcp?: boolean;
@@ -171,11 +89,11 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
       preferredChildModelRef?: string;
       allowedChildModelRefs?: string[];
       providerOptions?: WorkspaceRecord["providerOptions"];
-        userName?: string;
-        userProfile?: WorkspaceRecord["userProfile"];
-      };
-  }): ApplySessionDefaultsMessage | null => {
-    const configPatch: NonNullable<ApplySessionDefaultsMessage["config"]> = {};
+      userName?: string;
+      userProfile?: WorkspaceRecord["userProfile"];
+    };
+  }): ClientMessage | null => {
+    const configPatch: NonNullable<Extract<ClientMessage, { type: "apply_session_defaults" }>["config"]> = {};
     const currentProvider =
       opts.current.config?.provider && isProviderName(opts.current.config.provider)
         ? opts.current.config.provider
@@ -343,32 +261,11 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
     };
   };
 
-  const hasPendingWorkspaceDefaultApply = (threadId: string): boolean =>
-    Boolean(RUNTIME.pendingWorkspaceDefaultApplyByThread.get(threadId));
-
-  const flushQueuedThreadMessageIfReady = (threadId: string): boolean => {
-    if (hasPendingWorkspaceDefaultApply(threadId) || get().threadRuntimeById[threadId]?.busy) {
-      return false;
-    }
-
-    const next = shiftPendingThreadMessage(threadId)?.trim();
-    if (!next) {
-      return false;
-    }
-
-    const accepted = sendUserMessageToThread(get, set, threadId, next);
-    if (!accepted) {
-      prependPendingThreadMessage(threadId, next);
-    }
-    return accepted;
-  };
-
   return {
     applyWorkspaceDefaultsToThread: async (
       threadId: string,
       mode: "auto" | "auto-resume" | "explicit" = "explicit",
       draftModelSelection: { provider: ProviderName; model: string } | null = null,
-      opts?: { allowBeforeHydration?: boolean },
     ) => {
       const thread = get().threads.find((t) => t.id === threadId);
       if (!thread) return;
@@ -382,24 +279,14 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
       if (!rt?.sessionId) return;
       const workspaceRuntime = get().workspaceRuntimeById[thread.workspaceId];
       const pendingApply = RUNTIME.pendingWorkspaceDefaultApplyByThread.get(threadId) ?? null;
-      if (pendingApply?.inFlight) {
-        return;
-      }
-      const allowBeforeHydration = opts?.allowBeforeHydration === true || pendingApply?.allowBeforeHydration === true;
       const effectiveDraftModelSelection: DraftModelSelection | null =
         mode === "auto-resume"
           ? null
           : draftModelSelection ?? pendingApply?.draftModelSelection ?? null;
-      if (
-        mode !== "explicit"
-        && !allowBeforeHydration
-        && (rt.sessionConfig == null || typeof rt.enableMcp !== "boolean")
-      ) {
+      if (mode !== "explicit" && (!rt.sessionConfig || rt.enableMcp === null)) {
         RUNTIME.pendingWorkspaceDefaultApplyByThread.set(threadId, {
           mode,
           draftModelSelection: effectiveDraftModelSelection,
-          ...(allowBeforeHydration ? { allowBeforeHydration: true } : {}),
-          inFlight: false,
         });
         return;
       }
@@ -412,11 +299,10 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         RUNTIME.pendingWorkspaceDefaultApplyByThread.set(threadId, {
           mode,
           draftModelSelection: effectiveDraftModelSelection,
-          ...(allowBeforeHydration ? { allowBeforeHydration: true } : {}),
-          inFlight: false,
         });
         return;
       }
+      RUNTIME.pendingWorkspaceDefaultApplyByThread.delete(threadId);
 
       const preserveSessionModel = mode === "auto-resume";
 
@@ -500,55 +386,13 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
           ...(userProfile !== undefined ? { userProfile } : {}),
         },
       });
-      if (!message || message.type !== "apply_session_defaults") {
-        RUNTIME.pendingWorkspaceDefaultApplyByThread.delete(threadId);
-        flushQueuedThreadMessageIfReady(threadId);
+      if (!message) {
         return;
       }
 
-      RUNTIME.pendingWorkspaceDefaultApplyByThread.set(threadId, {
-        mode,
-        draftModelSelection: effectiveDraftModelSelection,
-        ...(allowBeforeHydration ? { allowBeforeHydration: true } : {}),
-        inFlight: true,
-      });
-      try {
-        const result = await requestJsonRpc(get, set, thread.workspaceId, "cowork/session/defaults/apply", {
-          threadId: rt.sessionId,
-          cwd: ws.path,
-          ...(message.provider !== undefined ? { provider: message.provider } : {}),
-          ...(message.model !== undefined ? { model: message.model } : {}),
-          ...(message.enableMcp !== undefined ? { enableMcp: message.enableMcp } : {}),
-          ...(message.config !== undefined ? { config: message.config } : {}),
-        });
-        const applied = applyThreadJsonRpcResponseState(threadId, rt.sessionId, result);
-        if (!applied.ok) {
-          throw new ThreadDefaultsApplyResponseError(
-            applied.errorMessage ?? "Unable to apply workspace defaults to the active thread.",
-          );
-        }
+      const ok = sendThread(get, threadId, () => message);
+      if (ok) {
         appendThreadTranscript(threadId, "client", message);
-      } catch (error) {
-        const detail = error instanceof ThreadDefaultsApplyResponseError && error.message.trim()
-          ? error.message
-          : "Unable to apply workspace defaults to the active thread.";
-        set((s) => ({
-          notifications: pushNotification(s.notifications, {
-            id: makeId(),
-            ts: nowIso(),
-            kind: "error",
-            title: detail === "Unable to apply workspace defaults to the active thread."
-              ? "Not connected"
-              : "Unable to apply workspace defaults",
-            detail,
-          }),
-        }));
-      } finally {
-        const currentPending = RUNTIME.pendingWorkspaceDefaultApplyByThread.get(threadId);
-        if (currentPending?.inFlight) {
-          RUNTIME.pendingWorkspaceDefaultApplyByThread.delete(threadId);
-        }
-        flushQueuedThreadMessageIfReady(threadId);
       }
     },
   
@@ -590,8 +434,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
 
       await ensureServerRunning(get, set, workspaceId);
       ensureControlSocket(get, set, workspaceId);
-      const controlReady = await waitForControlSession(get, set, workspaceId);
-      const workspacePath = get().workspaces.find((workspace) => workspace.id === workspaceId)?.path;
+      const controlReady = await waitForControlSession(get, workspaceId);
       const workspace = controlReady
         ? resolveWorkspaceDefaults(workspaceId)
         : get().workspaces.find((w) => w.id === workspaceId);
@@ -647,40 +490,8 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         : null;
 
       const persisted = controlReady
-        ? (!controlMessage || await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/session/defaults/apply", {
-            cwd: workspacePath,
-            ...(controlMessage.provider !== undefined ? { provider: controlMessage.provider } : {}),
-            ...(controlMessage.model !== undefined ? { model: controlMessage.model } : {}),
-            ...(controlMessage.enableMcp !== undefined ? { enableMcp: controlMessage.enableMcp } : {}),
-            ...(controlMessage.config !== undefined ? { config: controlMessage.config } : {}),
-          }))
+        ? (!controlMessage || sendControl(get, workspaceId, () => controlMessage))
         : false;
-
-      if (persisted && controlMessage) {
-        set((s) => {
-          const workspaceRuntime = s.workspaceRuntimeById[workspaceId];
-          const workingDirectory = workspacePath ?? workspaceRuntime.controlConfig?.workingDirectory;
-          const nextControlConfig =
-            controlMessage.provider !== undefined && controlMessage.model !== undefined && workingDirectory
-              ? {
-                  ...(workspaceRuntime.controlConfig ?? {}),
-                  provider: controlMessage.provider,
-                  model: controlMessage.model,
-                  workingDirectory,
-                }
-              : workspaceRuntime.controlConfig;
-          return {
-            workspaceRuntimeById: {
-              ...s.workspaceRuntimeById,
-              [workspaceId]: {
-                ...workspaceRuntime,
-                ...(nextControlConfig ? { controlConfig: nextControlConfig } : {}),
-                ...(controlMessage.enableMcp !== undefined ? { controlEnableMcp: controlMessage.enableMcp } : {}),
-              },
-            },
-          };
-        });
-      }
 
       if (!persisted) {
         set((s) => ({

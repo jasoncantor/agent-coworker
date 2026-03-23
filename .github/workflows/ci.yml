@@ -34,10 +34,7 @@ jobs:
         run: bun run docs:check
 
       - name: Unit tests
-        run: bun test --max-concurrency 4
-
-      - name: Remote MCP smoke
         env:
           RUN_REMOTE_MCP_TESTS: "1"
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-        run: bun test test/mcp.remote.grep.test.ts
+        run: bun test

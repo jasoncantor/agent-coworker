@@ -3,6 +3,7 @@ type QuitEvent = {
 };
 
 type ShutdownDeps = {
+  unregisterIpc: () => void;
   unregisterAppearanceListener?: () => void;
   stopUpdater?: () => void;
   stopAllServers: () => Promise<void>;
@@ -33,9 +34,7 @@ export function createBeforeQuitHandler(deps: ShutdownDeps): (event: QuitEvent) 
         deps.onError?.(error);
       })
       .finally(() => {
-        // Keep IPC handlers live until process exit. The renderer may still make
-        // recovery calls while quit is in flight, and Electron clears ipcMain
-        // handlers when the app process exits.
+        deps.unregisterIpc();
         deps.unregisterAppearanceListener?.();
         deps.stopUpdater?.();
         shutdownFinished = true;

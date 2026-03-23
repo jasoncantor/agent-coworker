@@ -27,17 +27,10 @@ import {
   mapTranscriptToFeed,
 } from "./store.feedMapping";
 import { createControlSocketHelpers } from "./store.helpers/controlSocket";
-import {
-  disposeAllJsonRpcSocketState,
-  disposeWorkspaceJsonRpcSocketState,
-  reactivateWorkspaceJsonRpcSocketState,
-} from "./store.helpers/jsonRpcSocket";
 import { persist, persistNow, syncDesktopStateCache, syncDesktopStateCacheNow } from "./store.helpers/persistence";
 import {
   RUNTIME,
-  bumpWorkspaceJsonRpcSocketGeneration,
   bumpWorkspaceStartGeneration,
-  clearWorkspaceJsonRpcSocketGeneration,
   clearWorkspaceStartState,
   defaultThreadRuntime,
   defaultWorkspaceRuntime,
@@ -47,14 +40,12 @@ import {
   beginThreadSelectionRequest,
   ensureThreadRuntime,
   ensureWorkspaceRuntime,
-  getWorkspaceJsonRpcSocketGeneration,
   hasPendingThreadSteer,
   isCurrentThreadSelectionRequest,
   getWorkspaceStartGeneration,
   markPendingThreadSteerAccepted,
   queuePendingThreadMessage,
   rememberPendingThreadSteer,
-  prependPendingThreadMessage,
   shiftPendingThreadMessage,
 } from "./store.helpers/runtimeState";
 import { createThreadEventReducer } from "./store.helpers/threadEventReducer";
@@ -248,7 +239,6 @@ export type AppStoreState = {
     threadId: string,
     mode?: "auto" | "auto-resume" | "explicit",
     draftModelSelection?: { provider: ProviderName; model: string } | null,
-    opts?: { allowBeforeHydration?: boolean },
   ) => Promise<void>;
   updateWorkspaceDefaults: (workspaceId: string, patch: WorkspaceDefaultsPatch) => Promise<void>;
   restartWorkspaceServer: (workspaceId: string) => Promise<void>;
@@ -346,32 +336,14 @@ function pushNotification(notifications: Notification[], entry: Notification): N
 }
 
 const { appendThreadTranscript } = createTranscriptBuffer({ nowIso });
-const {
-  ensureControlSocket,
-  disposeAllControlState,
-  disposeWorkspaceControlState,
-  reactivateWorkspaceControlState,
-  waitForControlSession,
-  requestWorkspaceSessions,
-  requestSessionSnapshot,
-  requestJsonRpcControlEvent,
-  __internal: __controlSocketInternal,
-} = createControlSocketHelpers({
+const { ensureControlSocket, waitForControlSession, sendControl, requestWorkspaceSessions, requestSessionSnapshot } = createControlSocketHelpers({
   nowIso,
   makeId,
   persist,
   pushNotification,
   isProviderName,
 });
-const {
-  disposeAllThreadEventState,
-  disposeWorkspaceThreadEventState,
-  reactivateWorkspaceThreadEventState,
-  ensureThreadSocket,
-  sendThread,
-  sendUserMessageToThread,
-  __internal: __threadEventReducerInternal,
-} = createThreadEventReducer({
+const { ensureThreadSocket, sendThread, sendUserMessageToThread } = createThreadEventReducer({
   nowIso,
   makeId,
   persist,
@@ -381,44 +353,12 @@ const {
   shouldAdoptServerTitle,
 });
 
-function disposeWorkspaceJsonRpcState(get: StoreGet, workspaceId: string) {
-  disposeWorkspaceControlState(workspaceId);
-  disposeWorkspaceThreadEventState(workspaceId, get);
-  disposeWorkspaceJsonRpcSocketState(workspaceId);
-}
-
-function reactivateWorkspaceJsonRpcState(workspaceId: string) {
-  reactivateWorkspaceControlState(workspaceId);
-  reactivateWorkspaceThreadEventState(workspaceId);
-  reactivateWorkspaceJsonRpcSocketState(workspaceId);
-}
-
-function disposeAllJsonRpcState() {
-  for (const socket of [...RUNTIME.jsonRpcSockets.values()]) {
-    try {
-      socket.close?.();
-    } catch {
-      // ignore shutdown cleanup failures
-    }
-  }
-  RUNTIME.jsonRpcSockets.clear();
-  for (const workspaceId of [...RUNTIME.workspaceJsonRpcSocketGenerations.keys()]) {
-    clearWorkspaceJsonRpcSocketGeneration(workspaceId);
-  }
-  disposeAllControlState();
-  disposeAllThreadEventState();
-  disposeAllJsonRpcSocketState();
-}
-
 async function ensureServerRunning(
   get: () => AppStoreState,
   set: (fn: (s: AppStoreState) => Partial<AppStoreState>) => void,
   workspaceId: string,
 ) {
-  const ws = get().workspaces.find((workspace) => workspace.id === workspaceId);
-  if (!ws) return;
   ensureWorkspaceRuntime(get, set, workspaceId);
-  reactivateWorkspaceJsonRpcState(workspaceId);
   const rt = get().workspaceRuntimeById[workspaceId];
   if (!rt) return;
   if (rt.serverUrl && !rt.error) return;
@@ -429,6 +369,9 @@ async function ensureServerRunning(
     await inFlight.promise;
     return;
   }
+
+  const ws = get().workspaces.find((w) => w.id === workspaceId);
+  if (!ws) return;
 
   set((s) => ({
     workspaceRuntimeById: {
@@ -487,9 +430,7 @@ async function ensureServerRunning(
 
 export {
   RUNTIME,
-  bumpWorkspaceJsonRpcSocketGeneration,
   bumpWorkspaceStartGeneration,
-  clearWorkspaceJsonRpcSocketGeneration,
   clearWorkspaceStartState,
   nowIso,
   makeId,
@@ -509,7 +450,6 @@ export {
   clearThreadSelectionRequest,
   ensureWorkspaceRuntime,
   ensureThreadRuntime,
-  getWorkspaceJsonRpcSocketGeneration,
   hasPendingThreadSteer,
   isCurrentThreadSelectionRequest,
   mapTranscriptToFeed,
@@ -519,23 +459,17 @@ export {
   syncDesktopStateCache,
   syncDesktopStateCacheNow,
   ensureServerRunning,
-  disposeWorkspaceJsonRpcState,
-  disposeAllJsonRpcState,
-  reactivateWorkspaceJsonRpcState,
   ensureControlSocket,
   waitForControlSession,
   requestWorkspaceSessions,
   requestSessionSnapshot,
-  requestJsonRpcControlEvent,
-  __controlSocketInternal,
   ensureThreadSocket,
+  sendControl,
   sendThread,
-  __threadEventReducerInternal,
   appendThreadTranscript,
   pushNotification,
   sendUserMessageToThread,
   queuePendingThreadMessage,
   rememberPendingThreadSteer,
-  prependPendingThreadMessage,
   shiftPendingThreadMessage,
 };

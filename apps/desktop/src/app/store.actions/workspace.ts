@@ -24,13 +24,10 @@ import {
   RUNTIME,
   appendThreadTranscript,
   basename,
-  bumpWorkspaceJsonRpcSocketGeneration,
   bumpWorkspaceStartGeneration,
   buildContextPreamble,
   clearPendingThreadSteers,
-  clearWorkspaceJsonRpcSocketGeneration,
   clearWorkspaceStartState,
-  disposeWorkspaceJsonRpcState,
   ensureControlSocket,
   ensureServerRunning,
   ensureThreadRuntime,
@@ -45,6 +42,7 @@ import {
   pushNotification,
   queuePendingThreadMessage,
   requestWorkspaceSessions,
+  sendControl,
   sendThread,
   sendUserMessageToThread,
   normalizeThreadTitleSource,
@@ -54,6 +52,10 @@ import type { ThreadRecord, WorkspaceRecord } from "../types";
 import { reorderSidebarItemsById } from "../../ui/sidebarHelpers";
 
 export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "addWorkspace" | "removeWorkspace" | "selectWorkspace" | "reorderWorkspaces" | "restartWorkspaceServer"> {
+  const closeControlSession = (workspaceId: string) => {
+    sendControl(get, workspaceId, (sessionId) => ({ type: "session_close", sessionId }));
+  };
+
   const closeThreadSession = (threadId: string) => {
     sendThread(get, threadId, (sessionId) => ({ type: "session_close", sessionId }));
   };
@@ -84,7 +86,6 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
         path: dir,
         createdAt: nowIso(),
         lastOpenedAt: nowIso(),
-        wsProtocol: "jsonrpc",
         defaultProvider: "google",
         defaultModel: defaultModelForProvider("google"),
         defaultPreferredChildModel: defaultModelForProvider("google"),
@@ -111,34 +112,37 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
 
     removeWorkspace: async (workspaceId: string) => {
       bumpWorkspaceStartGeneration(workspaceId);
-      bumpWorkspaceJsonRpcSocketGeneration(workspaceId);
-
+      const control = RUNTIME.controlSockets.get(workspaceId);
+      closeControlSession(workspaceId);
+      RUNTIME.controlSockets.delete(workspaceId);
+      try {
+        control?.close();
+      } catch {
+        // ignore
+      }
+  
       for (const thread of get().threads) {
         if (thread.workspaceId !== workspaceId) continue;
+        const sock = RUNTIME.threadSockets.get(thread.id);
         closeThreadSession(thread.id);
+        RUNTIME.threadSockets.delete(thread.id);
         RUNTIME.optimisticUserMessageIds.delete(thread.id);
         RUNTIME.pendingThreadMessages.delete(thread.id);
         RUNTIME.threadSelectionRequests.delete(thread.id);
         RUNTIME.pendingWorkspaceDefaultApplyByThread.delete(thread.id);
         RUNTIME.modelStreamByThread.delete(thread.id);
         clearPendingThreadSteers(thread.id);
+        try {
+          sock?.close();
+        } catch {
+          // ignore
+        }
       }
-
-      const jsonRpcSocket = RUNTIME.jsonRpcSockets.get(workspaceId);
-      try {
-        jsonRpcSocket?.close();
-      } catch {
-        // ignore
-      }
-      RUNTIME.jsonRpcSockets.delete(workspaceId);
-      clearWorkspaceJsonRpcSocketGeneration(workspaceId);
-
+  
       try {
         await stopWorkspaceServer({ workspaceId });
       } catch {
         // ignore
-      } finally {
-        disposeWorkspaceJsonRpcState(get, workspaceId);
       }
   
       set((s) => {
@@ -200,23 +204,21 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
 
     restartWorkspaceServer: async (workspaceId) => {
       bumpWorkspaceStartGeneration(workspaceId);
-      bumpWorkspaceJsonRpcSocketGeneration(workspaceId);
+      const control = RUNTIME.controlSockets.get(workspaceId);
+      closeControlSession(workspaceId);
+      control?.close();
+      RUNTIME.controlSockets.delete(workspaceId);
 
       for (const thread of get().threads) {
         if (thread.workspaceId !== workspaceId) continue;
+        const sock = RUNTIME.threadSockets.get(thread.id);
         closeThreadSession(thread.id);
+        sock?.close();
+        RUNTIME.threadSockets.delete(thread.id);
         RUNTIME.threadSelectionRequests.delete(thread.id);
         RUNTIME.pendingWorkspaceDefaultApplyByThread.delete(thread.id);
       }
-
-      const jsonRpcSocket = RUNTIME.jsonRpcSockets.get(workspaceId);
-      try {
-        jsonRpcSocket?.close();
-      } catch {
-        // ignore
-      }
-      RUNTIME.jsonRpcSockets.delete(workspaceId);
-
+  
       try {
         await stopWorkspaceServer({ workspaceId });
       } catch {

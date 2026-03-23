@@ -551,10 +551,6 @@ export class SessionSnapshotProjector {
     return structuredClone(this.snapshot);
   }
 
-  peekSnapshot(): SessionSnapshot {
-    return this.snapshot;
-  }
-
   syncSessionState(patch: Partial<Omit<SessionSnapshot, "feed" | "agents" | "todos" | "sessionUsage" | "lastTurnUsage">>): void {
     this.snapshot = {
       ...this.snapshot,

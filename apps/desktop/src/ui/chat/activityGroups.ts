@@ -237,10 +237,20 @@ function mergeToolTraceItems(toolItems: Extract<FeedItem, { kind: "tool" }>[]): 
 
 function buildActivityTraceEntries(items: ActivityFeedItem[]): ActivityTraceEntry[] {
   const entries: ActivityTraceEntry[] = [];
+  let pendingTools: Extract<FeedItem, { kind: "tool" }>[] = [];
+
+  const flushPendingTools = () => {
+    if (pendingTools.length === 0) return;
+    for (const item of mergeToolTraceItems(pendingTools)) {
+      entries.push({ kind: "tool", item });
+    }
+    pendingTools = [];
+  };
 
   for (const item of items) {
-    const previous = entries[entries.length - 1];
     if (item.kind === "reasoning") {
+      flushPendingTools();
+      const previous = entries[entries.length - 1];
       if (
         previous?.kind === "reasoning" &&
         previous.item.mode === item.mode &&
@@ -252,25 +262,10 @@ function buildActivityTraceEntries(items: ActivityFeedItem[]): ActivityTraceEntr
       continue;
     }
 
-    if (previous?.kind === "tool" && shouldMergeToolTraceItems(previous.item, item)) {
-      entries[entries.length - 1] = {
-        kind: "tool",
-        item: {
-          ...previous.item,
-          ts: item.ts,
-          state: item.state,
-          args: item.args ?? previous.item.args,
-          result: item.result ?? previous.item.result,
-          approval: item.approval ?? previous.item.approval,
-          sourceIds: [...previous.item.sourceIds, item.id],
-        },
-      };
-      continue;
-    }
-
-    entries.push({ kind: "tool", item: { ...item, sourceIds: [item.id] } });
+    pendingTools.push(item);
   }
 
+  flushPendingTools();
   return entries;
 }
 

@@ -1,6 +1,5 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 
-import { disposeAllJsonRpcState } from "./app/store.helpers";
 import { useAppStore } from "./app/store";
 import type { DesktopMenuCommand, SystemAppearance } from "./lib/desktopApi";
 import {
@@ -54,29 +53,6 @@ const RightSidebarPane = memo(function RightSidebarPane({ collapsed }: { collaps
     </div>
   );
 });
-
-let scheduledJsonRpcShutdownDisposal: number | null = null;
-
-function cancelScheduledJsonRpcShutdownDisposal() {
-  if (scheduledJsonRpcShutdownDisposal === null) {
-    return;
-  }
-  window.clearTimeout(scheduledJsonRpcShutdownDisposal);
-  scheduledJsonRpcShutdownDisposal = null;
-}
-
-function runJsonRpcShutdownDisposal() {
-  cancelScheduledJsonRpcShutdownDisposal();
-  disposeAllJsonRpcState();
-}
-
-function scheduleJsonRpcShutdownDisposal() {
-  cancelScheduledJsonRpcShutdownDisposal();
-  scheduledJsonRpcShutdownDisposal = window.setTimeout(() => {
-    scheduledJsonRpcShutdownDisposal = null;
-    disposeAllJsonRpcState();
-  }, 0);
-}
 
 const ChatShell = memo(function ChatShell({
   init,
@@ -168,27 +144,6 @@ export default function App() {
       console.error(err);
     });
   }, [bootstrapPending, init, ready]);
-
-  useEffect(() => {
-    cancelScheduledJsonRpcShutdownDisposal();
-    let disposed = false;
-    const handleBeforeUnload = () => {
-      if (disposed) {
-        return;
-      }
-      disposed = true;
-      runJsonRpcShutdownDisposal();
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      if (disposed) {
-        return;
-      }
-      scheduleJsonRpcShutdownDisposal();
-    };
-  }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {

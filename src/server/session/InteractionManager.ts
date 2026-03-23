@@ -9,9 +9,6 @@ function makeId(): string {
 }
 
 type PromptBucket<T> = Map<string, PromiseWithResolvers<T>>;
-export type PendingPromptReplayEvent =
-  | Extract<ServerEvent, { type: "ask" }>
-  | Extract<ServerEvent, { type: "approval" }>;
 
 export class InteractionManager {
   private readonly pendingAsk = new Map<string, PromiseWithResolvers<string>>();
@@ -48,15 +45,11 @@ export class InteractionManager {
     return this.pendingApprovalEvents;
   }
 
-  getPendingPromptEventsForReplay(): ReadonlyArray<PendingPromptReplayEvent> {
-    return [
-      ...this.pendingAskEvents.values(),
-      ...this.pendingApprovalEvents.values(),
-    ];
-  }
-
   replayPendingPrompts() {
-    for (const evt of this.getPendingPromptEventsForReplay()) {
+    for (const evt of this.pendingAskEvents.values()) {
+      this.opts.emit(evt);
+    }
+    for (const evt of this.pendingApprovalEvents.values()) {
       this.opts.emit(evt);
     }
   }

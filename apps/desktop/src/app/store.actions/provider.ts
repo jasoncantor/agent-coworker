@@ -38,55 +38,13 @@ import {
   providerAuthMethodsFor,
   pushNotification,
   queuePendingThreadMessage,
-  requestJsonRpcControlEvent,
+  sendControl,
   sendThread,
   sendUserMessageToThread,
   normalizeThreadTitleSource,
   truncateTitle,
 } from "../store.helpers";
 import type { ThreadRecord, WorkspaceRecord } from "../types";
-
-type RefreshProviderStatusHelperOverrides = {
-  makeId?: typeof makeId;
-  nowIso?: typeof nowIso;
-  pushNotification?: typeof pushNotification;
-  requestJsonRpcControlEvent?: typeof requestJsonRpcControlEvent;
-};
-
-export async function refreshProviderStatusForWorkspace(
-  get: StoreGet,
-  set: StoreSet,
-  workspaceId: string,
-  path: string | undefined,
-  overrides: RefreshProviderStatusHelperOverrides = {},
-): Promise<void> {
-  const createId = overrides.makeId ?? makeId;
-  const getNowIso = overrides.nowIso ?? nowIso;
-  const addNotification = overrides.pushNotification ?? pushNotification;
-  const sendControlEvent = overrides.requestJsonRpcControlEvent ?? requestJsonRpcControlEvent;
-  const refreshGeneration = ++RUNTIME.providerStatusRefreshGeneration;
-  set({ providerStatusRefreshing: true });
-  const results = await Promise.allSettled([
-    sendControlEvent(get, set, workspaceId, "cowork/provider/status/refresh", { cwd: path }),
-    sendControlEvent(get, set, workspaceId, "cowork/provider/catalog/read", { cwd: path }),
-    sendControlEvent(get, set, workspaceId, "cowork/provider/authMethods/read", { cwd: path }),
-  ]);
-  const allSucceeded = results.every((result) => result.status === "fulfilled" && result.value);
-  set((s) => ({
-    ...(refreshGeneration === RUNTIME.providerStatusRefreshGeneration ? { providerStatusRefreshing: false } : {}),
-    ...(!allSucceeded
-      ? {
-          notifications: addNotification(s.notifications, {
-            id: createId(),
-            ts: getNowIso(),
-            kind: "error",
-            title: "Not connected",
-            detail: "Unable to refresh provider status.",
-          }),
-        }
-      : {}),
-  }));
-}
 
 export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "connectProvider" | "setProviderApiKey" | "copyProviderApiKey" | "authorizeProviderAuth" | "logoutProviderAuth" | "callbackProviderAuth" | "requestProviderCatalog" | "requestProviderAuthMethods" | "refreshProviderStatus" | "setLmStudioEnabled" | "setLmStudioModelVisible"> {
   const resolveProviderWorkspaceId = (): string | null =>
@@ -98,7 +56,8 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
 
     await ensureServerRunning(get, set, workspaceId);
     const socket = ensureControlSocket(get, set, workspaceId);
-    if (!socket || !get().workspaceRuntimeById[workspaceId]?.controlSessionId) {
+    const sessionId = get().workspaceRuntimeById[workspaceId]?.controlSessionId;
+    if (!socket || !sessionId) {
       return null;
     }
 
@@ -177,12 +136,14 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
   
       await ensureServerRunning(get, set, workspaceId);
       ensureControlSocket(get, set, workspaceId);
-      const ok = await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/auth/setApiKey", {
-        cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,
+  
+      const ok = sendControl(get, workspaceId, (sessionId) => ({
+        type: "provider_auth_set_api_key",
+        sessionId,
         provider,
         methodId: methodId.trim() || "api_key",
         apiKey: trimmedKey,
-      });
+      }));
       if (!ok) {
         set((s) => ({
           notifications: pushNotification(s.notifications, { id: makeId(), ts: nowIso(), kind: "error", title: "Not connected", detail: "Unable to send provider_auth_set_api_key." }),
@@ -213,11 +174,12 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
         providerLastAuthResult: null,
       }));
 
-      const ok = await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/auth/copyApiKey", {
-        cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,
+      const ok = sendControl(get, workspaceId, (sessionId) => ({
+        type: "provider_auth_copy_api_key",
+        sessionId,
         provider,
         sourceProvider,
-      });
+      }));
       if (!ok) {
         set((s) => ({
           notifications: pushNotification(s.notifications, {
@@ -268,12 +230,13 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
         providerLastAuthChallenge: null,
         providerLastAuthResult: null,
       }));
-
-      const ok = await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/auth/authorize", {
-        cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,
+  
+      const ok = sendControl(get, workspaceId, (sessionId) => ({
+        type: "provider_auth_authorize",
+        sessionId,
         provider,
         methodId: normalizedMethodId,
-      });
+      }));
       if (!ok) {
         set((s) => ({
           notifications: pushNotification(s.notifications, {
@@ -310,10 +273,11 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
         providerLastAuthResult: null,
       }));
 
-      const ok = await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/auth/logout", {
-        cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,
+      const ok = sendControl(get, workspaceId, (sessionId) => ({
+        type: "provider_auth_logout",
+        sessionId,
         provider,
-      });
+      }));
       if (!ok) {
         set((s) => ({
           notifications: pushNotification(s.notifications, {
@@ -364,15 +328,15 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
         providerLastAuthChallenge: null,
         providerLastAuthResult: null,
       }));
-
+  
       const normalizedCode = code?.trim();
-
-      const ok = await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/auth/callback", {
-        cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,
+      const ok = sendControl(get, workspaceId, (sessionId) => ({
+        type: "provider_auth_callback",
+        sessionId,
         provider,
         methodId: normalizedMethodId,
         code: normalizedCode || undefined,
-      });
+      }));
       if (!ok) {
         set((s) => ({
           notifications: pushNotification(s.notifications, {
@@ -391,9 +355,7 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
       const workspaceId = await ensureProviderControlReady();
       if (!workspaceId) return;
 
-      const ok = await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/catalog/read", {
-        cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,
-      });
+      const ok = sendControl(get, workspaceId, (sessionId) => ({ type: "provider_catalog_get", sessionId }));
       if (!ok) {
         set((s) => ({
           notifications: pushNotification(s.notifications, {
@@ -412,9 +374,7 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
       const workspaceId = await ensureProviderControlReady();
       if (!workspaceId) return;
 
-      const ok = await requestJsonRpcControlEvent(get, set, workspaceId, "cowork/provider/authMethods/read", {
-        cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,
-      });
+      const ok = sendControl(get, workspaceId, (sessionId) => ({ type: "provider_auth_methods_get", sessionId }));
       if (!ok) {
         set((s) => ({
           notifications: pushNotification(s.notifications, {
@@ -433,8 +393,24 @@ export function createProviderActions(set: StoreSet, get: StoreGet): Pick<AppSto
       const workspaceId = await ensureProviderControlReady();
       if (!workspaceId) return;
 
-      const path = get().workspaces.find((workspace) => workspace.id === workspaceId)?.path;
-      await refreshProviderStatusForWorkspace(get, set, workspaceId, path);
+      set({ providerStatusRefreshing: true });
+      const sid = get().workspaceRuntimeById[workspaceId]?.controlSessionId;
+      const sock = RUNTIME.controlSockets.get(workspaceId);
+      if (!sid || !sock) {
+        set({ providerStatusRefreshing: false });
+        return;
+      }
+  
+      try {
+        sock.send({ type: "refresh_provider_status", sessionId: sid });
+        sock.send({ type: "provider_catalog_get", sessionId: sid });
+        sock.send({ type: "provider_auth_methods_get", sessionId: sid });
+      } catch {
+        set((s) => ({
+          providerStatusRefreshing: false,
+          notifications: pushNotification(s.notifications, { id: makeId(), ts: nowIso(), kind: "error", title: "Not connected", detail: "Unable to refresh provider status." }),
+        }));
+      }
     },
 
     setLmStudioEnabled: async (enabled) => {
