@@ -3968,6 +3968,85 @@ describe("Protocol Doc Parity", () => {
     }
   });
 
+  test("legacy WebSocket user_config_get emits the persisted global user config", async () => {
+    const tmpDir = await makeTmpProject();
+    const homeDir = path.join(tmpDir, "home");
+    await fs.mkdir(path.join(homeDir, ".agent"), { recursive: true });
+    await fs.writeFile(
+      path.join(homeDir, ".agent", "config.json"),
+      `${JSON.stringify({
+        awsBedrockProxyBaseUrl: "https://proxy.example.com/v1/",
+      }, null, 2)}\n`,
+      "utf-8",
+    );
+
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, { homedir: homeDir }));
+    try {
+      const event = await sendAndWaitForEvent(
+        url,
+        (sessionId) => ({
+          type: "user_config_get",
+          sessionId,
+        }),
+        (message) =>
+          message.type === "user_config"
+          && message.config?.awsBedrockProxyBaseUrl === "https://proxy.example.com/v1",
+      );
+
+      expect(event).toMatchObject({
+        type: "user_config",
+        config: {
+          awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+        },
+      });
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("legacy WebSocket user_config_set persists global user config and emits result", async () => {
+    const tmpDir = await makeTmpProject();
+    const homeDir = path.join(tmpDir, "home");
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, { homedir: homeDir }));
+    try {
+      const { responses } = await sendAndCollect(
+        url,
+        (sessionId) => ({
+          type: "user_config_set",
+          sessionId,
+          config: {
+            awsBedrockProxyBaseUrl: "https://proxy.example.com/v1/",
+          },
+        }),
+        2,
+      );
+
+      expect(responses[0]).toMatchObject({
+        type: "user_config_result",
+        ok: true,
+        config: {
+          awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+        },
+      });
+      expect(responses[1]).toMatchObject({
+        type: "user_config",
+        config: {
+          awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+        },
+      });
+
+      const persistedConfig = JSON.parse(
+        await fs.readFile(path.join(homeDir, ".agent", "config.json"), "utf-8"),
+      ) as any;
+      expect(persistedConfig).toMatchObject({
+        awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+      });
+      expect("openaiProxyBaseUrl" in persistedConfig).toBe(false);
+    } finally {
+      server.stop();
+    }
+  });
+
   test("set_config accepts empty user profile values to clear persisted prompt context", async () => {
     const tmpDir = await makeTmpProject();
     await fs.writeFile(

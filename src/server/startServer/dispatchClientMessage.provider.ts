@@ -5,6 +5,8 @@ export function createProviderClientMessageHandlers(): Pick<
   | "refresh_provider_status"
   | "provider_catalog_get"
   | "provider_auth_methods_get"
+  | "user_config_get"
+  | "user_config_set"
   | "provider_auth_authorize"
   | "provider_auth_logout"
   | "provider_auth_callback"
@@ -18,6 +20,10 @@ export function createProviderClientMessageHandlers(): Pick<
       void session.emitProviderCatalog(),
     provider_auth_methods_get: ({ session }) =>
       session.emitProviderAuthMethods(),
+    user_config_get: ({ session }) =>
+      void session.emitUserConfig(),
+    user_config_set: ({ session, message }) =>
+      void session.setUserConfig(message.config),
     provider_auth_authorize: ({ session, message }) =>
       void session.authorizeProviderAuth(message.provider, message.methodId),
     provider_auth_logout: ({ session, message }) =>
