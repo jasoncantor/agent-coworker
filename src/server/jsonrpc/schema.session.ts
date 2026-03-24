@@ -64,6 +64,16 @@ export const harnessContextEventSchema = z.object({
   type: z.literal("harness_context"),
 }).passthrough();
 
+/** Matches `HarnessContextPayload` — validated before `normalizeHarnessContextPayload`. */
+export const harnessContextPayloadSchema = z.object({
+  runId: nonEmptyTrimmedStringSchema,
+  taskId: optionalNonEmptyTrimmedStringSchema,
+  objective: nonEmptyTrimmedStringSchema,
+  acceptanceCriteria: z.array(z.string()),
+  constraints: z.array(z.string()),
+  metadata: z.record(z.string(), z.string()).optional(),
+}).strict();
+
 export const sessionDeletedEventSchema = z.object({
   type: z.literal("session_deleted"),
 }).passthrough();
@@ -89,6 +99,13 @@ export const jsonRpcSessionRequestSchemas = {
   "cowork/session/config/set": z.object({
     threadId: nonEmptyTrimmedStringSchema,
     config: anyObjectSchema,
+  }).strict(),
+  "cowork/session/harnessContext/get": z.object({
+    threadId: nonEmptyTrimmedStringSchema,
+  }).strict(),
+  "cowork/session/harnessContext/set": z.object({
+    threadId: nonEmptyTrimmedStringSchema,
+    context: harnessContextPayloadSchema,
   }).strict(),
   "cowork/session/defaults/apply": z.object({
     cwd: nonEmptyTrimmedStringSchema,
@@ -128,6 +145,8 @@ export const jsonRpcSessionResultSchemas = {
   "cowork/session/model/set": legacyEventEnvelope(configUpdatedEventSchema),
   "cowork/session/usageBudget/set": legacyEventEnvelope(sessionUsageEventSchema),
   "cowork/session/config/set": legacyEventEnvelope(sessionConfigEventSchema),
+  "cowork/session/harnessContext/get": legacyEventEnvelope(harnessContextEventSchema),
+  "cowork/session/harnessContext/set": legacyEventEnvelope(harnessContextEventSchema),
   "cowork/session/defaults/apply": legacyEventEnvelope(sessionConfigEventSchema),
   "cowork/session/delete": legacyEventEnvelope(sessionDeletedEventSchema),
 } as const;

@@ -196,26 +196,6 @@ Minimal readline-based interface:
 - Supports `--yolo` mode to bypass approvals
 - Persistent prompt history in `~/.cowork/state/prompt-history.jsonl`
 
-### TUI (`apps/TUI/`) — Archived
-
-> **Note**: The TUI is archived and no longer maintained. It may be removed in a future release.
-
-Built with OpenTUI + Solid.js (not React):
-
-**Context Provider Stack:**
-```
-ExitProvider → KVProvider → ThemeProvider → DialogProvider
-→ SyncProvider → KeybindProvider → LocalProvider → RouteProvider
-→ PromptProvider → App
-```
-
-**Key Features (when it was maintained):**
-- 31 built-in themes
-- Command palette (`Ctrl+K`)
-- Tool-specific renderers
-- Session management
-- Sidebar with context/todos
-
 ## Data Flow
 
 ### Message Flow
@@ -281,9 +261,9 @@ Configuration merges across three tiers (each overrides the previous):
 
 ### Adding a WebSocket Message
 
-1. Add type to `ClientMessage` or `ServerEvent` in `src/server/protocol.ts`
-2. Add validation in `safeParseClientMessage()` (for client messages)
-3. Add handler in `src/server/startServer/dispatchClientMessage.ts` or the appropriate manager under `src/server/session/`
+1. Add legacy event typing in `src/server/protocol.ts` when needed, and add JSON-RPC request/result/notification schemas in `src/server/jsonrpc/schema.ts` plus the relevant module in `src/server/jsonrpc/`
+2. Add validation in the JSON-RPC schema bundle and parser helpers (for client messages)
+3. Add handler in `src/server/jsonrpc/routes/` or the appropriate manager under `src/server/session/`
 4. Document in `docs/websocket-protocol.md`
 
 ### Adding a Provider

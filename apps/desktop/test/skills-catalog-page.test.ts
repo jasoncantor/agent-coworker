@@ -45,6 +45,7 @@ mock.module("../src/lib/desktopCommands", () => ({
   readFile: async () => "",
   previewOSFile: async () => {},
   openPath: async () => {},
+  openExternalUrl: async () => {},
   revealPath: async () => {},
   copyPath: async () => {},
   createDirectory: async () => {},
@@ -63,13 +64,6 @@ mock.module("../src/lib/desktopCommands", () => ({
 }));
 
 mock.module("../src/lib/agentSocket", () => ({
-  AgentSocket: class {
-    connect() {}
-    send() {
-      return true;
-    }
-    close() {}
-  },
   JsonRpcSocket: NoopJsonRpcSocket,
 }));
 
@@ -80,6 +74,10 @@ mock.module("../src/ui/skills/HeaderAndFilters", () => ({
 mock.module("../src/ui/skills/InstallationCardGrid", () => ({
   InstallationCardGrid: ({ installations }: { installations: unknown[] }) =>
     createElement("div", null, `grid:${installations.length}`),
+}));
+
+mock.module("../src/ui/skills/SkillDetailDialog", () => ({
+  SkillDetailDialog: () => null,
 }));
 
 const { useAppStore } = await import("../src/app/store");

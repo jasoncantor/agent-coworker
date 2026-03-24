@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createJsonRpcLegacyEventProjector } from "../src/server/jsonrpc/legacyEventProjector";
+import { createJsonRpcEventProjector } from "../src/server/jsonrpc/eventProjector";
 import { createThreadJournalProjector } from "../src/server/jsonrpc/journalProjector";
 import type { ServerEvent } from "../src/server/protocol";
 
@@ -62,9 +62,83 @@ function googleRaw(index: number, event: Record<string, unknown>): ServerEvent {
 }
 
 describe("JSON-RPC projectors", () => {
+  test("legacy projector emits a visible user item when a steer commits during an active turn", () => {
+    const outbound: Array<{ method: string; params?: any }> = [];
+    const projector = createJsonRpcEventProjector({
+      threadId: sessionId,
+      send: (message) => outbound.push(message as { method: string; params?: any }),
+    });
+
+    projector.handle({
+      type: "session_busy",
+      sessionId,
+      busy: true,
+      turnId,
+      cause: "user_message",
+    });
+    projector.handle({
+      type: "user_message",
+      sessionId,
+      text: "tighten the scope",
+      clientMessageId: "steer-1",
+    });
+
+    const userStarted = outbound.find((message) =>
+      message.method === "item/started" && message.params?.item?.type === "userMessage"
+    );
+    const userCompleted = outbound.find((message) =>
+      message.method === "item/completed" && message.params?.item?.type === "userMessage"
+    );
+
+    expect(userStarted?.params?.item).toMatchObject({
+      id: `userMessage:${turnId}:steer-1`,
+      type: "userMessage",
+      clientMessageId: "steer-1",
+      content: [{ type: "text", text: "tighten the scope" }],
+    });
+    expect(userCompleted?.params?.item).toEqual(userStarted?.params?.item);
+  });
+
+  test("journal projector emits a visible user item when a steer commits during an active turn", () => {
+    const emissions: Array<{ eventType: string; payload: any }> = [];
+    const projector = createThreadJournalProjector({
+      threadId: sessionId,
+      emit: (event) => emissions.push({ eventType: event.eventType, payload: event.payload }),
+    });
+
+    projector.handle({
+      type: "session_busy",
+      sessionId,
+      busy: true,
+      turnId,
+      cause: "user_message",
+    });
+    projector.handle({
+      type: "user_message",
+      sessionId,
+      text: "tighten the scope",
+      clientMessageId: "steer-1",
+    });
+
+    const userStarted = emissions.find((event) =>
+      event.eventType === "item/started" && event.payload?.item?.type === "userMessage"
+    );
+    const userCompleted = emissions.find((event) =>
+      event.eventType === "item/completed" && event.payload?.item?.type === "userMessage"
+    );
+
+    expect(userStarted?.payload?.item).toMatchObject({
+      id: `userMessage:${turnId}:steer-1`,
+      type: "userMessage",
+      clientMessageId: "steer-1",
+      content: [{ type: "text", text: "tighten the scope" }],
+    });
+    expect(userCompleted?.payload?.item).toEqual(userStarted?.payload?.item);
+  });
+
   test("legacy projector suppresses commentary deltas and streams reasoning items from live chunks", () => {
     const outbound: Array<{ method: string; params?: any }> = [];
-    const projector = createJsonRpcLegacyEventProjector({
+    const projector = createJsonRpcEventProjector({
       threadId: sessionId,
       send: (message) => outbound.push(message as { method: string; params?: any }),
     });
@@ -208,7 +282,7 @@ describe("JSON-RPC projectors", () => {
 
   test("legacy projector splits assistant segments when reasoning resumes within the same turn", () => {
     const outbound: Array<{ method: string; params?: any }> = [];
-    const projector = createJsonRpcLegacyEventProjector({
+    const projector = createJsonRpcEventProjector({
       threadId: sessionId,
       send: (message) => outbound.push(message as { method: string; params?: any }),
     });
@@ -314,7 +388,7 @@ describe("JSON-RPC projectors", () => {
 
   test("legacy projector drops a cumulative final assistant message when streamed output only differs by leading boundary whitespace", () => {
     const outbound: Array<{ method: string; params?: any }> = [];
-    const projector = createJsonRpcLegacyEventProjector({
+    const projector = createJsonRpcEventProjector({
       threadId: sessionId,
       send: (message) => outbound.push(message as { method: string; params?: any }),
     });
@@ -380,7 +454,7 @@ describe("JSON-RPC projectors", () => {
 
   test("legacy projector replays raw Gemini search tool items and drops aggregate final reasoning duplicates", () => {
     const outbound: Array<{ method: string; params?: any }> = [];
-    const projector = createJsonRpcLegacyEventProjector({
+    const projector = createJsonRpcEventProjector({
       threadId: sessionId,
       send: (message) => outbound.push(message as { method: string; params?: any }),
     });
@@ -455,15 +529,22 @@ describe("JSON-RPC projectors", () => {
     const toolCompleted = outbound
       .filter((message) => message.method === "item/completed")
       .filter((message) => message.params?.item?.type === "toolCall");
+    const toolOutputAvailable = toolCompleted.filter(
+      (message) => message.params?.item?.state === "output-available",
+    );
 
     expect(toolStarted).toHaveLength(1);
-    expect(toolCompleted).toHaveLength(1);
+    expect(toolCompleted.map((message) => message.params?.item?.state)).toEqual([
+      "input-available",
+      "output-available",
+    ]);
     expect(toolStarted[0]?.params?.item).toMatchObject({
       type: "toolCall",
       toolName: "nativeWebSearch",
       state: "input-streaming",
     });
-    expect(toolCompleted[0]?.params?.item).toMatchObject({
+    expect(toolOutputAvailable).toHaveLength(1);
+    expect(toolOutputAvailable[0]?.params?.item).toMatchObject({
       type: "toolCall",
       toolName: "nativeWebSearch",
       state: "output-available",
@@ -555,15 +636,22 @@ describe("JSON-RPC projectors", () => {
     const toolCompleted = emissions
       .filter((event) => event.eventType === "item/completed")
       .filter((event) => event.payload?.item?.type === "toolCall");
+    const toolOutputAvailable = toolCompleted.filter(
+      (event) => event.payload?.item?.state === "output-available",
+    );
 
     expect(toolStarted).toHaveLength(1);
-    expect(toolCompleted).toHaveLength(1);
+    expect(toolCompleted.map((event) => event.payload?.item?.state)).toEqual([
+      "input-available",
+      "output-available",
+    ]);
     expect(toolStarted[0]?.payload?.item).toMatchObject({
       type: "toolCall",
       toolName: "nativeWebSearch",
       state: "input-streaming",
     });
-    expect(toolCompleted[0]?.payload?.item).toMatchObject({
+    expect(toolOutputAvailable).toHaveLength(1);
+    expect(toolOutputAvailable[0]?.payload?.item).toMatchObject({
       type: "toolCall",
       toolName: "nativeWebSearch",
       state: "output-available",
@@ -582,7 +670,7 @@ describe("JSON-RPC projectors", () => {
     test(`projectors keep repeated PI reasoning and tool occurrences distinct for ${provider}`, () => {
       const outbound: Array<{ method: string; params?: any }> = [];
       const emissions: Array<{ eventType: string; payload: any }> = [];
-      const legacy = createJsonRpcLegacyEventProjector({
+      const legacy = createJsonRpcEventProjector({
         threadId: sessionId,
         send: (message) => outbound.push(message as { method: string; params?: any }),
       });
@@ -657,11 +745,14 @@ describe("JSON-RPC projectors", () => {
       const legacyCompletedTools = outbound
         .filter((message) => message.method === "item/completed")
         .filter((message) => message.params?.item?.type === "toolCall");
-      expect(legacyCompletedTools.map((message) => message.params?.item?.args)).toEqual([
+      const legacyFinalTools = legacyCompletedTools.filter(
+        (message) => message.params?.item?.state === "output-available",
+      );
+      expect(legacyFinalTools.map((message) => message.params?.item?.args)).toEqual([
         { query: "first" },
         { query: "second" },
       ]);
-      expect(new Set(legacyCompletedTools.map((message) => message.params?.item?.id)).size).toBe(2);
+      expect(new Set(legacyFinalTools.map((message) => message.params?.item?.id)).size).toBe(2);
 
       const journalCompletedReasoning = emissions
         .filter((event) => event.eventType === "item/completed")
@@ -675,11 +766,14 @@ describe("JSON-RPC projectors", () => {
       const journalCompletedTools = emissions
         .filter((event) => event.eventType === "item/completed")
         .filter((event) => event.payload?.item?.type === "toolCall");
-      expect(journalCompletedTools.map((event) => event.payload?.item?.args)).toEqual([
+      const journalFinalTools = journalCompletedTools.filter(
+        (event) => event.payload?.item?.state === "output-available",
+      );
+      expect(journalFinalTools.map((event) => event.payload?.item?.args)).toEqual([
         { query: "first" },
         { query: "second" },
       ]);
-      expect(new Set(journalCompletedTools.map((event) => event.payload?.item?.id)).size).toBe(2);
+      expect(new Set(journalFinalTools.map((event) => event.payload?.item?.id)).size).toBe(2);
     });
   }
 });

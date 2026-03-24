@@ -246,6 +246,7 @@ mock.module("../src/lib/desktopCommands", () => ({
   readFile: async () => "",
   previewOSFile: async () => {},
   openPath: async () => {},
+  openExternalUrl: async () => {},
   revealPath: async () => {},
   copyPath: async () => {},
   createDirectory: async () => {},
@@ -264,13 +265,6 @@ mock.module("../src/lib/desktopCommands", () => ({
 }));
 
 mock.module("../src/lib/agentSocket", () => ({
-  AgentSocket: class {
-    connect() {}
-    send() {
-      return true;
-    }
-    close() {}
-  },
   JsonRpcSocket: class {
     readonly readyPromise = Promise.resolve();
 

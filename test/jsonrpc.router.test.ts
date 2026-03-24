@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+import {
+  __internal as citationMetadataInternal,
+  enrichCitationAnnotations,
+} from "../src/server/citationMetadata";
 import { JSONRPC_ERROR_CODES } from "../src/server/jsonrpc/protocol";
 import { createJsonRpcRequestRouter, type JsonRpcRouteContext } from "../src/server/jsonrpc/routes";
 
@@ -231,7 +235,7 @@ function createThreadResumeHarness() {
   };
 }
 
-function createThreadReadHarness() {
+function createThreadReadHarness(snapshotOverride?: any) {
   const sent: unknown[] = [];
   const thread = {
     id: "thread-1",
@@ -248,7 +252,7 @@ function createThreadReadHarness() {
       type: "loaded" as const,
     },
   };
-  const snapshot = {
+  const snapshot = snapshotOverride ?? {
     feed: [
       {
         id: "assistant-1",
@@ -436,7 +440,7 @@ describe("JSON-RPC request router", () => {
     expect((harness.subscribeCalls[0] as any).opts?.skipPendingPromptRequestIds).toEqual(new Set(["ask-1"]));
   });
 
-  test("thread/read compacts adjacent assistant messages in the returned snapshot", async () => {
+  test("thread/read returns the canonical projected snapshot feed unchanged", async () => {
     const harness = createThreadReadHarness();
 
     await harness.router({} as any, {
@@ -457,7 +461,12 @@ describe("JSON-RPC request router", () => {
             feed: [
               expect.objectContaining({
                 id: "assistant-1",
-                text: "Hello world",
+                text: "Hello",
+                ts: "2026-03-22T00:00:01.000Z",
+              }),
+              expect.objectContaining({
+                id: "assistant-2",
+                text: " world",
                 ts: "2026-03-22T00:00:02.000Z",
               }),
               expect.objectContaining({
@@ -469,5 +478,296 @@ describe("JSON-RPC request router", () => {
         },
       },
     ]);
+  });
+
+  test("thread/read uses cached citation annotations when available", async () => {
+    const originalFetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch");
+    let fetchCalls = 0;
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      writable: true,
+      value: async (input: RequestInfo | URL) => {
+        fetchCalls += 1;
+        const url = input instanceof URL ? input.toString() : typeof input === "string" ? input : input.url;
+        if (url.includes("/grounding-api-redirect/example")) {
+          return new Response(null, {
+            status: 302,
+            headers: {
+              location: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+            },
+          });
+        }
+
+        const response = new Response(
+          "<html><head><title>LaGuardia collision: 2 pilots killed after Air Canada jet hits fire truck, forcing airport closure</title></head></html>",
+          {
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+            },
+          },
+        );
+        Object.defineProperty(response, "url", {
+          configurable: true,
+          value: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+        });
+        return response;
+      },
+    });
+
+    try {
+      await enrichCitationAnnotations([
+        {
+          type: "url_citation",
+          url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/example",
+          title: "foxnews.com",
+          start_index: 0,
+          end_index: 5,
+        },
+      ]);
+      expect(fetchCalls).toBe(2);
+
+      Object.defineProperty(globalThis, "fetch", {
+        configurable: true,
+        writable: true,
+        value: async () => {
+          throw new Error("thread/read should use cached citation metadata");
+        },
+      });
+
+      const harness = createThreadReadHarness({
+        feed: [
+          {
+            id: "assistant-1",
+            kind: "message",
+            role: "assistant",
+            ts: "2026-03-22T00:00:01.000Z",
+            text: "Hello",
+            annotations: [
+              {
+                type: "url_citation",
+                url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/example",
+                title: "foxnews.com",
+                start_index: 0,
+                end_index: 5,
+              },
+            ],
+          },
+        ],
+      });
+
+      await harness.router({} as any, {
+        id: 4,
+        method: "thread/read",
+        params: {
+          threadId: "thread-1",
+        },
+      });
+
+      expect(harness.sent).toEqual([
+        {
+          id: 4,
+          result: {
+            thread: expect.objectContaining({ id: "thread-1" }),
+            coworkSnapshot: expect.objectContaining({
+              feed: [
+                expect.objectContaining({
+                  id: "assistant-1",
+                  annotations: [
+                    {
+                      type: "url_citation",
+                      url: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+                      title: "LaGuardia collision: 2 pilots killed after Air Canada jet hits fire truck, forcing airport closure",
+                      start_index: 0,
+                      end_index: 5,
+                    },
+                  ],
+                }),
+              ],
+            }),
+          },
+        },
+      ]);
+    } finally {
+      citationMetadataInternal.clearCitationResolutionCache();
+      if (originalFetchDescriptor) {
+        Object.defineProperty(globalThis, "fetch", originalFetchDescriptor);
+      }
+    }
+  });
+
+  test("thread/read returns immediately and primes citation metadata in the background", async () => {
+    const originalFetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch");
+    const fetchStarted = Promise.withResolvers<void>();
+    const responseGate = Promise.withResolvers<Response>();
+    let fetchCalls = 0;
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      writable: true,
+      value: async (input: RequestInfo | URL) => {
+        fetchCalls += 1;
+        const url = input instanceof URL ? input.toString() : typeof input === "string" ? input : input.url;
+        if (url.includes("/grounding-api-redirect/example")) {
+          fetchStarted.resolve();
+          return new Response(null, {
+            status: 302,
+            headers: {
+              location: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+            },
+          });
+        }
+
+        return await responseGate.promise;
+      },
+    });
+
+    try {
+      const firstHarness = createThreadReadHarness({
+        feed: [
+          {
+            id: "assistant-1",
+            kind: "message",
+            role: "assistant",
+            ts: "2026-03-22T00:00:01.000Z",
+            text: "Hello",
+            annotations: [
+              {
+                type: "url_citation",
+                url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/example",
+                title: "foxnews.com",
+                start_index: 0,
+                end_index: 5,
+              },
+            ],
+          },
+        ],
+      });
+
+      await firstHarness.router({} as any, {
+        id: 5,
+        method: "thread/read",
+        params: {
+          threadId: "thread-1",
+        },
+      });
+
+      expect(firstHarness.sent).toEqual([
+        {
+          id: 5,
+          result: {
+            thread: expect.objectContaining({ id: "thread-1" }),
+            coworkSnapshot: expect.objectContaining({
+              feed: [
+                expect.objectContaining({
+                  id: "assistant-1",
+                  annotations: [
+                    {
+                      type: "url_citation",
+                      url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/example",
+                      title: "foxnews.com",
+                      start_index: 0,
+                      end_index: 5,
+                    },
+                  ],
+                }),
+              ],
+            }),
+          },
+        },
+      ]);
+
+      await fetchStarted.promise;
+      expect(fetchCalls).toBe(1);
+
+      const response = new Response(
+        "<html><head><title>LaGuardia collision: 2 pilots killed after Air Canada jet hits fire truck, forcing airport closure</title></head></html>",
+        {
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+          },
+        },
+      );
+      Object.defineProperty(response, "url", {
+        configurable: true,
+        value: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+      });
+      responseGate.resolve(response);
+      await enrichCitationAnnotations([
+        {
+          type: "url_citation",
+          url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/example",
+          title: "foxnews.com",
+          start_index: 0,
+          end_index: 5,
+        },
+      ]);
+      expect(fetchCalls).toBe(2);
+
+      Object.defineProperty(globalThis, "fetch", {
+        configurable: true,
+        writable: true,
+        value: async () => {
+          throw new Error("thread/read cache warm should prevent a second fetch");
+        },
+      });
+
+      const secondHarness = createThreadReadHarness({
+        feed: [
+          {
+            id: "assistant-1",
+            kind: "message",
+            role: "assistant",
+            ts: "2026-03-22T00:00:01.000Z",
+            text: "Hello",
+            annotations: [
+              {
+                type: "url_citation",
+                url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/example",
+                title: "foxnews.com",
+                start_index: 0,
+                end_index: 5,
+              },
+            ],
+          },
+        ],
+      });
+
+      await secondHarness.router({} as any, {
+        id: 6,
+        method: "thread/read",
+        params: {
+          threadId: "thread-1",
+        },
+      });
+
+      expect(secondHarness.sent).toEqual([
+        {
+          id: 6,
+          result: {
+            thread: expect.objectContaining({ id: "thread-1" }),
+            coworkSnapshot: expect.objectContaining({
+              feed: [
+                expect.objectContaining({
+                  id: "assistant-1",
+                  annotations: [
+                    {
+                      type: "url_citation",
+                      url: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+                      title: "LaGuardia collision: 2 pilots killed after Air Canada jet hits fire truck, forcing airport closure",
+                      start_index: 0,
+                      end_index: 5,
+                    },
+                  ],
+                }),
+              ],
+            }),
+          },
+        },
+      ]);
+    } finally {
+      citationMetadataInternal.clearCitationResolutionCache();
+      if (originalFetchDescriptor) {
+        Object.defineProperty(globalThis, "fetch", originalFetchDescriptor);
+      }
+    }
   });
 });

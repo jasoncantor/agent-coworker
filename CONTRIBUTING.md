@@ -25,7 +25,6 @@ bun run cli                     # CLI REPL -- connects to server via WebSocket
 bun run serve                   # Standalone WebSocket server
 bun run desktop:dev             # Desktop development mode
 bun run dev                     # Watch mode (rebuilds on src/ changes)
-bun run tui                     # Archived TUI -- no longer maintained
 ```
 
 ## Architecture Overview
@@ -50,7 +49,6 @@ Key modules:
 | `src/config.ts` | Config loading with three-tier merge and env var overrides. |
 | `src/mcp/` | MCP server config registry, OAuth provider, auth store. |
 | `src/skills/` | Skill discovery and trigger extraction. |
-| `apps/TUI/` | Archived TUI built with OpenTUI + Solid.js. No longer maintained. |
 | `apps/desktop/` | Electron desktop app. |
 | `src/cli/` | CLI REPL client. |
 
@@ -61,7 +59,7 @@ src/
   agent.ts              # Agent turn logic (createRunTurn factory)
   config.ts             # Config loading + deep merge
   connect.ts            # Path resolution for .agent / .cowork directories
-  index.ts              # Main entry point (routes to CLI or archived TUI)
+  index.ts              # Main terminal entry point (CLI REPL)
   prompt.ts             # System prompt construction
   types.ts              # Shared TypeScript types
   server/               # WebSocket server, sessions, protocol
@@ -75,7 +73,6 @@ src/
   observability/        # OpenTelemetry + Langfuse integration
   utils/                # Shared utilities
 apps/
-  TUI/                  # Archived: OpenTUI + Solid.js terminal UI
   desktop/              # Electron desktop app
 config/
   defaults.json         # Built-in default configuration
@@ -158,9 +155,9 @@ The `ToolContext` interface (defined in `src/tools/context.ts`) provides:
 
 Follow these four steps whenever you add a new client message or server event:
 
-1. **Add the type** to `ClientMessage` or `ServerEvent` in `src/server/protocol.ts`.
-2. **Add validation** in `safeParseClientMessage()` (same file) if it is a client message.
-3. **Add the handler** in `src/server/startServer/dispatchClientMessage.ts` (message routing) and/or the appropriate manager under `src/server/session/` (session logic).
+1. **Add the type/schema** to `src/server/protocol.ts` for any legacy event projection that still needs typing, and to `src/server/jsonrpc/schema.ts` plus the relevant module in `src/server/jsonrpc/` for supported JSON-RPC requests, results, or notifications.
+2. **Add validation** in the JSON-RPC schema bundle (`src/server/jsonrpc/schema.ts`) and parser helpers when the message is client-originated.
+3. **Add the handler** in `src/server/jsonrpc/routes/` (request routing) and/or the appropriate manager under `src/server/session/` (session logic).
 4. **Update `docs/websocket-protocol.md`** with the new message format, fields, example JSON, and where it fits in the flow.
 
 The protocol doc is the source of truth for anyone building an alternative UI.

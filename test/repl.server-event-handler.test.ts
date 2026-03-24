@@ -1,13 +1,18 @@
 import { describe, expect, mock, test } from "bun:test";
 
 import { CliStreamState } from "../src/cli/streamState";
-import { createServerEventHandler, type ReplServerEventState } from "../src/cli/repl/serverEventHandler";
+import {
+  applyCliJsonRpcResult,
+  createNotificationHandler,
+  type ReplServerEventState,
+} from "../src/cli/repl/serverEventHandler";
 
 function createState(): ReplServerEventState {
   return {
-    sessionId: null,
-    lastKnownSessionId: null,
+    threadId: null,
+    lastKnownThreadId: null,
     config: null,
+    sessionConfig: null,
     selectedProvider: null,
     busy: false,
     providerList: [],
@@ -25,51 +30,234 @@ function createState(): ReplServerEventState {
   };
 }
 
-describe("CLI server event handler", () => {
-  test("treats stored-session persistence as best effort on server hello", async () => {
+describe("CLI notification handler", () => {
+  test("turn/started sets busy=true and resets stream state", () => {
     const state = createState();
-    const send = mock(() => true);
     const resetModelStreamState = mock(() => {});
     const activateNextPrompt = mock(() => {});
-    const storeSessionForCurrentCwd = mock(async () => {
-      throw new Error("disk is read-only");
-    });
-    const handleServerEvent = createServerEventHandler({
+    const handler = createNotificationHandler({
       state,
       streamState: new CliStreamState(),
       activateNextPrompt,
       resetModelStreamState,
-      send,
-      storeSessionForCurrentCwd,
+    });
+
+    handler({ method: "turn/started", params: { threadId: "t1", turnId: "turn-1" } }, {} as any);
+
+    expect(state.busy).toBe(true);
+    expect(resetModelStreamState).toHaveBeenCalledTimes(1);
+  });
+
+  test("turn/completed sets busy=false and activates prompt", () => {
+    const state = createState();
+    state.busy = true;
+    const resetModelStreamState = mock(() => {});
+    const activateNextPrompt = mock(() => {});
+    const handler = createNotificationHandler({
+      state,
+      streamState: new CliStreamState(),
+      activateNextPrompt,
+      resetModelStreamState,
+    });
+
+    handler({ method: "turn/completed", params: { threadId: "t1", turnId: "turn-1" } }, {} as any);
+
+    expect(state.busy).toBe(false);
+    expect(resetModelStreamState).toHaveBeenCalledTimes(1);
+    expect(activateNextPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  test("cowork/session/configUpdated updates config and selectedProvider", () => {
+    const state = createState();
+    const resetModelStreamState = mock(() => {});
+    const activateNextPrompt = mock(() => {});
+    const handler = createNotificationHandler({
+      state,
+      streamState: new CliStreamState(),
+      activateNextPrompt,
+      resetModelStreamState,
     });
     const originalLog = console.log;
     console.log = mock(() => {}) as any;
 
     try {
-      handleServerEvent(
+      handler(
         {
-          type: "server_hello",
-          sessionId: "sess-1",
-          config: {
-            provider: "openai",
-            model: "gpt-test",
-            workingDirectory: "/tmp/project",
-            outputDirectory: "/tmp/project/output",
+          method: "cowork/session/configUpdated",
+          params: {
+            threadId: "t1",
+            config: {
+              provider: "google",
+              model: "gemini-3.1-pro",
+              workingDirectory: "/tmp/project",
+            },
           },
         },
         {} as any,
       );
-
-      await Promise.resolve();
-      await Promise.resolve();
     } finally {
       console.log = originalLog;
     }
 
-    expect(state.sessionId).toBe("sess-1");
-    expect(state.lastKnownSessionId).toBe("sess-1");
+    expect(state.config).toEqual({
+      provider: "google",
+      model: "gemini-3.1-pro",
+      workingDirectory: "/tmp/project",
+    });
+    expect(state.selectedProvider).toBe("google");
+  });
+
+  test("thread/started hydrates thread id and public config from the JSON-RPC thread envelope", () => {
+    const state = createState();
+    const resetModelStreamState = mock(() => {});
+    const activateNextPrompt = mock(() => {});
+    const handler = createNotificationHandler({
+      state,
+      streamState: new CliStreamState(),
+      activateNextPrompt,
+      resetModelStreamState,
+    });
+
+    handler(
+      {
+        method: "thread/started",
+        params: {
+          thread: {
+            id: "thread-1",
+            modelProvider: "openai",
+            model: "gpt-5.4",
+            cwd: "/tmp/project",
+          },
+        },
+      },
+      {} as any,
+    );
+
+    expect(state.threadId).toBe("thread-1");
+    expect(state.lastKnownThreadId).toBe("thread-1");
+    expect(state.config).toEqual({
+      provider: "openai",
+      model: "gpt-5.4",
+      workingDirectory: "/tmp/project",
+    });
     expect(state.selectedProvider).toBe("openai");
-    expect(storeSessionForCurrentCwd).toHaveBeenCalledWith("sess-1");
-    expect(send).toHaveBeenCalledTimes(3);
+  });
+
+  test("applyCliJsonRpcResult logs provider auth challenges from legacy result envelopes", () => {
+    const state = createState();
+    const originalLog = console.log;
+    const log = mock(() => {});
+    console.log = log as any;
+
+    try {
+      applyCliJsonRpcResult(state, {
+        event: {
+          type: "provider_auth_challenge",
+          sessionId: "thread-1",
+          provider: "codex-cli",
+          methodId: "oauth_cli",
+          challenge: {
+            method: "auto",
+            instructions: "Continue in the browser.",
+            url: "https://example.com/auth",
+            command: "open https://example.com/auth",
+          },
+        },
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(log.mock.calls.map((call) => call[0])).toEqual([
+      "Continue in the browser.",
+      "https://example.com/auth",
+      "open https://example.com/auth",
+    ]);
+  });
+
+  test("applyCliJsonRpcResult logs provider auth results from legacy result envelopes", () => {
+    const state = createState();
+    const originalLog = console.log;
+    const log = mock(() => {});
+    console.log = log as any;
+
+    try {
+      applyCliJsonRpcResult(state, {
+        events: [
+          {
+            type: "provider_auth_result",
+            sessionId: "thread-1",
+            provider: "codex-cli",
+            methodId: "oauth_cli",
+            ok: false,
+            message: "OAuth sign-in failed.",
+          },
+        ],
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(log).toHaveBeenCalledWith("OAuth sign-in failed.");
+  });
+
+  test("item/agentMessage/delta streams params.delta text", () => {
+    const state = createState();
+    const resetModelStreamState = mock(() => {});
+    const activateNextPrompt = mock(() => {});
+    const streamState = new CliStreamState();
+    const handler = createNotificationHandler({
+      state,
+      streamState,
+      activateNextPrompt,
+      resetModelStreamState,
+    });
+    const originalWrite = process.stdout.write;
+    process.stdout.write = mock(() => true) as any;
+
+    try {
+      handler({ method: "item/agentMessage/delta", params: { turnId: "turn-1", delta: "hello" } }, {} as any);
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+
+    expect(state.lastStreamedAssistantTurnId).toBe("turn-1");
+    expect(streamState.getAssistantText("turn-1")).toBe("hello");
+  });
+
+  test("item/started and item/completed recognize toolCall items", () => {
+    const state = createState();
+    const resetModelStreamState = mock(() => {});
+    const activateNextPrompt = mock(() => {});
+    const handler = createNotificationHandler({
+      state,
+      streamState: new CliStreamState(),
+      activateNextPrompt,
+      resetModelStreamState,
+    });
+    const originalLog = console.log;
+    const log = mock(() => {});
+    console.log = log as any;
+
+    try {
+      handler(
+        { method: "item/started", params: { item: { type: "toolCall", toolName: "bash" } } },
+        {} as any,
+      );
+      handler(
+        {
+          method: "item/completed",
+          params: {
+            item: { type: "toolCall", toolName: "bash", result: { ok: true } },
+          },
+        },
+        {} as any,
+      );
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(log).toHaveBeenCalledWith("\n[tool:start] bash");
+    expect(log).toHaveBeenCalledWith('\n[tool:done] bash {"ok":true}');
   });
 });

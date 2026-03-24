@@ -7,11 +7,13 @@ import { VERSION } from "../version";
 import { handleSlashCommand } from "./repl/commandRouter";
 import { activateNextPrompt, type ReplPromptStateAdapter } from "./repl/promptController";
 import {
-  createServerEventHandler,
+  applyCliJsonRpcResult,
+  createNotificationHandler,
   type ApprovalPrompt,
   type AskPrompt,
   type ProviderStatus,
   type PublicConfig,
+  type PublicSessionConfig,
   type ReplServerEventState,
 } from "./repl/serverEventHandler";
 import {
@@ -25,11 +27,10 @@ import { normalizeApprovalAnswer, resolveAskAnswer } from "./prompts";
 import { renderTodosToLines, renderToolsToLines } from "./render";
 import { getStoredSessionForCwd, setStoredSessionForCwd } from "./repl/stateStore";
 import { CliStreamState } from "./streamState";
-import { AgentSocket } from "../client/agentSocket";
-import { ASK_SKIP_TOKEN } from "../server/protocol";
+import { JsonRpcSocket } from "../client/jsonRpcSocket";
+import { ASK_SKIP_TOKEN } from "../shared/ask";
 import { startAgentServer } from "../server/startServer";
-import type { ClientMessage } from "../server/protocol";
-import { PROVIDER_NAMES } from "../types";
+import { isProviderName, PROVIDER_NAMES } from "../types";
 
 export { parseReplInput, normalizeProviderAuthMethods, resolveProviderAuthMethodSelection };
 export type { ParsedCommand };
@@ -42,6 +43,13 @@ globalSettings.AI_SDK_LOG_WARNINGS = false;
 
 const UI_PROVIDER_NAMES = PROVIDER_NAMES;
 const NOT_CONNECTED_MSG = "unable to send (not connected)";
+
+type JsonRpcThreadDescriptor = {
+  id: string;
+  provider?: string;
+  model?: string;
+  cwd?: string;
+};
 
 function formatDurationSeconds(totalSeconds: unknown): string {
   if (typeof totalSeconds !== "number" || !Number.isFinite(totalSeconds) || totalSeconds < 0) return "unknown";
@@ -77,10 +85,28 @@ export async function resolveAndValidateDir(dirArg: string): Promise<string> {
   return resolved;
 }
 
+function readJsonRpcThreadDescriptor(result: unknown): JsonRpcThreadDescriptor | null {
+  if (!result || typeof result !== "object") return null;
+  const thread = (result as Record<string, unknown>).thread;
+  if (!thread || typeof thread !== "object") return null;
+  const record = thread as Record<string, unknown>;
+  const id = typeof record.id === "string" && record.id.trim() ? record.id.trim() : null;
+  if (!id) return null;
+  return {
+    id,
+    ...(typeof record.modelProvider === "string" && record.modelProvider.trim()
+      ? { provider: record.modelProvider }
+      : {}),
+    ...(typeof record.model === "string" && record.model.trim() ? { model: record.model } : {}),
+    ...(typeof record.cwd === "string" && record.cwd.trim() ? { cwd: record.cwd } : {}),
+  };
+}
+
 export const __internal = {
   renderTodosToLines,
   renderToolsToLines,
   resolveAndValidateDir,
+  readJsonRpcThreadDescriptor,
   resolveAskAnswer,
   normalizeApprovalAnswer,
   parseReplInput,
@@ -103,7 +129,8 @@ export async function runCliRepl(
 ) {
   const initialDir = opts.dir ? await resolveAndValidateDir(opts.dir) : process.cwd();
   if (opts.dir) process.chdir(initialDir);
-  const initialResumeSessionId = await getStoredSessionForCwd(initialDir);
+  const initialResumeThreadId = await getStoredSessionForCwd(initialDir);
+  let workspaceCwd = initialDir;
 
   const startAgentServerImpl = opts.__internal?.startAgentServer ?? startAgentServer;
   const WebSocketImpl = opts.__internal?.WebSocket;
@@ -144,11 +171,12 @@ export async function runCliRepl(
     }
   };
 
-  let socket: AgentSocket | null = null;
+  let socket: JsonRpcSocket | null = null;
   let socketEpoch = 0;
-  let sessionId: string | null = null;
-  let lastKnownSessionId: string | null = initialResumeSessionId;
+  let threadId: string | null = null;
+  let lastKnownThreadId: string | null = initialResumeThreadId;
   let config: PublicConfig | null = null;
+  let sessionConfig: PublicSessionConfig | null = null;
   let selectedProvider: string | null = null;
   let disconnectNotified = false;
 
@@ -172,8 +200,45 @@ export async function runCliRepl(
     streamState.reset();
   };
 
-  const send = (msg: ClientMessage) => {
-    return socket?.send(msg) ?? false;
+  /** Send a JSON-RPC request. Returns the result or throws. */
+  const rpcRequest = async (method: string, params?: unknown): Promise<unknown> => {
+    if (!socket) throw new Error(NOT_CONNECTED_MSG);
+    return await socket.request(method, params);
+  };
+
+  const applyJsonRpcResult = (result: unknown) => {
+    applyCliJsonRpcResult(eventState, result);
+  };
+
+  const applyThreadDescriptor = async (result: unknown, cwdForStorage: string) => {
+    const descriptor = readJsonRpcThreadDescriptor(result);
+    if (!descriptor) return null;
+    threadId = descriptor.id;
+    lastKnownThreadId = descriptor.id;
+    disconnectNotified = false;
+    workspaceCwd = descriptor.cwd ?? cwdForStorage;
+    if (descriptor.provider && isProviderName(descriptor.provider) && descriptor.model && descriptor.cwd) {
+      config = {
+        provider: descriptor.provider,
+        model: descriptor.model,
+        workingDirectory: descriptor.cwd,
+      };
+      selectedProvider = descriptor.provider;
+    }
+    await setStoredSessionForCwd(workspaceCwd, descriptor.id);
+    return descriptor;
+  };
+
+  const loadWorkspaceMetadata = async (targetSocket: JsonRpcSocket, cwd: string) => {
+    for (const metadataResult of await Promise.allSettled([
+      targetSocket.request("cowork/session/state/read", { cwd }),
+      targetSocket.request("cowork/provider/catalog/read", { cwd }),
+      targetSocket.request("cowork/provider/authMethods/read", { cwd }),
+    ])) {
+      if (metadataResult.status === "fulfilled") {
+        applyJsonRpcResult(metadataResult.value);
+      }
+    }
   };
 
   const printHelp = () => {
@@ -191,7 +256,7 @@ export async function runCliRepl(
     console.log(`  /connect <name> [key] Connect via auth methods (${UI_PROVIDER_NAMES.join("|")})`);
     console.log("  /cwd <path>           Set working directory for this session");
     console.log("  /sessions             List sessions from the server");
-    console.log("  /resume <sessionId>   Reconnect to a specific session");
+    console.log("  /resume <threadId>    Reconnect to a specific thread");
     console.log("  /clear-hard-cap       Clear the session hard-stop budget");
     console.log("  /tools                List tool names\n");
   };
@@ -265,8 +330,9 @@ export async function runCliRepl(
     const silent = serverStopping;
 
     socket = null;
-    sessionId = null;
+    threadId = null;
     config = null;
+    sessionConfig = null;
     selectedProvider = null;
     busy = false;
     providerList = [...UI_PROVIDER_NAMES];
@@ -291,23 +357,29 @@ export async function runCliRepl(
   };
 
   const eventState: ReplServerEventState = {
-    get sessionId() {
-      return sessionId;
+    get threadId() {
+      return threadId;
     },
-    set sessionId(value) {
-      sessionId = value;
+    set threadId(value) {
+      threadId = value;
     },
-    get lastKnownSessionId() {
-      return lastKnownSessionId;
+    get lastKnownThreadId() {
+      return lastKnownThreadId;
     },
-    set lastKnownSessionId(value) {
-      lastKnownSessionId = value;
+    set lastKnownThreadId(value) {
+      lastKnownThreadId = value;
     },
     get config() {
       return config;
     },
     set config(value) {
       config = value;
+    },
+    get sessionConfig() {
+      return sessionConfig;
+    },
+    set sessionConfig(value) {
+      sessionConfig = value;
     },
     get selectedProvider() {
       return selectedProvider;
@@ -395,16 +467,17 @@ export async function runCliRepl(
     },
   };
 
-  const handleServerEvent = createServerEventHandler({
+  // Lazily captured rl reference so the notification handler can access it.
+  let rlRef: readline.Interface | null = null;
+
+  const handleNotification = createNotificationHandler({
     state: eventState,
     streamState,
     activateNextPrompt: activatePrompt,
     resetModelStreamState,
-    send,
-    storeSessionForCurrentCwd: (nextSessionId) => setStoredSessionForCwd(process.cwd(), nextSessionId),
   });
 
-  const connectToServer = async (url: string, rl: readline.Interface, resumeSessionId?: string) => {
+  const connectToServer = async (url: string, rl: readline.Interface, resumeThreadId?: string) => {
     if (socket) {
       try {
         socket.close();
@@ -413,38 +486,99 @@ export async function runCliRepl(
       }
     }
 
-    sessionId = null;
+    threadId = null;
     config = null;
+    sessionConfig = null;
 
     const epoch = ++socketEpoch;
-    const nextSocket = new AgentSocket({
+
+    const nextSocket = new JsonRpcSocket({
       url,
-      resumeSessionId: resumeSessionId?.trim() || lastKnownSessionId || undefined,
-      client: "cli",
-      version: VERSION,
-      onEvent: (evt) => {
-        if (epoch !== socketEpoch) return;
-        handleServerEvent(evt, rl);
+      clientInfo: { name: "cli", version: VERSION },
+      allowQueryProtocolFallback: true,
+      autoReconnect: false,
+      WebSocketImpl: WebSocketImpl as any,
+      onOpen: () => {
+        // Connection established; initialization handled after readyPromise.
       },
       onClose: (reason) => {
         if (epoch !== socketEpoch) return;
         handleDisconnect(rl, reason);
       },
-      WebSocketImpl,
-      autoReconnect: false,
-      pingIntervalMs: 30_000,
+      onNotification: (msg) => {
+        if (epoch !== socketEpoch) return;
+        handleNotification(msg, rl);
+      },
+      onServerRequest: (msg) => {
+        if (epoch !== socketEpoch) return;
+        const params = (msg.params ?? {}) as Record<string, unknown>;
+
+        if (msg.method === "item/tool/requestUserInput") {
+          const askPrompt: AskPrompt = {
+            requestId: msg.id,
+            question: typeof params.question === "string" ? params.question : "Input requested:",
+            options: Array.isArray(params.options) ? (params.options as string[]) : undefined,
+          };
+          pendingAsk.push(askPrompt);
+          activatePrompt(rl);
+          return;
+        }
+
+        if (msg.method === "item/commandExecution/requestApproval") {
+          const approvalPrompt: ApprovalPrompt = {
+            requestId: msg.id,
+            command: typeof params.command === "string" ? params.command : "unknown command",
+            dangerous: params.dangerous === true,
+            reasonCode: (typeof params.reason === "string" ? params.reason : "unknown") as ApprovalPrompt["reasonCode"],
+          };
+          pendingApproval.push(approvalPrompt);
+          activatePrompt(rl);
+          return;
+        }
+
+        // Unknown server request — respond with an error to avoid blocking.
+        socket?.respond(msg.id, { error: { code: -32601, message: `Unhandled server request: ${msg.method}` } });
+      },
     });
 
     socket = nextSocket;
     nextSocket.connect();
     await nextSocket.readyPromise;
+
+    // Start or resume a thread.
+    const targetThreadId = resumeThreadId?.trim() || lastKnownThreadId || undefined;
+    const requestCwd = workspaceCwd;
+    try {
+      let result: Record<string, unknown>;
+      if (targetThreadId) {
+        result = (await nextSocket.request("thread/resume", { threadId: targetThreadId })) as Record<string, unknown>;
+      } else {
+        result = (await nextSocket.request("thread/start", { cwd: requestCwd })) as Record<string, unknown>;
+      }
+      const descriptor = await applyThreadDescriptor(result, requestCwd);
+      await loadWorkspaceMetadata(nextSocket, descriptor?.cwd ?? requestCwd);
+    } catch (err) {
+      // If resume fails, try starting a new thread.
+      if (targetThreadId) {
+        try {
+          const result = (await nextSocket.request("thread/start", { cwd: requestCwd })) as Record<string, unknown>;
+          const descriptor = await applyThreadDescriptor(result, requestCwd);
+          await loadWorkspaceMetadata(nextSocket, descriptor?.cwd ?? requestCwd);
+        } catch (retryErr) {
+          console.error(`Error starting thread: ${String(retryErr)}`);
+        }
+      } else {
+        console.error(`Error starting thread: ${String(err)}`);
+      }
+    }
   };
 
   const restartServer = async (cwd: string, rl: readline.Interface) => {
     serverStopping = true;
     try {
+      workspaceCwd = cwd;
       // Clear client state and suppress disconnect noise during intentional restarts.
-      const resumeCandidate = sessionId ?? lastKnownSessionId;
+      const resumeCandidate = threadId ?? lastKnownThreadId;
       if (socket) {
         try {
           socket.close();
@@ -472,6 +606,7 @@ export async function runCliRepl(
   };
 
   const rl = createReadlineInterface();
+  rlRef = rl;
   rl.on("SIGINT", () => {
     rl.close();
   });
@@ -483,7 +618,7 @@ export async function runCliRepl(
   };
   process.on("SIGHUP", onHup);
 
-  await connectToServer(serverUrl, rl, initialResumeSessionId ?? undefined);
+  await connectToServer(serverUrl, rl, initialResumeThreadId ?? undefined);
 
   console.log("Cowork agent (CLI)");
   if (opts.yolo) console.log("YOLO mode enabled: command approvals are bypassed.");
@@ -496,7 +631,7 @@ export async function runCliRepl(
       const line = input.trim();
 
       if (promptMode === "ask") {
-        if (!activeAsk || !sessionId) {
+        if (!activeAsk || !threadId) {
           activatePrompt(rl);
           return;
         }
@@ -506,7 +641,7 @@ export async function runCliRepl(
           rl.prompt();
           return;
         }
-        const ok = send({ type: "ask_response", sessionId, requestId: activeAsk.requestId, answer });
+        const ok = socket?.respond(activeAsk.requestId as string | number, { answer }) ?? false;
         if (!ok) {
           handleDisconnect(rl, NOT_CONNECTED_MSG);
           return;
@@ -516,12 +651,12 @@ export async function runCliRepl(
       }
 
       if (promptMode === "approval") {
-        if (!activeApproval || !sessionId) {
+        if (!activeApproval || !threadId) {
           activatePrompt(rl);
           return;
         }
         const approved = normalizeApprovalAnswer(line);
-        const ok = send({ type: "approval_response", sessionId, requestId: activeApproval.requestId, approved });
+        const ok = socket?.respond(activeApproval.requestId as string | number, { approved }) ?? false;
         if (!ok) {
           handleDisconnect(rl, NOT_CONNECTED_MSG);
           return;
@@ -538,9 +673,11 @@ export async function runCliRepl(
       if (line.startsWith("/")) {
         const handled = await handleSlashCommand(line, {
           rl,
-          getSessionId: () => sessionId,
+          getThreadId: () => threadId,
+          getCwd: () => workspaceCwd,
           getBusy: () => busy,
           getConfig: () => config,
+          getSessionConfig: () => sessionConfig,
           getSelectedProvider: () => selectedProvider,
           setSelectedProvider: (provider) => {
             selectedProvider = provider;
@@ -551,22 +688,38 @@ export async function runCliRepl(
             return typeof value === "string" && value.trim().length > 0 ? value : null;
           },
           getProviderAuthMethods: () => providerAuthMethods,
-          trySend: (msg) => {
-            const ok = send(msg);
-            if (!ok) {
-              handleDisconnect(rl, NOT_CONNECTED_MSG);
+          tryRequest: async (method, params) => {
+            try {
+              const requestCwd = workspaceCwd;
+              const result = await rpcRequest(method, params);
+              applyJsonRpcResult(result);
+              if (method === "thread/start" || method === "thread/resume") {
+                await applyThreadDescriptor(result, requestCwd);
+              }
+              return result as any;
+            } catch (err) {
+              console.error(`Error: ${String(err)}`);
+              if (!socket) {
+                handleDisconnect(rl, NOT_CONNECTED_MSG);
+              }
               return false;
             }
-            return true;
+          },
+          setThreadId: (newThreadId) => {
+            threadId = newThreadId;
+            if (newThreadId) lastKnownThreadId = newThreadId;
           },
           activateNextPrompt: () => activatePrompt(rl),
           printHelp,
           showConnectStatus,
           restartServer: async (cwd) => await restartServer(cwd, rl),
           resolveAndValidateDir,
-          setCwd: (cwd) => process.chdir(cwd),
-          resumeSession: async (targetSessionId) => {
-            await connectToServer(serverUrl, rl, targetSessionId);
+          setCwd: (cwd) => {
+            workspaceCwd = cwd;
+            process.chdir(cwd);
+          },
+          resumeSession: async (targetThreadId) => {
+            await connectToServer(serverUrl, rl, targetThreadId);
           },
         });
         if (!handled) {
@@ -577,7 +730,7 @@ export async function runCliRepl(
         return;
       }
 
-      if (!sessionId) {
+      if (!threadId) {
         console.log("not connected: cannot send messages yet");
         activatePrompt(rl);
         return;
@@ -590,10 +743,18 @@ export async function runCliRepl(
       }
 
       const clientMessageId = crypto.randomUUID();
-      const ok = send({ type: "user_message", sessionId, text: line, clientMessageId });
-      if (!ok) {
-        handleDisconnect(rl, NOT_CONNECTED_MSG);
-        return;
+      try {
+        await rpcRequest("turn/start", {
+          threadId,
+          input: [{ type: "text", text: line }],
+          clientMessageId,
+        });
+      } catch (err) {
+        console.error(`Error: ${String(err)}`);
+        if (!socket) {
+          handleDisconnect(rl, NOT_CONNECTED_MSG);
+          return;
+        }
       }
       activatePrompt(rl);
     } catch (err) {

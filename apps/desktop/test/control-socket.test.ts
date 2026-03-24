@@ -50,7 +50,6 @@ class MockJsonRpcSocket {
 }
 
 mock.module("../src/lib/agentSocket", () => ({
-  AgentSocket: class {},
   JsonRpcSocket: MockJsonRpcSocket,
 }));
 
@@ -300,7 +299,7 @@ describe("control socket helpers over JSON-RPC", () => {
     const { get, set } = createState(workspaceId);
     installFakeSocket(workspaceId, async (method, params) => {
       expect(method).toBe("thread/read");
-      expect(params).toEqual({ threadId: "session-1", includeTurns: true });
+      expect(params).toEqual({ threadId: "session-1" });
       return {
         coworkSnapshot: {
           sessionId: "session-1",

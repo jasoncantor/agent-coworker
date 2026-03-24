@@ -1,6 +1,7 @@
 import type { AgentConfig } from "../../../types";
 import type { ServerEvent } from "../../protocol";
 import { JSONRPC_ERROR_CODES } from "../protocol";
+import { jsonRpcSessionRequestSchemas } from "../schema.session";
 
 import {
   captureBindingMutationOutcome,
@@ -138,6 +139,57 @@ export function createSessionRouteHandlers(
       context.jsonrpc.sendResult(ws, message.id, {
         event: outcome ?? session.getSessionConfigEvent(),
       });
+    },
+
+    "cowork/session/harnessContext/get": async (ws, message) => {
+      const params = toJsonRpcParams(message.params);
+      const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
+      const binding = context.threads.getLive(threadId);
+      const session = binding?.session;
+      if (!session) {
+        context.jsonrpc.sendError(ws, message.id, {
+          code: JSONRPC_ERROR_CODES.invalidParams,
+          message: `${message.method} requires threadId`,
+        });
+        return;
+      }
+
+      const outcome = await context.events.capture(
+        binding!,
+        () => session.getHarnessContext(),
+        (event): event is Extract<ServerEvent, { type: "harness_context" }> => event.type === "harness_context",
+      );
+      context.jsonrpc.sendResult(ws, message.id, { event: outcome });
+    },
+
+    "cowork/session/harnessContext/set": async (ws, message) => {
+      const parsed = jsonRpcSessionRequestSchemas["cowork/session/harnessContext/set"].safeParse(message.params);
+      if (!parsed.success) {
+        const detail = parsed.error.issues[0]?.message;
+        context.jsonrpc.sendError(ws, message.id, {
+          code: JSONRPC_ERROR_CODES.invalidParams,
+          message: detail ? `${message.method}: ${detail}` : `${message.method}: invalid params`,
+        });
+        return;
+      }
+
+      const { threadId, context: harnessPayload } = parsed.data;
+      const binding = context.threads.getLive(threadId);
+      const session = binding?.session;
+      if (!session) {
+        context.jsonrpc.sendError(ws, message.id, {
+          code: JSONRPC_ERROR_CODES.invalidParams,
+          message: `${message.method} requires threadId`,
+        });
+        return;
+      }
+
+      const outcome = await context.events.capture(
+        binding!,
+        () => session.setHarnessContext(harnessPayload),
+        (event): event is Extract<ServerEvent, { type: "harness_context" }> => event.type === "harness_context",
+      );
+      context.jsonrpc.sendResult(ws, message.id, { event: outcome });
     },
 
     "cowork/session/defaults/apply": async (ws, message) => {

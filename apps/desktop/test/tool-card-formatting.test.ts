@@ -30,6 +30,38 @@ describe("tool card formatting ask summaries", () => {
     expect(out.subtitle).toContain("Search: latest OpenAI");
   });
 
+  test("renders running native web search cards from Codex action args", () => {
+    const out = formatToolCard(
+      "nativeWebSearch",
+      { action: { type: "search", query: "LGA crash 2026" } },
+      undefined,
+      "input-streaming"
+    );
+    expect(out.title).toBe("Web Search");
+    expect(out.subtitle).toContain("Search: LGA crash 2026");
+  });
+
+  test("keeps backward compatibility for bare native web search action args", () => {
+    const out = formatToolCard(
+      "nativeWebSearch",
+      { type: "open_page", url: "https://example.com/article" },
+      undefined,
+      "input-streaming"
+    );
+    expect(out.subtitle).toContain("Opened: https://example.com/article");
+  });
+
+  test("renders Google native web search cards from query arrays", () => {
+    const out = formatToolCard(
+      "nativeWebSearch",
+      { queries: ["LaGuardia airport March 22 2026"] },
+      undefined,
+      "input-streaming"
+    );
+    expect(out.title).toBe("Web Search");
+    expect(out.subtitle).toContain("Search: LaGuardia airport March 22 2026");
+  });
+
   test("renders native URL context cards with URL-specific summaries", () => {
     const out = formatToolCard(
       "nativeUrlContext",

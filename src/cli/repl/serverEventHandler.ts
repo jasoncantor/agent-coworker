@@ -3,21 +3,30 @@ import readline from "node:readline";
 import { renderTodosToLines, renderToolsToLines } from "../render";
 import type { ProviderAuthMethod } from "../parser";
 import { CliStreamState } from "../streamState";
-import { asString, modelStreamToolKey, modelStreamToolName, previewStructured } from "./streamFormatting";
-import type { ClientMessage, ServerEvent } from "../../server/protocol";
-import type { AgentConfig, ApprovalRiskCode, TodoItem } from "../../types";
+import { asString, previewStructured } from "./streamFormatting";
+import type { ServerEvent } from "../../server/protocol";
+import { isProviderName, type AgentConfig, type ApprovalRiskCode, type TodoItem } from "../../types";
 
 export type PublicConfig = Pick<AgentConfig, "provider" | "model" | "workingDirectory"> & { outputDirectory?: string };
+export type PublicSessionConfig = Pick<AgentConfig, "providerOptions" | "enableMemory" | "memoryRequireApproval">;
 
-export type AskPrompt = { requestId: string; question: string; options?: string[] };
-export type ApprovalPrompt = { requestId: string; command: string; dangerous: boolean; reasonCode: ApprovalRiskCode };
-export type ProviderStatus = Extract<ServerEvent, { type: "provider_status" }>["providers"][number];
+export type AskPrompt = { requestId: string | number; question: string; options?: string[] };
+export type ApprovalPrompt = { requestId: string | number; command: string; dangerous: boolean; reasonCode: ApprovalRiskCode };
+export type ProviderStatus = {
+  provider: string;
+  authorized: boolean;
+  verified: boolean;
+  mode: string;
+  account?: { email?: string };
+  usage?: { planType?: string; rateLimits?: Array<{ limitName?: string; limitId?: string; primaryWindow?: unknown }> };
+};
 export type ReplPromptMode = "user" | "ask" | "approval";
 
 export type ReplServerEventState = {
-  sessionId: string | null;
-  lastKnownSessionId: string | null;
+  threadId: string | null;
+  lastKnownThreadId: string | null;
   config: PublicConfig | null;
+  sessionConfig: PublicSessionConfig | null;
   selectedProvider: string | null;
   busy: boolean;
   providerList: string[];
@@ -39,9 +48,30 @@ export type ReplServerEventContext = {
   streamState: CliStreamState;
   activateNextPrompt: (rl: readline.Interface) => void;
   resetModelStreamState: () => void;
-  send: (msg: ClientMessage) => boolean;
-  storeSessionForCurrentCwd: (sessionId: string) => void | Promise<void>;
 };
+
+function logProviderAuthChallenge(event: Extract<ServerEvent, { type: "provider_auth_challenge" }>) {
+  const instructions = asString(event.challenge?.instructions);
+  const url = asString(event.challenge?.url);
+  const command = asString(event.challenge?.command);
+
+  if (instructions) {
+    console.log(instructions);
+  }
+  if (url) {
+    console.log(url);
+  }
+  if (command) {
+    console.log(command);
+  }
+}
+
+function logProviderAuthResult(event: Extract<ServerEvent, { type: "provider_auth_result" }>) {
+  const message = asString(event.message);
+  if (message) {
+    console.log(message);
+  }
+}
 
 function renderTodos(todos: TodoItem[]) {
   for (const line of renderTodosToLines(todos)) {
@@ -49,249 +79,268 @@ function renderTodos(todos: TodoItem[]) {
   }
 }
 
-function persistSessionForCurrentCwdBestEffort(
-  storeSessionForCurrentCwd: ReplServerEventContext["storeSessionForCurrentCwd"],
-  sessionId: string
-) {
-  void Promise.resolve()
-    .then(() => storeSessionForCurrentCwd(sessionId))
-    .catch(() => {
-      // Session resume state is optional; ignore filesystem failures.
-    });
+function threadPublicConfigFromEvent(thread: unknown): PublicConfig | null {
+  if (!thread || typeof thread !== "object") return null;
+  const record = thread as Record<string, unknown>;
+  const provider = asString(record.modelProvider);
+  const model = asString(record.model);
+  const workingDirectory = asString(record.cwd);
+  if (!provider || !isProviderName(provider) || !model || !workingDirectory) return null;
+  return { provider, model, workingDirectory };
 }
 
-export function createServerEventHandler(ctx: ReplServerEventContext) {
-  return (evt: ServerEvent, rl: readline.Interface) => {
-    if (evt.type === "server_hello") {
-      ctx.state.sessionId = evt.sessionId;
-      ctx.state.lastKnownSessionId = evt.sessionId;
-      ctx.state.config = evt.config;
-      ctx.state.selectedProvider = evt.config.provider;
-      ctx.state.busy = false;
-      ctx.state.disconnectNotified = false;
-      ctx.resetModelStreamState();
-      console.log(`connected: ${evt.sessionId}`);
-      console.log(`provider=${evt.config.provider} model=${evt.config.model}`);
-      console.log(`cwd=${evt.config.workingDirectory}`);
-      persistSessionForCurrentCwdBestEffort(ctx.storeSessionForCurrentCwd, evt.sessionId);
-      ctx.send({ type: "provider_catalog_get", sessionId: evt.sessionId });
-      ctx.send({ type: "provider_auth_methods_get", sessionId: evt.sessionId });
-      ctx.send({ type: "refresh_provider_status", sessionId: evt.sessionId });
-      return;
+function sessionConfigFromEvent(config: unknown): PublicSessionConfig {
+  if (!config || typeof config !== "object") return {};
+  const record = config as Record<string, unknown>;
+  return {
+    ...(record.providerOptions && typeof record.providerOptions === "object"
+      ? { providerOptions: record.providerOptions as AgentConfig["providerOptions"] }
+      : {}),
+    ...(typeof record.enableMemory === "boolean" ? { enableMemory: record.enableMemory } : {}),
+    ...(typeof record.memoryRequireApproval === "boolean"
+      ? { memoryRequireApproval: record.memoryRequireApproval }
+      : {}),
+  };
+}
+
+function providerNamesFromCatalog(all: unknown): string[] {
+  if (!Array.isArray(all)) return [];
+  return all.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const id = asString((entry as Record<string, unknown>).id);
+    return id ? [id] : [];
+  });
+}
+
+export function applyCliServerEvent(
+  state: ReplServerEventState,
+  event: ServerEvent,
+  opts: { logConfigUpdate?: boolean } = {},
+) {
+  switch (event.type) {
+    case "config_updated": {
+      state.config = event.config;
+      state.selectedProvider = event.config.provider;
+      if (opts.logConfigUpdate) {
+        console.log(`config updated: ${event.config.provider}/${event.config.model}`);
+      }
+      break;
     }
 
-    if (!ctx.state.sessionId || evt.sessionId !== ctx.state.sessionId) return;
+    case "session_config": {
+      state.sessionConfig = sessionConfigFromEvent(event.config);
+      break;
+    }
 
-    switch (evt.type) {
-      case "session_busy":
-        ctx.state.busy = evt.busy;
-        if (evt.busy) {
-          ctx.resetModelStreamState();
-        } else {
-          if (
-            ctx.state.lastStreamedAssistantTurnId &&
-            ctx.streamState.closeAssistantTurn(ctx.state.lastStreamedAssistantTurnId)
-          ) {
-            process.stdout.write("\n");
-          }
-          ctx.resetModelStreamState();
-        }
-        break;
-      case "reset_done":
-        ctx.resetModelStreamState();
-        console.log("(cleared)\n");
-        ctx.state.pendingAsk = [];
-        ctx.state.pendingApproval = [];
-        ctx.state.activeAsk = null;
-        ctx.state.activeApproval = null;
-        ctx.state.promptMode = "user";
-        rl.setPrompt("you> ");
-        rl.prompt();
-        break;
-      case "model_stream_chunk": {
-        const part = evt.part as Record<string, unknown>;
-        if (evt.partType === "text_delta") {
-          const text = asString(part.text);
-          if (!text) break;
-          ctx.streamState.appendAssistantDelta(evt.turnId, text);
-          ctx.state.lastStreamedAssistantTurnId = evt.turnId;
-          if (ctx.streamState.openAssistantTurn(evt.turnId)) {
-            process.stdout.write("\n");
-          }
-          process.stdout.write(text);
-          break;
-        }
+    case "provider_catalog": {
+      const providerNames = providerNamesFromCatalog(event.all);
+      if (providerNames.length > 0) {
+        state.providerList = providerNames;
+      }
+      state.providerDefaultModels = { ...event.default };
+      break;
+    }
 
-        if (evt.partType === "finish") {
-          if (ctx.streamState.closeAssistantTurn(evt.turnId)) process.stdout.write("\n");
-          break;
-        }
+    case "provider_auth_methods": {
+      state.providerAuthMethods = event.methods;
+      break;
+    }
 
-        if (evt.partType === "reasoning_delta") {
-          const text = asString(part.text);
-          if (!text) break;
-          const mode = part.mode === "summary" ? "summary" : "reasoning";
-          ctx.state.lastStreamedReasoningTurnId = evt.turnId;
-          ctx.streamState.markReasoningTurn(evt.turnId);
-          console.log(`\n[${mode}+] ${text}`);
-          break;
-        }
+    case "provider_status": {
+      state.providerStatuses = event.providers as ProviderStatus[];
+      break;
+    }
 
-        if (evt.partType === "tool_input_start") {
-          const name = modelStreamToolName(evt);
-          console.log(`\n[tool:start] ${name}`);
-          break;
-        }
+    case "provider_auth_challenge": {
+      logProviderAuthChallenge(event);
+      break;
+    }
 
-        if (evt.partType === "tool_input_delta") {
-          const key = modelStreamToolKey(evt);
-          const delta = asString(part.delta);
-          if (delta) ctx.streamState.appendToolInputForKey(key, delta);
-          break;
-        }
+    case "provider_auth_result": {
+      logProviderAuthResult(event);
+      break;
+    }
 
-        if (evt.partType === "tool_call") {
-          const key = modelStreamToolKey(evt);
-          const name = modelStreamToolName(evt);
-          const streamedInput = ctx.streamState.getToolInputForKey(key);
-          const input = part.input ?? (streamedInput ? { input: streamedInput } : undefined);
-          const preview = previewStructured(input);
-          console.log(preview ? `\n[tool:call] ${name} ${preview}` : `\n[tool:call] ${name}`);
-          break;
-        }
+    default:
+      break;
+  }
+}
 
-        if (evt.partType === "tool_result") {
-          const name = modelStreamToolName(evt);
-          const preview = previewStructured(part.output);
-          console.log(preview ? `\n[tool:done] ${name} ${preview}` : `\n[tool:done] ${name}`);
-          break;
-        }
+export function applyCliJsonRpcResult(
+  state: ReplServerEventState,
+  result: unknown,
+  opts: { logConfigUpdate?: boolean } = {},
+) {
+  if (!result || typeof result !== "object") return;
+  const record = result as Record<string, unknown>;
 
-        if (evt.partType === "tool_error") {
-          const name = modelStreamToolName(evt);
-          const preview = previewStructured(part.error);
-          console.log(preview ? `\n[tool:error] ${name} ${preview}` : `\n[tool:error] ${name}`);
-          break;
-        }
+  const applyEvent = (eventLike: unknown) => {
+    if (!eventLike || typeof eventLike !== "object") return;
+    const type = asString((eventLike as Record<string, unknown>).type);
+    if (!type) return;
+    applyCliServerEvent(state, eventLike as ServerEvent, opts);
+  };
 
-        if (evt.partType === "tool_output_denied") {
-          const name = modelStreamToolName(evt);
-          const preview = previewStructured(part.reason);
-          console.log(preview ? `\n[tool:denied] ${name} ${preview}` : `\n[tool:denied] ${name}`);
-          break;
-        }
+  if (Array.isArray(record.events)) {
+    for (const event of record.events) {
+      applyEvent(event);
+    }
+  }
 
-        if (evt.partType === "tool_approval_request") {
-          console.log("\n[tool:approval] provider requested approval");
+  if (record.event) {
+    applyEvent(record.event);
+  }
+}
+
+export function createNotificationHandler(ctx: ReplServerEventContext) {
+  return (notification: { method: string; params?: unknown }, rl: readline.Interface) => {
+    const params = (notification.params ?? {}) as Record<string, unknown>;
+
+    switch (notification.method) {
+      case "thread/started": {
+        const thread = params.thread;
+        if (!thread || typeof thread !== "object") break;
+        const threadRecord = thread as Record<string, unknown>;
+        const nextThreadId = asString(threadRecord.id);
+        if (nextThreadId) {
+          ctx.state.threadId = nextThreadId;
+          ctx.state.lastKnownThreadId = nextThreadId;
+        }
+        const nextConfig = threadPublicConfigFromEvent(thread);
+        if (nextConfig) {
+          ctx.state.config = nextConfig;
+          ctx.state.selectedProvider = nextConfig.provider;
         }
         break;
       }
-      case "model_stream_raw":
+
+      case "turn/started": {
+        ctx.state.busy = true;
+        ctx.resetModelStreamState();
         break;
-      case "assistant_message": {
-        const out = evt.text.trim();
-        if (!out) break;
-        if (ctx.state.lastStreamedAssistantTurnId) {
-          const streamed = ctx.streamState.getAssistantText(ctx.state.lastStreamedAssistantTurnId).trim();
-          if (streamed && streamed === out) {
-            if (ctx.streamState.closeAssistantTurn(ctx.state.lastStreamedAssistantTurnId)) {
-              process.stdout.write("\n");
+      }
+
+      case "turn/completed": {
+        if (
+          ctx.state.lastStreamedAssistantTurnId &&
+          ctx.streamState.closeAssistantTurn(ctx.state.lastStreamedAssistantTurnId)
+        ) {
+          process.stdout.write("\n");
+        }
+        ctx.state.busy = false;
+        ctx.resetModelStreamState();
+        ctx.activateNextPrompt(rl);
+        break;
+      }
+
+      case "item/agentMessage/delta": {
+        const text = asString(params.delta);
+        if (!text) break;
+        const turnId = asString(params.turnId) ?? "unknown";
+        ctx.streamState.appendAssistantDelta(turnId, text);
+        ctx.state.lastStreamedAssistantTurnId = turnId;
+        if (ctx.streamState.openAssistantTurn(turnId)) {
+          process.stdout.write("\n");
+        }
+        process.stdout.write(text);
+        break;
+      }
+
+      case "item/reasoning/delta": {
+        const text = asString(params.delta);
+        if (!text) break;
+        const turnId = asString(params.turnId) ?? "unknown";
+        const mode = params.mode === "summary" ? "summary" : "reasoning";
+        ctx.state.lastStreamedReasoningTurnId = turnId;
+        ctx.streamState.markReasoningTurn(turnId);
+        console.log(`\n[${mode}+] ${text}`);
+        break;
+      }
+
+      case "item/started": {
+        const item = params.item as Record<string, unknown> | undefined;
+        if (!item) break;
+        if (item.type === "toolCall") {
+          const name = asString(item.toolName) ?? asString(item.name) ?? "tool";
+          console.log(`\n[tool:start] ${name}`);
+        }
+        break;
+      }
+
+      case "item/completed": {
+        const item = params.item as Record<string, unknown> | undefined;
+        if (!item) break;
+
+        if (item.type === "toolCall") {
+          const name = asString(item.toolName) ?? asString(item.name) ?? "tool";
+          const output = item.output ?? item.result;
+          const preview = previewStructured(output);
+          if (item.error) {
+            const errPreview = previewStructured(item.error);
+            console.log(errPreview ? `\n[tool:error] ${name} ${errPreview}` : `\n[tool:error] ${name}`);
+          } else {
+            console.log(preview ? `\n[tool:done] ${name} ${preview}` : `\n[tool:done] ${name}`);
+          }
+          break;
+        }
+
+        if (item.type === "agentMessage") {
+          const text = asString(item.text);
+          if (!text || !text.trim()) break;
+          const out = text.trim();
+          // Deduplicate if we already streamed this text
+          if (ctx.state.lastStreamedAssistantTurnId) {
+            const streamed = ctx.streamState.getAssistantText(ctx.state.lastStreamedAssistantTurnId).trim();
+            if (streamed && streamed === out) {
+              if (ctx.streamState.closeAssistantTurn(ctx.state.lastStreamedAssistantTurnId)) {
+                process.stdout.write("\n");
+              }
+              break;
             }
+          }
+          console.log(`\n${out}\n`);
+          break;
+        }
+
+        if (item.type === "reasoning") {
+          const text = asString(item.text);
+          if (!text) break;
+          const turnId = asString(params.turnId) ?? "unknown";
+          if (
+            ctx.state.lastStreamedReasoningTurnId &&
+            ctx.streamState.hasReasoningTurn(ctx.state.lastStreamedReasoningTurnId)
+          ) {
             break;
           }
-        }
-        console.log(`\n${out}\n`);
-        break;
-      }
-      case "reasoning":
-        if (
-          ctx.state.lastStreamedReasoningTurnId &&
-          ctx.streamState.hasReasoningTurn(ctx.state.lastStreamedReasoningTurnId)
-        ) {
+          const kind = asString(item.kind) ?? "reasoning";
+          console.log(`\n[${kind}] ${text}\n`);
           break;
         }
-        console.log(`\n[${evt.kind}] ${evt.text}\n`);
-        break;
-      case "log":
-        console.log(`[log] ${evt.line}`);
-        break;
-      case "todos":
-        renderTodos(evt.todos);
-        break;
-      case "ask":
-        ctx.state.pendingAsk.push({ requestId: evt.requestId, question: evt.question, options: evt.options });
-        ctx.activateNextPrompt(rl);
-        break;
-      case "approval":
-        ctx.state.pendingApproval.push({
-          requestId: evt.requestId,
-          command: evt.command,
-          dangerous: evt.dangerous,
-          reasonCode: evt.reasonCode,
-        });
-        ctx.activateNextPrompt(rl);
-        break;
-      case "config_updated":
-        ctx.state.config = evt.config;
-        ctx.state.selectedProvider = evt.config.provider;
-        console.log(`config updated: ${evt.config.provider}/${evt.config.model}`);
-        break;
-      case "provider_catalog":
-        ctx.state.providerList = evt.all.map((entry) => entry.id);
-        ctx.state.providerDefaultModels = evt.default;
-        break;
-      case "provider_auth_methods":
-        ctx.state.providerAuthMethods = evt.methods;
-        break;
-      case "provider_status":
-        ctx.state.providerStatuses = evt.providers;
-        break;
-      case "observability_status": {
-        const configured = evt.config?.configured ? "yes" : "no";
-        const healthReason = evt.health.message ? `${evt.health.reason}: ${evt.health.message}` : evt.health.reason;
-        console.log(
-          `\n[observability] enabled=${evt.enabled} configured=${configured} health=${evt.health.status} (${healthReason})`
-        );
+
         break;
       }
-      case "provider_auth_challenge":
-        console.log(`\nAuth challenge [${evt.provider}/${evt.methodId}] ${evt.challenge.instructions}`);
-        if (evt.challenge.command) console.log(`command: ${evt.challenge.command}`);
-        if (evt.challenge.url) console.log(`url: ${evt.challenge.url}`);
-        break;
-      case "provider_auth_result":
-        if (evt.ok) {
-          if (evt.methodId === "logout") {
-            console.log(`\nProvider disconnected: ${evt.provider}`);
-          } else {
-            console.log(`\nProvider auth ok: ${evt.provider}/${evt.methodId} (${evt.mode ?? "ok"})`);
-          }
-        } else {
-          console.error(`\nProvider auth failed: ${evt.message}`);
-        }
-        break;
-      case "tools":
-        console.log(`\nTools:\n${renderToolsToLines(evt.tools).join("\n")}\n`);
-        break;
-      case "sessions": {
-        if (evt.sessions.length === 0) {
-          console.log("\nNo sessions found.\n");
-          break;
-        }
-        console.log("\nSessions:");
-        for (const session of evt.sessions) {
-          const marker = ctx.state.sessionId === session.sessionId ? "*" : " ";
-          console.log(
-            `${marker} ${session.sessionId}  ${session.provider}/${session.model}  ${session.title}  (${session.updatedAt})`
-          );
-        }
-        console.log("");
+
+      case "cowork/session/configUpdated": {
+        applyCliServerEvent(ctx.state, {
+          type: "config_updated",
+          sessionId: asString(params.threadId) ?? asString(params.sessionId) ?? "unknown",
+          config: params.config as PublicConfig,
+        }, { logConfigUpdate: true });
         break;
       }
-      case "error":
-        console.error(`\nError [${evt.source}/${evt.code}]: ${evt.message}\n`);
+
+      case "cowork/session/config": {
+        ctx.state.sessionConfig = sessionConfigFromEvent(params.config);
         break;
+      }
+
+      case "serverRequest/resolved": {
+        // A server request was resolved; nothing to display.
+        break;
+      }
+
       default:
+        // Ignore other notifications silently.
         break;
     }
   };

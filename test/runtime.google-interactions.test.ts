@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { __internal as citationMetadataInternal } from "../src/server/citationMetadata";
 import { createGoogleInteractionsRuntime } from "../src/runtime/googleInteractionsRuntime";
 import { buildGooglePrepareStep } from "../src/providers/googleReplay";
 import {
@@ -1008,6 +1009,176 @@ describe("google native interactions request building", () => {
     expect(block).toBeDefined();
     expect(block.type).toBe("text");
     expect(block.text).toBe("Hello world");
+  });
+
+  test("enrichTextBlockAnnotations resolves Google grounding redirects for final text blocks", async () => {
+    const originalFetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch");
+    let fetchCalls = 0;
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      writable: true,
+      value: async (input: RequestInfo | URL) => {
+        fetchCalls += 1;
+        const url = input instanceof URL ? input.toString() : typeof input === "string" ? input : input.url;
+        if (url.includes("/grounding-api-redirect/example")) {
+          return new Response(null, {
+            status: 302,
+            headers: {
+              location: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+            },
+          });
+        }
+
+        const response = new Response(
+          `<html><head><title>LaGuardia collision: 2 pilots killed after Air Canada jet hits fire truck, forcing airport closure</title></head></html>`,
+          {
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+            },
+          },
+        );
+        Object.defineProperty(response, "url", {
+          configurable: true,
+          value: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+        });
+        return response;
+      },
+    });
+
+    try {
+      const block = {
+        type: "text" as const,
+        text: "Answer",
+        annotations: [
+          {
+            type: "url_citation",
+            url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/example",
+            title: "foxnews.com",
+            start_index: 0,
+            end_index: 6,
+          },
+        ],
+      };
+
+      await googleNativeInternal.enrichTextBlockAnnotations(block);
+      expect(fetchCalls).toBe(2);
+
+      expect(block.annotations).toEqual([
+        {
+          type: "url_citation",
+          url: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+          title: "LaGuardia collision: 2 pilots killed after Air Canada jet hits fire truck, forcing airport closure",
+          start_index: 0,
+          end_index: 6,
+        },
+      ]);
+    } finally {
+      citationMetadataInternal.clearCitationResolutionCache();
+      if (originalFetchDescriptor) {
+        Object.defineProperty(globalThis, "fetch", originalFetchDescriptor);
+      }
+    }
+  });
+
+  test("queueTextBlockAnnotationEnrichment keeps slow citation fetches off the text-end hot path", async () => {
+    const originalFetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch");
+    const fetchStarted = Promise.withResolvers<void>();
+    const responseGate = Promise.withResolvers<Response>();
+    let fetchCalls = 0;
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      writable: true,
+      value: async (input: RequestInfo | URL) => {
+        fetchCalls += 1;
+        const url = input instanceof URL ? input.toString() : typeof input === "string" ? input : input.url;
+        if (url.includes("/grounding-api-redirect/slow-example")) {
+          fetchStarted.resolve();
+          return new Response(null, {
+            status: 302,
+            headers: {
+              location: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+            },
+          });
+        }
+
+        return await responseGate.promise;
+      },
+    });
+
+    try {
+      const block = {
+        type: "text" as const,
+        text: "Answer",
+        annotations: [
+          {
+            type: "url_citation",
+            url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/slow-example",
+            title: "foxnews.com",
+            start_index: 0,
+            end_index: 6,
+          },
+        ],
+      };
+      const blocks = new Map([[0, block]]);
+      const providerToolCallsById = new Map();
+      const pendingAnnotationEnrichments: Array<Promise<void>> = [];
+
+      googleNativeInternal.queueTextBlockAnnotationEnrichment(pendingAnnotationEnrichments, block);
+      await fetchStarted.promise;
+      expect(fetchCalls).toBe(1);
+
+      expect(googleNativeInternal.mapGoogleEventToStreamParts(
+        { event_type: "content.stop", index: 0 },
+        blocks,
+        providerToolCallsById,
+      )).toEqual([
+        {
+          type: "text-end",
+          id: "s0",
+          annotations: [
+            {
+              type: "url_citation",
+              url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/slow-example",
+              title: "foxnews.com",
+              start_index: 0,
+              end_index: 6,
+            },
+          ],
+        },
+      ]);
+
+      const response = new Response(
+        `<html><head><title>LaGuardia collision: 2 pilots killed after Air Canada jet hits fire truck, forcing airport closure</title></head></html>`,
+        {
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+          },
+        },
+      );
+      Object.defineProperty(response, "url", {
+        configurable: true,
+        value: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+      });
+      responseGate.resolve(response);
+
+      await Promise.all(pendingAnnotationEnrichments);
+      expect(fetchCalls).toBe(2);
+
+      expect(block.annotations).toEqual([
+        {
+          type: "url_citation",
+          url: "https://www.foxnews.com/live-news/new-york-laguardia-plane-crash-march-23",
+          title: "LaGuardia collision: 2 pilots killed after Air Canada jet hits fire truck, forcing airport closure",
+          start_index: 0,
+          end_index: 6,
+        },
+      ]);
+    } finally {
+      citationMetadataInternal.clearCitationResolutionCache();
+      if (originalFetchDescriptor) {
+        Object.defineProperty(globalThis, "fetch", originalFetchDescriptor);
+      }
+    }
   });
 
   test("processStreamEvent handles function_call content", () => {

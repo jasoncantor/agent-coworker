@@ -47,6 +47,7 @@ mock.module("../src/lib/desktopCommands", () => ({
   readFile: async () => "",
   previewOSFile: async () => {},
   openPath: openPathMock,
+  openExternalUrl: async () => {},
   revealPath: revealPathMock,
   copyPath: async () => {},
   createDirectory: async () => {},
@@ -120,16 +121,58 @@ describe("skill detail dialog", () => {
       }
       const root = createRoot(container);
 
+      // Verify store state is correct before render
+      const storeState = useAppStore.getState();
+      const rt = storeState.workspaceRuntimeById["ws-1"];
+      if (!rt) {
+        throw new Error(`store has no ws-1 runtime. keys: ${Object.keys(storeState.workspaceRuntimeById).join(",")}`);
+      }
+      if (!rt.selectedSkillInstallation) {
+        throw new Error(`ws-1 runtime has no selectedSkillInstallation. installationId: ${rt.selectedSkillInstallationId}`);
+      }
+
+      // Verify basic React rendering works in this JSDOM
       await act(async () => {
-        root.render(createElement(SkillDetailDialog, { workspaceId: "ws-1" }));
+        root.render(createElement("div", { id: "canary" }, "hello"));
       });
+      const canary = harness.dom.window.document.getElementById("canary");
+      if (!canary) {
+        throw new Error("React basic render failed: canary div not found in JSDOM");
+      }
+
+      // Render SkillDetailDialog inside a wrapper that also dumps debug state
+      function Wrapper() {
+        const wsRtById2 = useAppStore((s) => s.workspaceRuntimeById);
+        const rt2 = wsRtById2["ws-1"];
+        const installationId = rt2?.selectedSkillInstallationId ?? "null";
+        const hasInstallation = rt2?.selectedSkillInstallation ? "yes" : "no";
+        const selectedName = rt2?.selectedSkillName ?? "null";
+        return createElement("div", null,
+          createElement("div", { id: "wrapper-debug" },
+            `id=${installationId}|inst=${hasInstallation}|name=${selectedName}`
+          ),
+          createElement(SkillDetailDialog, { workspaceId: "ws-1" }),
+        );
+      }
+
+      await act(async () => {
+        root.render(createElement(Wrapper));
+      });
+
+      const debugEl = harness.dom.window.document.getElementById("wrapper-debug");
+      const debugText = debugEl?.textContent ?? "(wrapper-debug missing)";
 
       const openFolderButton = Array.from(harness.dom.window.document.querySelectorAll("button")).find(
         (button) => button.textContent?.includes("Open folder"),
       );
 
       if (!openFolderButton) {
-        throw new Error("missing open folder button");
+        const html = harness.dom.window.document.getElementById("root")?.innerHTML ?? "(empty)";
+        throw new Error(
+          `missing open folder button.` +
+          ` wrapperDebug: ${debugText}` +
+          ` | DOM: ${html.slice(0, 500)}`
+        );
       }
 
       await act(async () => {
@@ -206,7 +249,8 @@ describe("skill detail dialog", () => {
       );
 
       if (!uninstallButton) {
-        throw new Error("missing uninstall button");
+        const html = harness.dom.window.document.getElementById("root")?.innerHTML ?? "(empty)";
+        throw new Error(`missing uninstall button. DOM: ${html.slice(0, 500)}`);
       }
 
       await act(async () => {

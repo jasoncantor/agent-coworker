@@ -1,5 +1,225 @@
 # Task Plan
 
+## Keep thread/read Citation Enrichment Off the Response Path
+
+- [x] Confirm `thread/read` is awaiting network-backed citation enrichment before responding.
+- [x] Add a cache-only snapshot enrichment path plus background cache priming for unresolved citations.
+- [x] Update `thread/read` to return the local snapshot immediately, using cached citation metadata only and warming unresolved citations asynchronously.
+- [x] Add focused citation/JSON-RPC regressions and rerun targeted verification.
+
+## Keep thread/read Citation Enrichment Off the Response Path Review
+
+- `src/server/citationMetadata.ts` now keeps a settled citation-resolution cache alongside the in-flight promise cache, exposes a cache-only assistant snapshot enrichment path, and adds a best-effort background cache-prime helper for unresolved assistant citation annotations.
+- `src/server/jsonrpc/routes/thread.ts` no longer awaits network-backed citation resolution during `thread/read`. The route now rewrites snapshot assistant annotations only from already-cached citation metadata, sends the snapshot immediately, and then schedules background cache warming in a microtask for any still-unresolved Google redirect citations.
+- `test/citationMetadata.test.ts` now covers cache-only snapshot enrichment, and `test/jsonrpc.router.test.ts` now covers both cache-hit enrichment and the “return immediately, then warm the cache for later reads” behavior.
+- Verification passed with `bun test test/citationMetadata.test.ts test/jsonrpc.router.test.ts`, `bun run typecheck`, and `bun test` on 2026-03-23 (`2628 pass`, `3 skip`, `0 fail`).
+
+## Keep Google Citation Enrichment Off Live Stream Path
+
+- [x] Confirm the reviewed regression is the synchronous `content.stop` await in the Google native interaction stream loop.
+- [x] Move citation enrichment onto a background path so `text-end` delivery is not blocked by network-backed citation resolution.
+- [x] Preserve enriched annotations in the final assistant payload by awaiting background work before the step returns.
+- [x] Add a focused regression for slow citation resolution on the Google stream path and rerun the targeted verification slice.
+
+## Keep Google Citation Enrichment Off Live Stream Path Review
+
+- `src/runtime/googleNativeInteractions.ts` no longer awaits citation enrichment inside the live `content.stop` event loop. The runtime now queues background annotation enrichment per completed text block, emits `text-end` immediately with the current block state, and only waits for the queued enrichment promises after stream delivery completes and before the final assistant payload is returned.
+- `test/runtime.google-interactions.test.ts` now covers the slow-fetch case explicitly: a stalled citation fetch no longer blocks `text-end` projection, but the underlying text block still ends up enriched once the queued work resolves.
+- Verification passed with `bun test test/runtime.google-interactions.test.ts test/citationMetadata.test.ts`, `bun run typecheck`, and `bun test` on 2026-03-23 (`2626 pass`, `3 skip`, `0 fail`).
+
+## Google Citation Title Resolution
+
+- [x] Confirm whether real Google native citation data already contains article titles or only opaque redirect URLs plus domain-like labels.
+- [x] Add a harness-side citation resolver that can follow opaque Google grounding redirects to the final article URL and page title with caching and tight timeouts.
+- [x] Use that resolver in the live Google runtime before assistant annotation items hit the UI, and in `thread/read` hydration so existing snapshots improve on reload.
+- [x] Re-run focused resolver/runtime/JSON-RPC tests, repo typecheck, and the full `bun test` lane.
+
+## Google Citation Title Resolution Review
+
+- `src/server/citationMetadata.ts` now owns harness-side citation enrichment for opaque Google grounding redirects. It follows the redirect to the final article URL, extracts a page title from `og:title`/`twitter:title`/`<title>`, caches by original citation URL, and keeps strict timeouts and partial-failure fallback so the UI never has to guess at provider-specific redirect behavior.
+- `src/runtime/googleNativeInteractions.ts` now resolves assistant text-block annotations before `text-end` events are emitted, so new Google native web-search answers stream into the projected feed with real article URLs and page titles already attached to the annotations.
+- `src/server/jsonrpc/routes/thread.ts` now applies the same enrichment during `thread/read`, which upgrades existing persisted Google snapshots on hydration without changing the desktop-side rendering contract.
+- Added focused regressions in `test/citationMetadata.test.ts`, `test/runtime.google-interactions.test.ts`, and `test/jsonrpc.router.test.ts`.
+- Verification passed with:
+  - `~/.bun/bin/bun test test/citationMetadata.test.ts test/runtime.google-interactions.test.ts test/jsonrpc.router.test.ts`
+  - `~/.bun/bin/bun run typecheck`
+  - `~/.bun/bin/bun test` on 2026-03-23 (`2625 pass`, `3 skip`, `0 fail`)
+
+## Citation Popup Polish
+
+- [x] Inspect the real Google cowork snapshot and confirm whether the popup had access to the final destination URL or only the opaque Vertex redirect.
+- [x] Hide opaque Google grounding redirect URLs from the popup while keeping a clean source label/fallback favicon path.
+- [x] Move the citation popup card out of the conversation flow so it can stack above the composer instead of tucking under the input surface.
+- [x] Re-run focused citation tests, repo typecheck, and the full `bun test` lane.
+
+## Citation Popup Polish Review
+
+- The real Google cowork snapshot in `~/.cowork/sessions.db` still only exposes the opaque `vertexaisearch.cloud.google.com/grounding-api-redirect/...` URL plus a title like `cbsnews.com` on the assistant annotations. There is no stable final article URL in the persisted feed to display directly, so the renderer now treats that redirect as an opaque open target instead of printing it back to the user.
+- `src/shared/displayCitationMarkers.ts` now exports shared citation-display helpers that recognize opaque Google grounding redirects and derive sane display metadata from the source title/hostname. That keeps the provider-specific redirect rule out of the desktop view logic and gives future UIs the same contract.
+- `apps/desktop/src/components/ai-elements/message.tsx` now renders citation popups through a fixed body-level portal anchored to the chip button. The card clamps to the viewport, can flip upward when needed, and stacks above the composer instead of behaving like an absolutely positioned child inside the scrolling conversation log.
+- The desktop popup card now hides opaque redirect bodies, avoids showing `vertexaisearch.cloud.google.com` as the source hostname/favicon, and still opens the underlying citation target when the user clicks through.
+- Added regression coverage in `test/displayCitationMarkers.test.ts` and `apps/desktop/test/message-links.test.ts` for opaque Google redirect display metadata, popup portal rendering, grouped-source navigation, and the “hide redirect text but keep site label” behavior.
+
+## Citation Popup Compactness Follow-up
+
+- [x] Tighten the popup card sizing and control spacing so the source picker reads like a compact affordance instead of a large modal-like surface.
+- [x] Stabilize favicon rendering so the popup shows an immediate placeholder and prewarms icon URLs before opening.
+- [x] Re-run focused citation tests, repo typecheck, and the full `bun test` lane.
+
+## Citation Popup Compactness Follow-up Review
+
+- `apps/desktop/src/components/ai-elements/message.tsx` now uses a smaller citation popup surface with tighter header/body spacing, smaller arrow buttons, and reduced typography so the card reads as a lightweight source picker instead of an oversized sheet.
+- Citation favicon rendering is now placeholder-first: the popup always reserves the icon slot with a compact monogram badge, then fades the favicon in only after it loads. That avoids the empty-image flash and keeps the row geometry stable.
+- Citation chips now prewarm the favicon URLs as soon as the chip mounts, so by the time the user opens the popup the site icon is usually already cached instead of starting its network request on click.
+- Added a focused regression in `apps/desktop/test/message-links.test.ts` to lock the smaller popup width contract and verify favicon prewarming starts before the popup opens.
+
+## Citation Popup Card
+
+- [x] Inspect the chip rendering path and confirm the desktop renderer can own the popup interaction while the shared normalizer still owns chip grouping/order.
+- [x] Turn paragraph-end citation chips into interactive source popups with previous/next navigation over grouped URLs.
+- [x] Hide the footer sources carousel for assistant messages that already render native annotation chips.
+- [x] Re-run focused desktop/shared rendering tests, repo typecheck, and full `bun test`.
+
+## Citation Popup Card Review
+
+- Native annotation citation chips now open an anchored popup card with previous/next arrows, a current-source counter, and the selected source title/domain/URL instead of acting like a static inline label. The shared renderer still owns paragraph/list-item grouping in `src/shared/displayCitationMarkers.ts`, while the desktop `cite` component in `apps/desktop/src/components/ai-elements/message.tsx` owns the popup interaction.
+- The popup uses the full grouped source list for that chip, not just the primary URL. To get that source payload through the Streamdown sanitize/component pipeline reliably, the shared HTML-mode renderer now packs the encoded source list into the chip `title` attribute with a private prefix instead of relying on a custom `data-*` prop that Streamdown did not consistently forward to the custom component.
+- `apps/desktop/src/ui/ChatView.tsx` now suppresses the separate footer `SourcesCarousel` when the assistant message already has native annotation chips, so the same sources do not render twice with two different affordances.
+- Added/updated regression coverage in `test/displayCitationMarkers.test.ts`, `apps/desktop/test/message-links.test.ts`, `apps/desktop/test/chat-view.stability.test.tsx`, and `apps/desktop/test/protocol-v2-events.test.ts` to lock the encoded chip contract, DOM popup behavior, arrow navigation, and the “chip instead of footer carousel” rendering path.
+- Verification passed with:
+  - `~/.bun/bin/bun test apps/desktop/test/message-links.test.ts test/displayCitationMarkers.test.ts apps/desktop/test/chat-view.stability.test.tsx apps/desktop/test/protocol-v2-events.test.ts`
+  - `~/.bun/bin/bun run typecheck`
+  - `~/.bun/bin/bun test` on 2026-03-23 (`2618 pass`, `3 skip`, `0 fail`)
+
+## Citation Chip Polish
+
+- [x] Inspect the current native citation rendering path and confirm the chip styling has to be applied in the shared markdown normalizer rather than provider-specific UI code.
+- [x] Collapse native annotation citations into one chip per paragraph or list item instead of dropping markers inline after each sentence.
+- [x] Feed source titles into the shared renderer so the chip can show a compact source label plus `+N` when multiple citations land in the same paragraph.
+- [x] Re-run focused rendering/protocol tests, repo typecheck, and full `bun test`.
+
+## Citation Chip Polish Review
+
+- Native assistant annotation citations now render as one compact chip at the end of each markdown paragraph or list item instead of as inline superscripts. The shared resolver in `src/shared/displayCitationMarkers.ts` still uses the raw-vs-markdown anchor heuristic to find the correct containing block, but HTML-mode native citations now collapse to a block-end chip wrapper rather than attaching themselves to the middle of a sentence.
+- `apps/desktop/src/components/ai-elements/message.tsx` now passes citation source metadata into the shared renderer and styles the chip through a dedicated `cite` wrapper that survives the Streamdown sanitize/render pipeline. That lets the chip show a compact source label such as `Safety Memo +1` while keeping normal inline links and legacy superscript citations unchanged.
+- `apps/desktop/src/ui/ChatView.tsx` now forwards the per-message citation sources into `MessageResponse`, so native web-search and URL-context answers can label the chip from actual source metadata instead of falling back to bare numbers.
+- Added/updated regression coverage in `test/displayCitationMarkers.test.ts`, `apps/desktop/test/message-links.test.ts`, and `apps/desktop/test/protocol-v2-events.test.ts` to lock paragraph-end chip placement, grouping behavior, and live feed rendering around the shared JSON-RPC path.
+- Verification passed with:
+  - `~/.bun/bin/bun test test/displayCitationMarkers.test.ts apps/desktop/test/message-links.test.ts apps/desktop/test/tool-card-formatting.test.ts apps/desktop/test/protocol-v2-events.test.ts`
+  - `~/.bun/bin/bun run typecheck`
+  - `~/.bun/bin/bun test` on 2026-03-23 (`2616 pass`, `3 skip`, `0 fail`)
+
+## Google Cowork Citation Follow-up
+
+- [x] Inspect the latest real Google cowork session snapshot and confirm whether native web search already arrives in the canonical feed.
+- [x] Fix shared native citation insertion so Google `url_citation` indices land on stable sentence boundaries without requiring provider-specific UI logic.
+- [x] Make native web-search cards show Google `queries` detail without requiring provider-specific desktop branching.
+- [x] Re-run focused citation/tool-render verification plus repo typecheck and record the status.
+
+## Google Cowork Citation Follow-up Review
+
+- The latest real Google cowork session in `~/.cowork/sessions.db` (`df63bab0-ef91-412d-84ce-db67fd647ea3`) already contained the canonical `nativeWebSearch` tool item plus `url_citation` annotations on the assistant message. The missing behavior in the UI was not feed loss; it was citation marker placement and a formatter gap for Google-style `queries` args.
+- `src/shared/displayCitationMarkers.ts` now resolves native annotation endpoints through a shared raw-vs-markdown heuristic: keep raw Google anchors when they already line up with the markdown source, otherwise fall back to markdown-aware remapping and snap short overshoots back to the prior sentence boundary. That keeps superscript source numbers out of mid-word positions and off the next bullet heading in the real Google cowork answer.
+- `apps/desktop/src/ui/chat/toolCards/toolCardFormatting.ts` now treats `nativeWebSearch` payloads with top-level `queries` the same way it already treats action-shaped search payloads, so Google native web-search cards surface the actual search query without any extra provider-specific UI branch.
+- Added regression coverage in `test/displayCitationMarkers.test.ts`, `apps/desktop/test/message-links.test.ts`, and `apps/desktop/test/tool-card-formatting.test.ts` to lock the markdown-aware citation placement and Google query-array rendering behavior.
+- Verification passed with:
+  - `~/.bun/bin/bun test test/displayCitationMarkers.test.ts apps/desktop/test/message-links.test.ts apps/desktop/test/tool-card-formatting.test.ts apps/desktop/test/store-feed-mapping.test.ts`
+  - `~/.bun/bin/bun run typecheck`
+  - `~/.bun/bin/bun test` on 2026-03-23 (`2616 pass`, `3 skip`, `0 fail`)
+
+## Cowork Session UI Mapping Follow-up
+
+- [x] Inspect the real Codex LGA cowork session in the harness snapshot store and compare the canonical projected feed to the desktop rendering.
+- [x] Remove blank reasoning placeholder rows from the desktop activity timeline so harness-emitted empty reasoning items do not render as empty `Summary` blocks.
+- [x] Normalize Codex native web-search start args in the harness/model-stream mapper so live desktop tool cards can show the search/open-page detail without provider-specific UI logic.
+- [x] Re-run focused desktop/model-stream verification, repo typecheck, and record the current full-suite status.
+
+## Cowork Session UI Mapping Follow-up Review
+
+- The real session snapshot in `~/.cowork/sessions.db` already contains the Codex web-search activity as canonical projected `nativeWebSearch` tool items. The screenshot mismatch came from empty harness `reasoning` placeholders (`text: ""`) being rendered as blank `Summary` rows in the desktop activity card.
+- `apps/desktop/src/ui/chat/activityGroups.ts` now skips blank reasoning placeholders during grouping/timeline construction, so the activity card only renders meaningful reasoning text alongside the tool steps that actually happened.
+- `src/shared/modelStream.ts` now wraps OpenAI/Codex native web-search start args as `{ action: ... }`, which matches the shared tool-card contract and keeps the live running web-search subtitle specific instead of falling back to a generic “Searching the web”. The formatter in `apps/desktop/src/ui/chat/toolCards/toolCardFormatting.ts` also tolerates the older bare-action shape for replay compatibility.
+- Verification passed with:
+  - `bun test --cwd apps/desktop test/chat-activity-group-card.test.tsx test/store-feed-mapping.test.ts test/protocol-v2-events.test.ts test/chat-reasoning-ui.test.ts`
+  - `bun test test/modelStreamReplay.test.ts apps/desktop/test/model-stream-mapper.test.ts apps/desktop/test/tool-card-formatting.test.ts`
+  - `bun run typecheck`
+  - `bun test test/permissions.test.ts` currently fails on this branch in unrelated path-allowlist coverage, and `bun test` currently stops on the same existing `test/permissions.test.ts` failures
+
+## Harness-Owned Projection Contract
+
+- [x] Move live conversation projection into a shared harness-owned reducer/sink so JSON-RPC live projection, journal persistence, session snapshots, and thread/read hydration all share the same ordering and item-id logic.
+- [x] Switch desktop JSON-RPC feed handling to consume projected `turn/*` + `item/*` payloads and canonical `thread/read.coworkSnapshot` hydration instead of re-projecting provider/model events locally.
+- [x] Update the JSON-RPC schema/docs/generated artifacts and add focused regressions for reasoning/tool ordering, repeated raw ids, non-turn projected items, ask/approval parity, and the new snapshot contract.
+- [x] Re-run the projection-focused slices, `bun run typecheck`, regenerate JSON-RPC artifacts, and finish with a full `bun test` pass.
+
+## Harness-Owned Projection Contract Review
+
+- Added a shared harness projection core under `src/server/projection/` plus shared projected-item/model-stream utilities under `src/shared/`, then rewired the JSON-RPC live projector, journal projector, `SessionSnapshotProjector`, and `thread/read` snapshot path onto that single reducer/sink flow.
+- `thread/read` now returns the canonical projected `coworkSnapshot` feed unchanged, JSON-RPC item payloads use the explicit projected-item union, non-turn feed entries ride through `item/*` with `turnId: null`, and ask/approval now emit matching projected system feed items alongside the interactive server requests.
+- Desktop no longer translates projected JSON-RPC items back into synthetic `model_stream_*`, `assistant_message`, or `reasoning` events for live/persisted harness-backed threads; it applies projected items/snapshots directly and only keeps the legacy transcript replay mapper for old local transcript imports.
+- Focused regressions now cover shared projector reasoning/tool ordering, repeated provider raw ids, raw Gemini/native tool replay, projected non-turn feed items, ask/approval system-entry parity, desktop projected-item consumption, canonical `thread/read` hydration, and the updated websocket protocol/schema artifacts.
+- Verification passed with:
+  - `bun test test/jsonrpc.projectors.test.ts test/sessionSnapshotProjector.test.ts test/jsonrpc.thread-read-projector.test.ts apps/desktop/test/control-socket.test.ts apps/desktop/test/protocol-v2-events.test.ts test/server.jsonrpc.flow.test.ts`
+  - `bun run typecheck`
+  - `bun run docs:generate-jsonrpc`
+  - `bun test` on 2026-03-23 (`2608 pass`, `3 skip`, `0 fail`)
+
+## Fix CLI JSON-RPC Contract Regressions
+
+- [x] Confirm the reviewed CLI regressions against the live JSON-RPC schema and route handlers before patching.
+- [x] Fix the CLI thread/auth/budget/tools/stream handling so it matches the current JSON-RPC request, result, and notification shapes.
+- [x] Add focused REPL regressions for thread envelopes, provider auth method loading, API-key auth routing, tool listing, and streamed delta/toolCall handling.
+- [x] Re-run focused REPL verification, repo typecheck, and the full `bun test` lane, then capture the exact evidence.
+
+## Fix CLI JSON-RPC Contract Regressions Review
+
+- `src/cli/repl.ts` now reads `thread/start` / `thread/resume` results from the JSON-RPC `{ thread: { ... } }` envelope, rehydrates CLI state from returned control events, and eagerly loads workspace control metadata (`session/state/read`, `provider/catalog/read`, `provider/authMethods/read`) after connect so the REPL does not start in a half-hydrated state.
+- `src/cli/repl/commandRouter.ts` now clears hard caps through `cowork/session/usageBudget/set`, fetches auth methods before `/connect` uses them, routes API-key connects through `cowork/provider/auth/setApiKey`, and lists tools from the real session tool-name policy instead of misreading `cowork/session/state/read` as a registry.
+- `src/cli/repl/serverEventHandler.ts` now matches the JSON-RPC notification payloads: assistant/reasoning deltas come from `params.delta`, tool lifecycle notifications use `item.type === "toolCall"`, and `thread/started` / control-event envelopes update CLI state consistently.
+- Added focused REPL coverage in `test/repl.test.ts`, `test/repl.server-event-handler.test.ts`, `test/repl.thread-envelope.test.ts`, and updated the REPL websocket harness tests for the thread-envelope startup contract.
+- Verification passed with:
+  - `bun test test/repl.test.ts test/repl.server-event-handler.test.ts test/repl.thread-envelope.test.ts test/repl.disconnect-send.test.ts test/repl.restart-failure.test.ts`
+  - `bun run typecheck`
+  - `bun test` on 2026-03-23 (`2604 pass`, `3 skip`, `0 fail`)
+
+## Remove Archived TUI Surface
+
+- [x] Remove the archived TUI implementation and its repo entrypoints instead of keeping it as a second terminal client.
+- [x] Delete the TUI-specific source, tests, docs, and package dependencies, and simplify the terminal entrypoint down to the supported CLI path.
+- [x] Re-run targeted verification for the CLI/docs changes plus the full suite after the removal.
+
+## Remove Archived TUI Surface Review
+
+- The repo no longer carries a second terminal UI surface. `apps/TUI/`, `src/tui/`, the OpenTUI docs mirror under `docs/opentui/`, and the dedicated TUI test files were removed outright instead of being kept as archived baggage.
+- The terminal entrypoint is now CLI-only: `src/index.ts` always routes to `runCliRepl(...)`, `package.json` no longer exposes `bun run tui`, and `src/cli/args.ts` dropped the retired mouse/TUI-only flags while keeping `--cli` as a harmless compatibility alias.
+- Root docs and contributor guidance were updated to stop advertising the removed client, and the root package no longer installs the unused OpenTUI and Solid dependencies.
+- Verification passed with `bun test test/cli-args.test.ts test/docs.check.test.ts`, `bun run docs:check`, `bun run typecheck`, and full `bun test` on 2026-03-23 (`2598 pass`, `3 skip`, `0 fail`).
+
+## Optimize Slow Tool Tests
+
+- [x] Measure the current slow tool-test cases precisely and identify whether the cost is subprocess spawning, HTML parser startup, or explicit timeout waits.
+- [x] Refactor the slowest tool tests to use deterministic test doubles or lighter-weight code paths without weakening the behavioral contract under test.
+- [x] Re-run the focused tool-test timing check, `bun test test/tools.test.ts`, `bun run typecheck`, and the full `bun test` lane, then record the before/after evidence.
+
+## Optimize Slow Tool Tests Review
+
+- The main hotspot was `test/tools.test.ts`, not the smaller `test/tools.*.test.ts` files. A direct timing probe showed `test/tools.test.ts` at about `0.656s`, with the worst individual cases coming from four bash tests that spawned real shells (~35-40ms each), one HTML webFetch test that paid the `jsdom` + Readability startup cost (~195ms), and the intentional timeout test (~26ms).
+- `src/tools/bash.ts` now exposes a narrow `__internal` runner override for tests, and `src/tools/webFetch.ts` now exposes a narrow `__internal` HTML-render override for tests. `test/tools.test.ts` uses those hooks so the slow assertions still exercise the tool entrypoints without paying real subprocess startup or heavy HTML-parser initialization on every run.
+- The focused file now runs in about `0.253s` instead of `0.656s`, and the worst avoidable cases dropped sharply: bash stderr/cwd/large-output/stdout+stderr checks are sub-millisecond, and the Exa-enriched HTML case is ~2ms instead of ~195ms. The remaining ~25ms timeout case is intentional coverage of the response-timeout path.
+- Verification passed with the direct timing probes for `test/tools.test.ts` (`0.656s` before, `0.253s` after), `bun test test/tools.test.ts`, `bun run typecheck`, and full `bun test` (`2692 pass`, `3 skip`, `0 fail`).
+
+## Remove Legacy WebSocket Test Coupling
+
+- [x] Reproduce the current failing verification lane and confirm the remaining breakages come from tests still importing archived TUI or legacy transport surfaces rather than from active JSON-RPC behavior.
+- [x] Replace stale legacy transport coverage with JSON-RPC-backed server and harness coverage, and reroute archived TUI helper tests onto leaf modules instead of restoring dead socket code.
+- [x] Run targeted regression slices for the rewritten server/harness/TUI tests, then rerun `bun run typecheck` and full `bun test`.
+
+## Remove Legacy WebSocket Test Coupling Review
+
+- The stale legacy websocket-facing tests now either exercise supported JSON-RPC behavior (`test/server.toolstream.test.ts`, `test/helpers/wsHarness.ts`, and the added JSON-RPC agent/harness-context routes and schemas) or import archived TUI leaf helpers directly instead of pulling dead socket lifecycle modules back into scope.
+- Desktop compatibility coverage stays on the active renderer contract: `apps/desktop/src/lib/wsProtocol.ts` once again parses the server events the desktop cache/store tests actually depend on, and `src/server/session/AgentSession.ts` now waits for queued persistence before clearing harness context on dispose so restart/resume tests stop racing shutdown.
+- Verification passed with `bun test test/server.toolstream.test.ts`, `bun test test/tui.global-hotkeys.test.ts test/tui.sync-lifecycle.test.ts test/tui.log-filter.test.ts test/server.toolstream.test.ts test/harness.ws.e2e.test.ts`, `bun test test/tui.args.test.ts test/tui.question-prompt.test.ts apps/TUI/routes/session/question.test.ts test/jsonrpc.codegen.test.ts`, `bun test apps/TUI/context/local.test.ts apps/TUI/component/dialog-provider.test.ts`, `bun test test/harness.ws.e2e.test.ts apps/desktop/test/bootstrap-cache.test.ts apps/desktop/test/store-feed-mapping.test.ts`, `bun run docs:generate-jsonrpc`, `bun run docs:check`, `bun run typecheck`, and `bun test` on 2026-03-23 01:06:48 EDT (`2692 pass`, `3 skip`, `0 fail`).
+
 ## Fix Duplicate Final JSON-RPC Assistant Content
 
 - [x] Inspect the latest duplicated live session in `~/.cowork/sessions.db` and confirm the duplicate comes from the final cumulative JSON-RPC `assistant_message` path rather than a replay-only issue.

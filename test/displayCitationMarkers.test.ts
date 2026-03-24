@@ -4,9 +4,11 @@ import {
   buildCitationOverflowFilePathsByMessageId,
   buildCitationSourcesByMessageId,
   buildCitationUrlsByMessageId,
+  describeCitationSource,
   extractCitationSourcesFromWebSearchResult,
   extractCitationOverflowFilePathFromWebSearchResult,
   extractCitationUrlsFromWebSearchResult,
+  isOpaqueCitationRedirectUrl,
   normalizeDisplayCitationMarkers,
 } from "../src/shared/displayCitationMarkers";
 
@@ -117,6 +119,22 @@ describe("display citation markers", () => {
       { title: "Source One", url: "https://example.com/one" },
       { title: "Source Two", url: "https://example.com/two" },
     ]);
+  });
+
+  test("treats Google grounding redirects as opaque display URLs", () => {
+    const source = {
+      title: "cbsnews.com",
+      url: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQH4iedWtHk5dpRaMko9c5l9JzmcarVDEORW9szHs95gjSSCj2JkhUUyZvaidzIWRapHw_3-kZ7dCNLNntqbNOG-1k1kPLkRV77xUiqNQZ2hgjRNwSIsvIO0LzWHRiZctDIIpgP8RF0M5PxFPx_NDRrWdX84KIiwhoTOJp2zgYRiG_IQu2QGnPiGcX2MdP6NcIWkgJfjNk0XM9FfYY_dHpZJqg==",
+    };
+
+    expect(isOpaqueCitationRedirectUrl(source.url)).toBe(true);
+    expect(describeCitationSource(source)).toEqual({
+      titleLabel: "cbsnews.com",
+      hostLabel: "cbsnews.com",
+      displayUrl: null,
+      faviconHostname: "cbsnews.com",
+      opaqueRedirect: true,
+    });
   });
 
   test("extracts citation sources from overflowed JSON spill content", () => {
@@ -330,6 +348,51 @@ describe("display citation markers", () => {
         ],
       }),
     ).toBe("Coffee [1](https://maps.google.com/?cid=123) nearby");
+  });
+
+  test("maps native annotation offsets against rendered markdown text", () => {
+    const out = normalizeDisplayCitationMarkers("* **The Collision:** Plane hit a truck.", {
+      citationMode: "html",
+      annotations: [
+        {
+          type: "url_citation",
+          start_index: 0,
+          end_index: "The Collision: Plane hit a truck.".length,
+          title: "Collision Report",
+          url: "https://example.com/collision",
+        },
+      ],
+    });
+
+    expect(out).toContain('* **The Collision:** Plane hit a truck.<cite');
+    expect(out).toContain('__cowork_citation_sources__:');
+    expect(out).toContain('>Collision Report</cite>');
+  });
+
+  test("clusters native annotations into one paragraph-end chip per markdown block", () => {
+    const text = [
+      "* **The Collision:** Plane hit a truck.",
+      "* **Casualties:** The pilot was killed. Over 40 others were injured. Most have been released.",
+    ].join("\n");
+
+    const afterTruckPeriod = text.indexOf("truck.") + "truck.".length - 1;
+    const afterKilledPeriod = text.indexOf("killed.") + "killed.".length - 1;
+    const insideMost = text.indexOf("Most") + 2;
+
+    const out = normalizeDisplayCitationMarkers(text, {
+      citationMode: "html",
+      annotations: [
+        { type: "url_citation", start_index: 0, end_index: afterTruckPeriod, title: "Collision Report", url: "https://example.com/collision" },
+        { type: "url_citation", start_index: 0, end_index: afterKilledPeriod, title: "Safety Memo", url: "https://example.com/killed" },
+        { type: "url_citation", start_index: 0, end_index: insideMost, title: "Hospital Update", url: "https://example.com/injuries" },
+      ],
+    });
+
+    expect(out).toContain('* **The Collision:** Plane hit a truck.<cite');
+    expect(out).toContain('>Collision Report</cite>');
+    expect(out).toContain('* **Casualties:** The pilot was killed. Over 40 others were injured. Most have been released.<cite');
+    expect(out).toContain('>Safety Memo +1</cite>');
+    expect(out).not.toContain("injured.<cite");
   });
 
   test("tracks native URL context sources for assistant messages", () => {

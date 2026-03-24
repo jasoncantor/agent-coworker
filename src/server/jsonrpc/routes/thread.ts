@@ -1,8 +1,12 @@
 import type { AgentConfig } from "../../../types";
+import {
+  enrichSessionSnapshotCitationsFromCache,
+  primeSessionSnapshotCitationCache,
+} from "../../citationMetadata";
 import { JSONRPC_ERROR_CODES } from "../protocol";
 import { createThreadTurnProjector } from "../threadReadProjector";
 
-import { compactSnapshotFeedForThreadRead, toJsonRpcParams } from "./shared";
+import { toJsonRpcParams } from "./shared";
 import type { JsonRpcRequestHandlerMap, JsonRpcRouteContext } from "./types";
 
 const THREAD_READ_JOURNAL_BATCH_SIZE = 250;
@@ -133,6 +137,8 @@ export function createThreadRouteHandlers(
         ? context.utils.buildThreadFromSession(binding.session)
         : context.utils.buildThreadFromRecord(context.threads.getPersisted(threadId)!);
       await context.journal.waitForIdle(threadId);
+      // Synchronous cache-only rewrite; network resolution runs in primeSessionSnapshotCitationCache (microtask).
+      const enrichedSnapshot = enrichSessionSnapshotCitationsFromCache(snapshot);
       let journalTailSeq = 0;
       let turns: ReturnType<ReturnType<typeof createThreadTurnProjector>["build"]> | undefined;
       if (params.includeTurns === true) {
@@ -162,10 +168,13 @@ export function createThreadRouteHandlers(
           ...thread,
           ...(turns ? { turns } : {}),
         },
-        coworkSnapshot: compactSnapshotFeedForThreadRead(snapshot),
+        coworkSnapshot: enrichedSnapshot,
         ...(params.includeTurns === true
           ? { journalTailSeq }
           : {}),
+      });
+      queueMicrotask(() => {
+        primeSessionSnapshotCitationCache(enrichedSnapshot);
       });
     },
 

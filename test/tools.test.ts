@@ -20,7 +20,7 @@ import { createTodoWriteTool, currentTodos, onTodoChange } from "../src/tools/to
 import { createNotebookEditTool } from "../src/tools/notebookEdit";
 import { createSkillTool } from "../src/tools/skill";
 import { createMemoryTool } from "../src/tools/memory";
-import { createTools } from "../src/tools/index";
+import { createTools, listSessionToolNames } from "../src/tools/index";
 import { getAiCoworkerPaths, writeConnectionStore } from "../src/connect";
 import { __internal as webSafetyInternal } from "../src/utils/webSafety";
 
@@ -497,6 +497,10 @@ describe("edit tool", () => {
 // ---------------------------------------------------------------------------
 
 describe("bash tool", () => {
+  afterEach(() => {
+    bashInternal.resetRunShellCommandForTests();
+  });
+
   test("advertises Windows PowerShell guidance in the tool description", async () => {
     const dir = await tmpDir();
     const t: any = createBashTool(makeCtx(dir));
@@ -582,6 +586,11 @@ describe("bash tool", () => {
 
   test("handles stderr output", async () => {
     const dir = await tmpDir();
+    bashInternal.setRunShellCommandForTests(async () => ({
+      stdout: "",
+      stderr: "error\n",
+      exitCode: 0,
+    }));
     const t: any = createBashTool(makeCtx(dir));
     const res = await t.execute({
       command: `bun -e "console.error('error')"`,
@@ -591,16 +600,31 @@ describe("bash tool", () => {
 
   test("uses workingDirectory as cwd", async () => {
     const dir = await tmpDir();
+    const seen: Array<{ command: string; cwd: string; abortSignal?: AbortSignal }> = [];
+    bashInternal.setRunShellCommandForTests(async (opts) => {
+      seen.push(opts);
+      return {
+        stdout: `${opts.cwd}\n`,
+        stderr: "",
+        exitCode: 0,
+      };
+    });
     const t: any = createBashTool(makeCtx(dir));
     const res = await t.execute({ command: `bun -e "console.log(process.cwd())"` });
     // Resolve symlinks for macOS /private/var/... vs /var/...
     const normalizedStdout = await fs.realpath(res.stdout.trim());
     const normalizedDir = await fs.realpath(dir);
+    expect(seen[0]?.cwd).toBe(dir);
     expect(normalizedStdout).toBe(normalizedDir);
   });
 
   test("returns full large stdout so the runtime spill layer can handle overflow", async () => {
     const dir = await tmpDir();
+    bashInternal.setRunShellCommandForTests(async () => ({
+      stdout: "x".repeat(50000),
+      stderr: "",
+      exitCode: 0,
+    }));
     const t: any = createBashTool(makeCtx(dir));
     const res = await t.execute({
       command: `bun -e "process.stdout.write('x'.repeat(50000))"`,
@@ -610,6 +634,11 @@ describe("bash tool", () => {
 
   test("returns stdout and stderr together", async () => {
     const dir = await tmpDir();
+    bashInternal.setRunShellCommandForTests(async () => ({
+      stdout: "out\n",
+      stderr: "err\n",
+      exitCode: 0,
+    }));
     const t: any = createBashTool(makeCtx(dir));
     const res = await t.execute({
       command: `bun -e "console.log('out'); console.error('err')"`,
@@ -1508,12 +1537,23 @@ describe("webFetch tool", () => {
     typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
   beforeEach(() => {
+    webFetchInternal.setHtmlToMarkdownForTests(async (html: string) =>
+      html
+        .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+        .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ")
+        .replace(/<template\b[\s\S]*?<\/template>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    );
     webFetchInternal.setMaxDownloadBytes(50 * 1024 * 1024);
     webFetchInternal.setResponseTimeoutMs(5_000);
     webSafetyInternal.setDnsLookup(async () => [{ address: "93.184.216.34", family: 4 }]);
   });
 
   afterEach(() => {
+    webFetchInternal.resetHtmlToMarkdownForTests();
     webSafetyInternal.resetDnsLookup();
   });
 
@@ -3511,6 +3551,29 @@ describe("createTools", () => {
     const tools = createTools(makeCtx(dir, { config: makeConfig(dir, { enableMemory: false }) }));
     expect(tools).not.toHaveProperty("memory");
     expect(Object.keys(tools).length).toBe(14);
+  });
+
+  test("listSessionToolNames includes root-session agent controls when requested", () => {
+    const names = listSessionToolNames({
+      provider: "google",
+      providerOptions: {
+        google: {
+          nativeWebSearch: true,
+        },
+      },
+      enableMemory: false,
+    }, { includeAgentControl: true });
+
+    expect(names).toEqual(expect.arrayContaining([
+      "spawnAgent",
+      "listAgents",
+      "sendAgentInput",
+      "waitForAgent",
+      "resumeAgent",
+      "closeAgent",
+    ]));
+    expect(names).not.toContain("memory");
+    expect(names).not.toContain("webSearch");
   });
 
   test("omits child-agent lifecycle tools when child-agent control is unavailable", async () => {

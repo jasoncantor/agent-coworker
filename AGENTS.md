@@ -10,11 +10,9 @@ All logic for the application should be done in the harness itself, consider the
 
 - `src/`: application code
 - `src/server/`: WebSocket server, protocol, and session state
-- `src/tui/`: thin TUI wrapper (archived, may be removed)
 - `src/cli/`: CLI REPL and argument parsing
 - `src/providers/`: model/provider integrations (OpenAI/Google/Anthropic and `*-cli`)
 - `src/tools/`: built-in tools (`bash`, `read`, `write`, `webSearch`, etc.)
-- `apps/TUI/`: main TUI built with OpenTUI + Solid.js (archived, may be removed)
 - `apps/desktop/`: Electron desktop application
 - `test/`: Bun tests (`*.test.ts`)
 - `config/`: built-in defaults and MCP server defaults
@@ -56,9 +54,9 @@ Always run tests while doing work, make sure you run these tests.
 All new features MUST be built on top of the CLI/core logic and exposed via WebSocket controls in the server protocol. UIs are thin clients that consume `ServerEvent`s and send `ClientMessage`s — never put business logic directly in a UI layer.
 
 When adding a new WebSocket message or event:
-1. Define the type in `src/server/protocol.ts` (`ClientMessage` / `ServerEvent` unions).
-2. Add validation in `safeParseClientMessage()` for client messages.
-3. Wire the handler in `src/server/startServer/dispatchClientMessage.ts` and/or the appropriate manager under `src/server/session/`.
+1. Define the legacy event type in `src/server/protocol.ts` when needed, and add JSON-RPC request/result/notification schemas under `src/server/jsonrpc/schema.ts` and the relevant module in `src/server/jsonrpc/` for supported live traffic.
+2. Add validation in the relevant JSON-RPC schema bundle (`src/server/jsonrpc/schema.ts`) and parser helpers when the message is client-originated.
+3. Wire the handler in `src/server/jsonrpc/routes/` and/or the appropriate manager under `src/server/session/`.
 4. **Document it in `docs/websocket-protocol.md`** — this is the source of truth for alternative UI builders.
 
 ## Security & Configuration Tips
@@ -106,7 +104,7 @@ For headless/cloud testing, prefer `bun run serve` and interact via WebSocket (s
 
 - `bun test` runs the full suite (~1590 tests). All tests are deterministic and require no network or API keys.
 - Two tests are skipped by default (remote MCP integration tests requiring network).
-- There is no configured linter or formatter. `bun run typecheck` is the code quality check; it runs the repo-root core typecheck plus `apps/desktop` (including `electron/*`). `apps/TUI` is archived and not part of the default typecheck command.
+- There is no configured linter or formatter. `bun run typecheck` is the code quality check; it runs the repo-root core typecheck plus `apps/desktop` (including `electron/*`).
 
 ### Desktop App
 
