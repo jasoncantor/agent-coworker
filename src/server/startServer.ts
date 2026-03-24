@@ -51,7 +51,7 @@ import { createJsonRpcTransportAdapter } from "./jsonrpc/transportAdapter";
 import { decodeClientMessage } from "./startServer/decodeClientMessage";
 import { dispatchClientMessage } from "./startServer/dispatchClientMessage";
 import { type SessionBinding, type StartServerSocketData } from "./startServer/types";
-import type { SeededSessionContext, SessionDependencies, SessionInfoState } from "./session/SessionContext";
+import type { SeededSessionContext, SessionDependencies, SessionInfoState, PersistedUserConfigState, PersistedUserConfigPatch } from "./session/SessionContext";
 import {
   parseWsProtocolDefault,
   resolveWsProtocol,
