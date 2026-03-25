@@ -89,7 +89,7 @@ function sortByUpdated(entries: WorkspaceBackupEntry[]): WorkspaceBackupEntry[] 
 
 function lifecycleBadgeClass(lifecycle: WorkspaceBackupEntry["lifecycle"]): string {
   if (lifecycle === "active") {
-    return "border-emerald-700/25 bg-emerald-700/[0.04] text-emerald-700/80";
+    return "border-success/25 bg-success/[0.04] text-success/80";
   }
   if (lifecycle === "deleted") {
     return "border-destructive/25 bg-destructive/[0.04] text-destructive/75";
@@ -155,10 +155,13 @@ function BackupSidebar({
 
           return (
             <div key={entry.targetSessionId} className="mb-1">
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => onSelectEntry(entry.targetSessionId)}
                 className={cn(
-                  "flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition-all",
+                  "h-auto w-full justify-start gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm shadow-none transition-all",
                   isBackupSelected
                     ? "border border-border/65 bg-background/72 font-medium text-foreground"
                     : "border border-transparent text-foreground hover:bg-background/35"
@@ -172,7 +175,7 @@ function BackupSidebar({
                   </Badge>
                 ) : null}
                 {entry.status === "failed" && <AlertTriangleIcon className="w-3.5 h-3.5 text-destructive shrink-0" />}
-              </button>
+              </Button>
 
               <div className="ml-4 border-l-2 border-border/40 pl-3 mt-0.5 space-y-0.5">
                 {entry.checkpoints.length === 0 ? (
@@ -181,11 +184,14 @@ function BackupSidebar({
                   [...entry.checkpoints].reverse().map((cp) => {
                     const isCpSelected = entry.targetSessionId === selectedTargetSessionId && selectedCheckpointId === cp.id;
                     return (
-                      <button
+                      <Button
                         key={cp.id}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => onSelectCheckpoint(entry.targetSessionId, cp.id)}
                         className={cn(
-                          "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs transition-all",
+                          "h-auto w-full justify-between rounded-md px-2.5 py-1.5 text-left text-xs shadow-none transition-all",
                           isCpSelected
                             ? "border border-border/55 bg-background/60 font-medium text-foreground"
                             : "border border-transparent text-muted-foreground hover:bg-background/28"
@@ -195,7 +201,7 @@ function BackupSidebar({
                           <FileTextIcon className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
                           <span className="font-mono truncate">{cp.id}</span>
                         </div>
-                      </button>
+                      </Button>
                     );
                   })
                 )}
@@ -420,8 +426,8 @@ function CheckpointDeltaView({
           </span>
           {delta && (
             <div className="flex items-center gap-4 font-medium">
-              <span className="text-emerald-700/80">+{delta.counts.added}</span>
-              <span className="text-amber-700/80">~{delta.counts.modified}</span>
+              <span className="text-success/80">+{delta.counts.added}</span>
+              <span className="text-warning/80">~{delta.counts.modified}</span>
               <span className="text-destructive/75">-{delta.counts.deleted}</span>
             </div>
           )}
@@ -455,8 +461,8 @@ function CheckpointDeltaView({
                     <div className="w-24 text-right shrink-0">
                       <Badge variant="outline" className={cn(
                         "text-[10px] uppercase h-5 py-0",
-                        f.change === "added" ? "border-emerald-700/20 bg-emerald-700/[0.04] text-emerald-700/80 group-hover:bg-emerald-700/[0.07]" :
-                        f.change === "modified" ? "border-amber-700/20 bg-amber-700/[0.04] text-amber-700/80 group-hover:bg-amber-700/[0.07]" :
+                        f.change === "added" ? "border-success/20 bg-success/[0.04] text-success/80 group-hover:bg-success/[0.07]" :
+                        f.change === "modified" ? "border-warning/20 bg-warning/[0.04] text-warning/80 group-hover:bg-warning/[0.07]" :
                         "border-destructive/20 bg-destructive/[0.04] text-destructive/75 group-hover:bg-destructive/[0.07]"
                       )}>
                         {f.change}

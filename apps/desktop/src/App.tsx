@@ -44,8 +44,8 @@ const RightSidebarPane = memo(function RightSidebarPane({ collapsed }: { collaps
 
   return (
     <div
-      className="app-right-sidebar-pane relative shrink-0 overflow-hidden border-l border-border/80"
-      style={{ width: collapsed ? 0 : contextSidebarWidth, borderLeftWidth: collapsed ? 0 : 1 }}
+      className="app-right-sidebar-pane relative shrink-0 overflow-hidden"
+      style={{ width: collapsed ? 0 : contextSidebarWidth }}
     >
       {!collapsed ? <ContextSidebarResizer /> : null}
       <div className="absolute top-0 bottom-0 left-0 flex" style={{ width: contextSidebarWidth }}>
@@ -88,12 +88,16 @@ const ChatShell = memo(function ChatShell({
   startupError: string | null;
 }) {
   const view = useAppStore((s) => s.view);
+  const workspaces = useAppStore((s) => s.workspaces);
   const threads = useAppStore((s) => s.threads);
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
+  const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const threadRuntimeById = useAppStore((s) => s.threadRuntimeById);
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const sidebarWidth = useAppStore((s) => s.sidebarWidth);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
+  const newThread = useAppStore((s) => s.newThread);
+  const clearThreadUsageHardCap = useAppStore((s) => s.clearThreadUsageHardCap);
   const contextSidebarCollapsed = useAppStore((s) => s.contextSidebarCollapsed);
   const toggleContextSidebar = useAppStore((s) => s.toggleContextSidebar);
   const hasAnimatedSidebarsRef = useRef(false);
@@ -102,9 +106,30 @@ const ChatShell = memo(function ChatShell({
     () => threads.find((thread) => thread.id === selectedThreadId) ?? null,
     [selectedThreadId, threads],
   );
+  const activeWorkspace = useMemo(() => {
+    if (!activeThread) {
+      return null;
+    }
+    return workspaces.find((workspace) => workspace.id === activeThread.workspaceId) ?? null;
+  }, [activeThread, workspaces]);
+  const selectedWorkspace = useMemo(
+    () => workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null,
+    [selectedWorkspaceId, workspaces],
+  );
   const runtime = selectedThreadId ? threadRuntimeById[selectedThreadId] : null;
   const busy = runtime?.busy === true;
   const showContextSidebar = view === "chat" && activeThread !== null;
+  const topBarTitle = view === "skills"
+    ? "Skills"
+    : activeThread?.title?.trim() || "New thread";
+  const topBarSubtitle = view === "skills"
+    ? selectedWorkspace?.name ?? "Cowork"
+    : activeWorkspace?.name ?? "Cowork";
+  const canClearHardCap = runtime?.sessionUsage?.budgetStatus.stopTriggered === true
+    && runtime?.transcriptOnly !== true
+    && runtime?.connected === true
+    && Boolean(runtime?.sessionId)
+    && activeThread?.status === "active";
 
   useEffect(() => {
     if (!hasAnimatedSidebarsRef.current) {
@@ -125,12 +150,20 @@ const ChatShell = memo(function ChatShell({
     <div className="app-shell app-shell--chat flex h-full min-h-0 flex-col text-foreground">
       <div className="app-window-drag-strip" aria-hidden="true" />
       <AppTopBar
-        busy={busy}
+        busy={view === "chat" ? busy : false}
         onToggleSidebar={toggleSidebar}
+        onNewChat={() => void newThread()}
         sidebarCollapsed={sidebarCollapsed}
         sidebarWidth={sidebarWidth}
         contextSidebarCollapsed={contextSidebarCollapsed}
         onToggleContextSidebar={toggleContextSidebar}
+        title={topBarTitle}
+        subtitle={topBarSubtitle}
+        sessionUsage={view === "chat" ? (runtime?.sessionUsage ?? null) : null}
+        lastTurnUsage={view === "chat" ? (runtime?.lastTurnUsage ?? null) : null}
+        canClearHardCap={canClearHardCap}
+        onClearHardCap={selectedThreadId ? () => clearThreadUsageHardCap(selectedThreadId) : undefined}
+        showContextToggle={view === "chat"}
       />
       <div className="app-chat-body flex min-h-0 min-w-0 flex-1 flex-row">
         <LeftSidebarPane collapsed={sidebarCollapsed} />
@@ -271,12 +304,16 @@ export default function App() {
   useEffect(() => {
     function applySystemAppearance(appearance: SystemAppearance): void {
       const root = document.documentElement;
-      root.dataset.systemTheme = appearance.shouldUseDarkColors ? "dark" : "light";
+      const theme = appearance.shouldUseDarkColors ? "dark" : "light";
+      root.dataset.systemTheme = theme;
       root.dataset.systemUiTheme = appearance.shouldUseDarkColorsForSystemIntegratedUI ? "dark" : "light";
+      root.dataset.theme = theme;
       root.dataset.platform = appearance.platform;
       root.dataset.highContrast = appearance.shouldUseHighContrastColors || appearance.inForcedColorsMode ? "true" : "false";
       root.dataset.reducedTransparency = appearance.prefersReducedTransparency ? "true" : "false";
-      root.style.colorScheme = appearance.shouldUseDarkColors ? "dark" : "light";
+      root.style.colorScheme = theme;
+      root.classList.toggle("dark", theme === "dark");
+      root.classList.toggle("light", theme !== "dark");
     }
 
     const unsubscribe = onSystemAppearanceChanged(applySystemAppearance);

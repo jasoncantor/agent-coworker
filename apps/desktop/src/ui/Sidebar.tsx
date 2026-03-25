@@ -2,20 +2,49 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent
 
 import {
   ChevronRightIcon,
-  CirclePlusIcon,
   FolderIcon,
   FolderOpenIcon,
   FolderPlusIcon,
+  MessageSquareIcon,
   Settings2Icon,
+  SquarePenIcon,
   SparklesIcon,
 } from "lucide-react";
 
 import { useAppStore } from "../app/store";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../components/ui/collapsible";
 import { confirmAction, showContextMenu } from "../lib/desktopCommands";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import { cn } from "../lib/utils";
 import { formatSidebarRelativeAge, getVisibleSidebarThreads, shouldEmphasizeWorkspaceRow } from "./sidebarHelpers";
+
 const MAX_VISIBLE_THREADS = 10;
+
+function formatWorkspaceMeta(opts: {
+  threadCount: number;
+  isActive: boolean;
+  view: "chat" | "skills" | "settings";
+  isCurrentThreadWorkspace: boolean;
+  isStarting: boolean;
+  hasError: boolean;
+}): string {
+  if (opts.hasError) return "Connection issue";
+  if (opts.isStarting) return "Starting workspace";
+
+  const sessionLabel = opts.threadCount === 1 ? "1 session" : `${opts.threadCount} sessions`;
+
+  if (opts.isActive && opts.view === "skills") {
+    return `${sessionLabel} · viewing skills`;
+  }
+  if (opts.isCurrentThreadWorkspace) {
+    return `${sessionLabel} · current chat`;
+  }
+  if (opts.threadCount === 0) {
+    return "No sessions yet";
+  }
+  return sessionLabel;
+}
 
 export const Sidebar = memo(function Sidebar() {
   const view = useAppStore((s) => s.view);
@@ -23,6 +52,7 @@ export const Sidebar = memo(function Sidebar() {
   const threads = useAppStore((s) => s.threads);
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
+  const workspaceRuntimeById = useAppStore((s) => s.workspaceRuntimeById);
   const threadRuntimeById = useAppStore((s) => s.threadRuntimeById);
 
   const addWorkspace = useAppStore((s) => s.addWorkspace);
@@ -113,13 +143,6 @@ export const Sidebar = memo(function Sidebar() {
     setExpandedThreadLists((current) => ({
       ...current,
       [workspaceId]: !current[workspaceId],
-    }));
-  }, []);
-
-  const toggleWorkspaceSection = useCallback((workspaceId: string) => {
-    setExpandedWorkspaceSections((current) => ({
-      ...current,
-      [workspaceId]: !(current[workspaceId] ?? false),
     }));
   }, []);
 
@@ -226,27 +249,25 @@ export const Sidebar = memo(function Sidebar() {
   };
 
   return (
-    <aside className="app-sidebar sidebar-rail-enter flex h-full w-full flex-col gap-2 px-2.5 pt-1.5 pb-3.5">
-      <nav className="grid gap-1">
+    <aside className="app-sidebar sidebar-rail-enter flex h-full w-full flex-col gap-1.5 px-2 pt-1.5 pb-3">
+      <nav className="grid w-full gap-1.5">
         <Button
           variant="ghost"
           size="sm"
           className={cn(
-            "sidebar-lift h-9 justify-start rounded-xl px-3 text-[14px] font-medium tracking-[-0.015em] text-foreground/80",
+            "sidebar-lift h-8 w-full min-w-0 justify-start rounded-lg px-2.5 text-[13px] font-medium tracking-[-0.015em] text-foreground/80",
             "hover:bg-foreground/[0.045] hover:text-foreground",
-            view === "chat" && "bg-foreground/[0.055] text-foreground",
           )}
           onClick={() => void newThread()}
         >
-          <CirclePlusIcon className="h-4 w-4 text-muted-foreground" />
-          New thread
+          <SquarePenIcon className="h-4 w-4 text-muted-foreground" />
+          New Chat
         </Button>
-
         <Button
           variant="ghost"
           size="sm"
           className={cn(
-            "sidebar-lift h-9 justify-start rounded-xl px-3 text-[14px] font-medium tracking-[-0.015em] text-foreground/80",
+            "sidebar-lift h-8 w-full min-w-0 justify-start rounded-lg px-2.5 text-[13px] font-medium tracking-[-0.015em] text-foreground/80",
             "hover:bg-foreground/[0.045] hover:text-foreground",
             view === "skills" && "bg-foreground/[0.055] text-foreground",
           )}
@@ -259,11 +280,11 @@ export const Sidebar = memo(function Sidebar() {
 
       <section className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex items-center justify-between px-1">
-          <div className="text-[13px] font-medium tracking-[-0.015em] text-muted-foreground">Workspaces</div>
+          <div className="text-[11px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">Workspaces</div>
           <Button
             size="icon-sm"
             variant="ghost"
-            className="sidebar-lift size-7 rounded-lg text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
+            className="sidebar-lift size-6 rounded-md text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
             onClick={() => void addWorkspace()}
             aria-label="Add workspace"
           >
@@ -273,10 +294,10 @@ export const Sidebar = memo(function Sidebar() {
 
         <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
           {workspaces.length === 0 ? (
-            <div className="rounded-2xl bg-foreground/[0.04] px-4 py-5 text-center text-sm text-muted-foreground">
-              <FolderPlusIcon strokeWidth={1.5} className="mx-auto mb-2 h-7 w-7 text-muted-foreground/70" />
+            <div className="rounded-xl border border-border/55 bg-foreground/[0.03] px-4 py-4 text-center text-xs text-muted-foreground">
+              <FolderPlusIcon strokeWidth={1.5} className="mx-auto mb-2 h-6 w-6 text-muted-foreground/70" />
               <div>No workspaces yet</div>
-              <Button className="mt-3 h-8 rounded-xl px-3" size="sm" variant="outline" type="button" onClick={() => void addWorkspace()}>
+              <Button className="mt-3 h-7 rounded-lg px-3" size="sm" variant="outline" type="button" onClick={() => void addWorkspace()}>
                 Add workspace
               </Button>
             </div>
@@ -284,7 +305,11 @@ export const Sidebar = memo(function Sidebar() {
             workspaces.map((workspace) => {
               const active = workspace.id === selectedWorkspaceId;
               const expanded = expandedWorkspaceSections[workspace.id] ?? false;
+              const workspaceRuntime = workspaceRuntimeById[workspace.id];
               const workspaceThreads = threadsByWorkspaceId.get(workspace.id) ?? [];
+              const threadCount = workspaceThreads.length;
+              const isCurrentThreadWorkspace = selectedThreadId !== null
+                && workspaceThreads.some((thread) => thread.id === selectedThreadId);
               const emphasizeWorkspace = shouldEmphasizeWorkspaceRow(
                 active,
                 selectedThreadId,
@@ -296,73 +321,89 @@ export const Sidebar = memo(function Sidebar() {
                 showAllThreads,
                 MAX_VISIBLE_THREADS,
               );
+              const workspaceMeta = formatWorkspaceMeta({
+                threadCount,
+                isActive: active,
+                view,
+                isCurrentThreadWorkspace,
+                isStarting: workspaceRuntime?.starting === true,
+                hasError: workspaceRuntime?.error !== null && workspaceRuntime?.error !== undefined,
+              });
 
               return (
-                <div key={workspace.id} className="space-y-1.5">
+                <Collapsible
+                  key={workspace.id}
+                  className="space-y-1.5"
+                  data-dragging={draggedWorkspaceId === workspace.id ? "true" : "false"}
+                  data-drop-target={
+                    dropTargetWorkspaceId === workspace.id && draggedWorkspaceId !== workspace.id ? "true" : "false"
+                  }
+                  draggable={workspaces.length > 1}
+                  onContextMenu={(e) => handleWorkspaceContextMenu(e, workspace.id, workspace.name)}
+                  onDragEnd={clearWorkspaceDragState}
+                  onDragOver={(event: DragEvent<HTMLDivElement>) => handleWorkspaceDragOver(event, workspace.id)}
+                  onDragStart={(event: DragEvent<HTMLDivElement>) => handleWorkspaceDragStart(event, workspace.id)}
+                  onDrop={(event: DragEvent<HTMLDivElement>) => void handleWorkspaceDrop(event, workspace.id)}
+                  onOpenChange={(nextOpen) => {
+                    setExpandedWorkspaceSections((current) => ({
+                      ...current,
+                      [workspace.id]: nextOpen,
+                    }));
+                  }}
+                  open={expanded}
+                  title={workspace.path}
+                >
                   <div
                     className={cn(
-                      "sidebar-workspace-card flex items-center gap-1 rounded-xl px-1.5 py-1",
+                      "sidebar-workspace-card flex items-center gap-1 rounded-lg px-1 py-1",
                       emphasizeWorkspace
-                        ? "bg-foreground/[0.05] text-foreground"
+                        ? "border-border/45 bg-foreground/[0.05] text-foreground"
                         : active
                           ? "text-foreground hover:bg-foreground/[0.03]"
-                        : "text-foreground/78 hover:bg-foreground/[0.03] hover:text-foreground",
+                          : "text-foreground/78 hover:bg-foreground/[0.03] hover:text-foreground",
                       dropTargetWorkspaceId === workspace.id &&
                         draggedWorkspaceId !== workspace.id &&
                         "bg-foreground/[0.08] ring-1 ring-foreground/10",
                     )}
-                    draggable={workspaces.length > 1}
-                    data-dragging={draggedWorkspaceId === workspace.id ? "true" : "false"}
-                    data-drop-target={
-                      dropTargetWorkspaceId === workspace.id && draggedWorkspaceId !== workspace.id ? "true" : "false"
-                    }
-                    onDragStart={(event) => handleWorkspaceDragStart(event, workspace.id)}
-                    onDragOver={(event) => handleWorkspaceDragOver(event, workspace.id)}
-                    onDragEnd={clearWorkspaceDragState}
-                    onDrop={(event) => void handleWorkspaceDrop(event, workspace.id)}
-                    onContextMenu={(e) => handleWorkspaceContextMenu(e, workspace.id, workspace.name)}
-                    title={workspace.path}
                   >
-                    <button
-                      type="button"
-                      className="sidebar-symbol-slot group flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-transparent text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground active:bg-transparent"
-                      aria-label={expanded ? `Collapse ${workspace.name}` : `Expand ${workspace.name}`}
-                      aria-expanded={expanded}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleWorkspaceSection(workspace.id);
-                      }}
-                    >
-                      {expanded ? (
-                        <FolderOpenIcon className="sidebar-symbol-default h-4 w-4" />
-                      ) : (
-                        <FolderIcon className="sidebar-symbol-default h-4 w-4" />
-                      )}
-                      <ChevronRightIcon
-                        className={cn(
-                          "sidebar-symbol-hover sidebar-chevron absolute h-4 w-4",
-                          expanded ? "rotate-90 text-foreground" : "rotate-0",
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        aria-label={expanded ? `Collapse ${workspace.name}` : `Expand ${workspace.name}`}
+                        className="sidebar-symbol-slot group h-6 w-6 shrink-0 rounded-md bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent"
+                        size="icon-sm"
+                        variant="ghost"
+                      >
+                        {expanded ? (
+                          <FolderOpenIcon className="sidebar-symbol-default h-4 w-4" />
+                        ) : (
+                          <FolderIcon className="sidebar-symbol-default h-4 w-4" />
                         )}
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      className="sidebar-lift flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-0.5 text-left"
+                        <ChevronRightIcon
+                          className={cn(
+                            "sidebar-symbol-hover sidebar-chevron absolute h-4 w-4",
+                            expanded ? "rotate-90 text-foreground" : "rotate-0",
+                          )}
+                        />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <Button
+                      className="sidebar-lift flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1.5 text-left"
                       onClick={() => void selectWorkspace(workspace.id)}
+                      title={workspace.path}
+                      type="button"
+                      variant="ghost"
                     >
-                      <span className="truncate text-[14px] font-medium tracking-[-0.015em]">{workspace.name}</span>
-                    </button>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium tracking-[-0.015em]">{workspace.name}</span>
+                        <span className="mt-0.5 block truncate text-[11px] font-medium text-muted-foreground">
+                          {workspaceMeta}
+                        </span>
+                      </span>
+                    </Button>
                   </div>
 
-                  <div
-                    aria-hidden={!expanded}
-                    className={cn(
-                      "sidebar-thread-region grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                      expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-60",
-                    )}
-                  >
-                    <div className="overflow-hidden">
-                      <div className="space-y-1 pl-2 pt-1">
+                  <CollapsibleContent className="sidebar-thread-region overflow-hidden">
+                    <div className="ml-3 space-y-1 border-l border-border/45 pl-3 pt-1">
                       {workspaceThreads.length === 0 ? (
                         <div
                           className={cn(
@@ -383,85 +424,89 @@ export const Sidebar = memo(function Sidebar() {
                             const ageLabel = formatSidebarRelativeAge(thread.lastMessageAt);
 
                             return (
-                              <button
-                                key={thread.id}
-                                className={cn(
-                                  "sidebar-thread-item sidebar-lift flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left",
-                                  isActive
-                                    ? "bg-foreground/[0.06] text-foreground"
-                                    : "text-foreground/82 hover:bg-foreground/[0.04] hover:text-foreground",
-                                  expanded ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0",
-                                )}
-                                style={{ transitionDelay: expanded ? `${Math.min(index, 6) * 26}ms` : "0ms" }}
-                                onClick={() => {
-                                  if (!isEditing) {
-                                    void selectThread(thread.id);
-                                  }
-                                }}
-                                onDoubleClick={() => startEditing(thread.id, displayTitle)}
-                                onContextMenu={(e) => handleThreadContextMenu(e, thread.id, displayTitle)}
-                                type="button"
-                              >
-                                <span className="min-w-0 flex-1">
-                                  {isEditing ? (
-                                    <input
-                                      ref={editInputRef}
-                                      className="min-w-0 w-full rounded-lg border border-border/80 bg-background px-2 py-1 text-[13px] text-foreground outline-none focus:ring-1 focus:ring-ring"
-                                      value={editingTitle}
-                                      onChange={(e) => setEditingTitle(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                          e.preventDefault();
-                                          commitRename(thread.id, editingTitle);
-                                        } else if (e.key === "Escape") {
-                                          e.preventDefault();
-                                          cancelRename();
-                                        }
-                                      }}
-                                      onBlur={() => commitRename(thread.id, editingTitle)}
-                                      onClick={(e) => e.stopPropagation()}
-                                      onDoubleClick={(e) => e.stopPropagation()}
-                                    />
-                                  ) : (
+                              isEditing ? (
+                                <div
+                                  key={thread.id}
+                                  className={cn(
+                                    "sidebar-thread-item flex w-full items-center gap-2.5 rounded-lg border border-border/40 bg-foreground/[0.04] px-2.5 py-1.5 text-left text-foreground",
+                                    expanded ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0",
+                                  )}
+                                  style={{ transitionDelay: expanded ? `${Math.min(index, 6) * 26}ms` : "0ms" }}
+                                >
+                                  <Input
+                                    ref={editInputRef}
+                                    className="min-w-0 w-full h-7 rounded-md border-border/70 text-[13px] shadow-none [&_[data-slot=input]]:h-7 [&_[data-slot=input]]:px-2 [&_[data-slot=input]]:text-[13px]"
+                                    value={editingTitle}
+                                    onBlur={() => commitRename(thread.id, editingTitle)}
+                                    onChange={(e) => setEditingTitle(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onDoubleClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        commitRename(thread.id, editingTitle);
+                                      } else if (e.key === "Escape") {
+                                        e.preventDefault();
+                                        cancelRename();
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <Button
+                                  key={thread.id}
+                                  className={cn(
+                                    "sidebar-thread-item sidebar-lift flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left",
+                                    isActive
+                                      ? "border-border/45 bg-foreground/[0.05] text-foreground"
+                                      : "text-foreground/82 hover:border-border/35 hover:bg-foreground/[0.035] hover:text-foreground",
+                                    expanded ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0",
+                                  )}
+                                  onClick={() => void selectThread(thread.id)}
+                                  onContextMenu={(e) => handleThreadContextMenu(e, thread.id, displayTitle)}
+                                  onDoubleClick={() => startEditing(thread.id, displayTitle)}
+                                  style={{ transitionDelay: expanded ? `${Math.min(index, 6) * 26}ms` : "0ms" }}
+                                  type="button"
+                                  variant="ghost"
+                                >
+                                  <span className="min-w-0 flex-1">
                                     <span className="block truncate text-[13px] font-medium tracking-[-0.018em]">
                                       {displayTitle}
                                     </span>
-                                  )}
-                                </span>
+                                  </span>
 
-                                {!isEditing ? (
                                   <span className="flex shrink-0 items-center gap-2 pl-2">
                                     {busy ? (
-                                      <span className="h-2 w-2 rounded-full bg-primary animate-pulse" aria-hidden="true" />
+                                      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" aria-hidden="true" />
                                     ) : null}
                                     {ageLabel ? (
                                       <span className="text-[11px] font-medium text-muted-foreground">{ageLabel}</span>
                                     ) : null}
                                   </span>
-                                ) : null}
-                              </button>
+                                </Button>
+                              )
                             );
                           })}
 
                           {workspaceThreads.length > MAX_VISIBLE_THREADS ? (
-                            <button
+                            <Button
                               className={cn(
-                                "sidebar-lift px-3 py-1 text-left text-[12px] font-medium text-muted-foreground transition-[opacity,transform,color] duration-200 hover:text-foreground",
+                                "sidebar-lift px-2.5 py-1 text-left text-[12px] font-medium text-muted-foreground transition-[opacity,transform,color] duration-200 hover:text-foreground",
                                 expanded ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0",
                               )}
-                              style={{ transitionDelay: expanded ? `${Math.min(visibleThreads.length, 6) * 26}ms` : "0ms" }}
                               onClick={() => toggleThreadList(workspace.id)}
+                              style={{ transitionDelay: expanded ? `${Math.min(visibleThreads.length, 6) * 26}ms` : "0ms" }}
                               type="button"
+                              variant="ghost"
                             >
                               {showAllThreads ? "Show less" : `Show ${hiddenThreadCount} more`}
-                            </button>
+                            </Button>
                           ) : null}
                         </>
                       )}
                     </div>
-                    </div>
-                  </div>
-                </div>
+                  </CollapsibleContent>
+                </Collapsible>
               );
             })
           )}
@@ -473,7 +518,7 @@ export const Sidebar = memo(function Sidebar() {
           variant="ghost"
           size="sm"
           className={cn(
-            "sidebar-lift h-9 w-full justify-start rounded-xl px-3 text-[14px] font-medium tracking-[-0.015em] text-foreground/78",
+            "sidebar-lift h-8 w-full justify-start rounded-lg px-2.5 text-[13px] font-medium tracking-[-0.015em] text-foreground/78",
             "hover:bg-foreground/[0.045] hover:text-foreground",
             view === "settings" && "bg-foreground/[0.055] text-foreground",
           )}

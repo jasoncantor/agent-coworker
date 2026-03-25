@@ -146,7 +146,7 @@ export function McpServersPage() {
       </div>
 
       {workspace && (hasLegacyWorkspace || hasLegacyUser) ? (
-        <Card className="border-amber-300/60 bg-amber-50/60">
+        <Card className="border-warning/35 bg-warning/[0.08]">
           <CardHeader>
             <CardTitle>Legacy MCP configs found</CardTitle>
             <CardDescription>
@@ -345,7 +345,7 @@ export function McpServersPage() {
                     {isExpanded ? <ChevronDownIcon className="w-4 h-4 text-muted-foreground" /> : <ChevronRightIcon className="w-4 h-4 text-muted-foreground" />}
                     <span className="font-medium text-foreground text-sm">{server.name}</span>
                     {!canEdit && <Badge variant="secondary" className="text-[10px] uppercase h-5">{sourceLabel(server.source)}</Badge>}
-                    {validation && validation.ok ? <CheckCircle2Icon className="w-4 h-4 text-emerald-500" /> : validation && !validation.ok ? <XCircleIcon className="w-4 h-4 text-destructive" /> : null}
+                    {validation && validation.ok ? <CheckCircle2Icon className="w-4 h-4 text-success" /> : validation && !validation.ok ? <XCircleIcon className="w-4 h-4 text-destructive" /> : null}
                   </div>
                   
                   <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
@@ -455,14 +455,15 @@ export function McpServersPage() {
 
       <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
         <CollapsibleTrigger asChild>
-          <button
+          <Button
             type="button"
-            className="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            variant="ghost"
+            className="h-auto w-full justify-start gap-2 rounded-lg px-1 py-1.5 text-sm font-medium text-muted-foreground hover:bg-transparent hover:text-foreground"
           >
             <WrenchIcon className="size-4" />
             <span>Advanced</span>
             <ChevronDownIcon className={cn("ml-auto size-4 transition-transform", advancedOpen && "rotate-180")} />
-          </button>
+          </Button>
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-5 pt-2">
           <Card className="border-border/80 bg-card/85">

@@ -1,33 +1,135 @@
-import { PanelLeftIcon, PanelRightIcon, LoaderCircleIcon } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
+import { ChevronDownIcon, LoaderCircleIcon, PanelLeftIcon, PanelRightIcon, SquarePenIcon } from "lucide-react";
+
+import type { SessionUsageSnapshot, TurnUsageSnapshot } from "../../app/types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { cn } from "../../lib/utils";
+import { formatCost, formatTokenCount } from "../../../../../src/session/pricing";
 import { SidebarCollapseControl } from "./SidebarCollapseControl";
 
 interface AppTopBarProps {
   busy: boolean;
   onToggleSidebar: () => void;
+  onNewChat: () => void;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   contextSidebarCollapsed: boolean;
   onToggleContextSidebar: () => void;
+  title: string;
+  subtitle: string | null;
+  sessionUsage: SessionUsageSnapshot | null;
+  lastTurnUsage: TurnUsageSnapshot | null;
+  canClearHardCap?: boolean;
+  onClearHardCap?: () => void;
+  showContextToggle?: boolean;
 }
 
 export function AppTopBar({
   busy,
   onToggleSidebar,
+  onNewChat,
   sidebarCollapsed,
   sidebarWidth,
   contextSidebarCollapsed,
   onToggleContextSidebar,
+  title,
+  subtitle,
+  sessionUsage,
+  lastTurnUsage,
+  canClearHardCap = false,
+  onClearHardCap,
+  showContextToggle = true,
 }: AppTopBarProps) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsRef = useRef<HTMLDivElement | null>(null);
+  const detailsId = useId();
+  const isDarwin = typeof document !== "undefined" && document.documentElement.dataset.platform === "darwin";
   const sidebarLabel = sidebarCollapsed ? "Show sidebar" : "Hide sidebar";
   const rightSidebarLabel = contextSidebarCollapsed ? "Show context" : "Hide context";
+  const hasUsage = sessionUsage !== null || lastTurnUsage !== null;
+  const estimatedCostLabel = useMemo(() => {
+    if (!sessionUsage) {
+      return "No usage yet";
+    }
+    if (sessionUsage.costTrackingAvailable && sessionUsage.estimatedTotalCostUsd !== null) {
+      return formatCost(sessionUsage.estimatedTotalCostUsd);
+    }
+    return sessionUsage.totalTurns > 0 ? "Unavailable" : "No usage yet";
+  }, [sessionUsage]);
+  const totalTokensLabel = useMemo(() => {
+    if (sessionUsage) {
+      return formatTokenCount(sessionUsage.totalTokens);
+    }
+    if (lastTurnUsage) {
+      return formatTokenCount(lastTurnUsage.usage.totalTokens);
+    }
+    return "—";
+  }, [lastTurnUsage, sessionUsage]);
+  const promptTokensLabel = sessionUsage ? formatTokenCount(sessionUsage.totalPromptTokens) : "—";
+  const completionTokensLabel = sessionUsage ? formatTokenCount(sessionUsage.totalCompletionTokens) : "—";
+  const totalTurnsLabel = sessionUsage ? `${sessionUsage.totalTurns}` : "0";
+  const lastTurnTokensLabel = lastTurnUsage ? formatTokenCount(lastTurnUsage.usage.totalTokens) : "—";
+  const lastTurnCostLabel = lastTurnUsage?.usage.estimatedCostUsd !== undefined
+    ? formatCost(lastTurnUsage.usage.estimatedCostUsd)
+    : "—";
+  const budgetLine = useMemo(() => {
+    const budget = sessionUsage?.budgetStatus;
+    if (!budget?.configured) {
+      return null;
+    }
+    if (budget.stopTriggered && budget.stopAtUsd !== null) {
+      return `Hard cap exceeded at ${formatCost(budget.stopAtUsd)}`;
+    }
+    if (budget.warningTriggered && budget.warnAtUsd !== null) {
+      return `Warning threshold reached at ${formatCost(budget.warnAtUsd)}`;
+    }
+
+    const parts: string[] = [];
+    if (budget.warnAtUsd !== null) parts.push(`Warn ${formatCost(budget.warnAtUsd)}`);
+    if (budget.stopAtUsd !== null) parts.push(`Cap ${formatCost(budget.stopAtUsd)}`);
+    return parts.length > 0 ? `Budget ${parts.join(" • ")}` : null;
+  }, [sessionUsage]);
+  const titleOffset = sidebarCollapsed ? 0 : sidebarWidth;
+  const titleRightInset = busy ? 8.75 * 16 : 4.75 * 16;
+  const collapsedThreadAnchorStyle = sidebarCollapsed && isDarwin ? { paddingLeft: "10rem" } : undefined;
+
+  useEffect(() => {
+    setDetailsOpen(false);
+  }, [title, subtitle, sessionUsage?.sessionId, sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!detailsOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (detailsRef.current && event.target instanceof Node && !detailsRef.current.contains(event.target)) {
+        setDetailsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setDetailsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [detailsOpen]);
 
   return (
-    <div className="app-topbar app-topbar--frame relative flex w-full shrink-0 items-center justify-end overflow-hidden px-4">
+    <div className="app-topbar app-topbar--frame relative flex w-full shrink-0 items-center justify-end px-3">
       <div
-        className="app-topbar__sidebar-fill"
+        className="app-topbar__sidebar-fill border-r border-border/70"
         aria-hidden="true"
         style={{ width: sidebarCollapsed ? 0 : sidebarWidth, borderRightWidth: sidebarCollapsed ? 0 : 1 }}
       />
@@ -36,42 +138,180 @@ export function AppTopBar({
         aria-hidden="true"
         style={{ left: sidebarCollapsed ? 0 : sidebarWidth }}
       />
-      <SidebarCollapseControl onToggleSidebar={onToggleSidebar} sidebarCollapsed={sidebarCollapsed} />
-      <div className="app-topbar__inline-sidebar-toggle app-topbar__toolbar app-topbar__controls absolute left-4 top-1/2 flex min-w-0 -translate-y-1/2 items-center gap-1">
+      <SidebarCollapseControl
+        onToggleSidebar={onToggleSidebar}
+        onNewChat={onNewChat}
+        sidebarCollapsed={sidebarCollapsed}
+      />
+      <div className="app-topbar__inline-sidebar-toggle app-topbar__toolbar app-topbar__controls absolute left-3 top-1/2 flex min-w-0 -translate-y-1/2 items-center gap-1">
         <Button
           size="icon-sm"
           variant="ghost"
           onClick={onToggleSidebar}
           title={sidebarLabel}
           aria-label={sidebarLabel}
-          className="app-topbar__toolbar-button app-topbar__sidebar-toggle-button text-muted-foreground hover:text-foreground"
+          className="app-topbar__toolbar-button app-topbar__plain-icon-button text-muted-foreground hover:text-foreground"
         >
-          <PanelLeftIcon className="h-[18px] w-[18px]" />
+          <PanelLeftIcon className="h-4 w-4" />
         </Button>
-      </div>
-
-      <div className="app-topbar__title pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 text-sm font-semibold tracking-tight text-foreground">
-        Cowork
-      </div>
-
-      <div className="app-topbar__toolbar app-topbar__toolbar--right app-topbar__controls absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2">
-        {busy ? (
-          <Badge variant="secondary" className="gap-1.5">
-            <LoaderCircleIcon className="h-3.5 w-3.5 animate-spin" />
-            Busy
-          </Badge>
+        {sidebarCollapsed ? (
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            onClick={onNewChat}
+            title="New Chat"
+            aria-label="New Chat"
+            className="app-topbar__toolbar-button app-topbar__plain-icon-button text-muted-foreground hover:text-foreground"
+          >
+            <SquarePenIcon className="h-4 w-4" />
+          </Button>
         ) : null}
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          onClick={onToggleContextSidebar}
-          title={rightSidebarLabel}
-          aria-label={rightSidebarLabel}
-          className="app-topbar__toolbar-button text-muted-foreground hover:text-foreground"
-        >
-          <PanelRightIcon className="h-[18px] w-[18px]" />
-        </Button>
       </div>
+
+      <div
+        className="app-topbar__thread-shell absolute inset-y-0 flex min-w-0 items-center"
+        style={{ left: titleOffset, right: titleRightInset }}
+      >
+        <div
+          ref={detailsRef}
+          className={cn(
+            "app-topbar__thread-anchor relative flex min-w-0",
+            sidebarCollapsed && "app-topbar__thread-anchor--collapsed",
+          )}
+          style={collapsedThreadAnchorStyle}
+        >
+          <button
+            type="button"
+            aria-label="Open thread details"
+            aria-haspopup="dialog"
+            aria-expanded={detailsOpen}
+            aria-controls={detailsId}
+            className="app-topbar__thread-button app-topbar__controls flex min-w-0 items-center gap-2"
+            data-open={detailsOpen ? "true" : "false"}
+            onClick={() => setDetailsOpen((open) => !open)}
+          >
+            <span className="app-topbar__thread-title truncate">{title}</span>
+            {subtitle ? (
+              <>
+                <span className="app-topbar__thread-separator text-muted-foreground/52" aria-hidden="true">|</span>
+                <span className="app-topbar__thread-subtitle truncate">{subtitle}</span>
+              </>
+            ) : null}
+            <ChevronDownIcon
+              className={cn(
+                "app-topbar__thread-chevron h-3.5 w-3.5 shrink-0 text-muted-foreground/68 transition-transform duration-150 ease-out",
+                detailsOpen && "rotate-180",
+              )}
+            />
+          </button>
+
+          {detailsOpen ? (
+            <div
+              id={detailsId}
+              role="dialog"
+              aria-label="Thread details"
+              className="app-topbar__thread-popover absolute left-0 top-full mt-1.5 w-[19.5rem] max-w-[min(19.5rem,calc(100vw-2rem))]"
+            >
+              <div className="flex items-start justify-between gap-3 px-0.5 pt-0.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-medium leading-none text-muted-foreground">Usage</p>
+                  {hasUsage ? (
+                    <p className="mt-2 text-[13px] leading-snug tracking-tight text-foreground/92">
+                      <span className="font-semibold tabular-nums">{estimatedCostLabel}</span>
+                      <span className="font-normal text-muted-foreground"> · </span>
+                      <span className="font-normal text-muted-foreground">
+                        {totalTurnsLabel} turn{totalTurnsLabel === "1" ? "" : "s"}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-[13px] leading-snug text-muted-foreground">No usage recorded yet</p>
+                  )}
+                </div>
+                {busy ? (
+                  <Badge
+                    variant="secondary"
+                    className="h-6 shrink-0 gap-1 rounded-full border-border/40 bg-muted/25 px-2 text-[10px] font-medium text-muted-foreground shadow-none"
+                  >
+                    <LoaderCircleIcon className="h-3 w-3 animate-spin opacity-80" />
+                    Busy
+                  </Badge>
+                ) : null}
+              </div>
+
+              <div className="app-topbar__thread-metrics app-context-sidebar__nested-panel mt-2.5 flex flex-col rounded-[10px] border px-2.5 py-1">
+                <TopBarMetricRow label="Estimated cost" value={estimatedCostLabel} />
+                <TopBarMetricRow label="Total tokens" value={totalTokensLabel} />
+                <TopBarMetricRow label="Prompt tokens" value={promptTokensLabel} />
+                <TopBarMetricRow label="Completion tokens" value={completionTokensLabel} />
+                <TopBarMetricRow label="Turns" value={totalTurnsLabel} />
+                <TopBarMetricRow label="Last turn tokens" value={lastTurnTokensLabel} />
+              </div>
+
+              {lastTurnUsage ? (
+                <div className="mt-2 flex items-center justify-between gap-3 px-0.5 text-[11px]">
+                  <span className="text-muted-foreground">Last turn cost</span>
+                  <span className="tabular-nums font-medium text-foreground/88">{lastTurnCostLabel}</span>
+                </div>
+              ) : null}
+
+              {budgetLine ? (
+                <div className="mt-2 px-0.5 text-[11px] leading-relaxed text-muted-foreground">{budgetLine}</div>
+              ) : null}
+
+              {canClearHardCap && onClearHardCap ? (
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 rounded-full px-3 text-[11px]"
+                    onClick={() => {
+                      onClearHardCap();
+                      setDetailsOpen(false);
+                    }}
+                  >
+                    Clear hard cap
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {showContextToggle || busy ? (
+        <div className="app-topbar__toolbar app-topbar__toolbar--right app-topbar__controls absolute inset-y-0 right-3 flex items-center gap-1.5">
+          {busy ? (
+            <Badge variant="secondary" className="gap-1.5 rounded-md border-border/55 bg-muted/20 px-2 py-0 text-[11px] text-muted-foreground shadow-none">
+              <LoaderCircleIcon className="h-3 w-3 animate-spin" />
+              Busy
+            </Badge>
+          ) : null}
+          {showContextToggle ? (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              onClick={onToggleContextSidebar}
+              title={rightSidebarLabel}
+              aria-label={rightSidebarLabel}
+              className="app-topbar__toolbar-button app-topbar__plain-icon-button text-muted-foreground hover:text-foreground"
+            >
+              <PanelRightIcon className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TopBarMetricRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-border/20 py-1.5 last:border-b-0">
+      <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{label}</span>
+      <span className="min-w-0 truncate text-right text-[13px] font-medium tabular-nums tracking-tight text-foreground/90">
+        {value}
+      </span>
     </div>
   );
 }

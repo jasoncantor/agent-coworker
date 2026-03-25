@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { createElement } from "react";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 
 import { clearJsonRpcSocketOverride, setJsonRpcSocketOverride } from "./helpers/jsonRpcSocketMock";
+import { setupJsdom } from "./jsdomHarness";
 
 const jsonRpcRequests: Array<{ method: string; params?: unknown }> = [];
 const jsonRpcHandlers = new Map<string, (params?: unknown) => unknown | Promise<unknown>>();
@@ -63,11 +67,15 @@ class MockJsonRpcSocket {
   }
 
   notify(method: string, params?: unknown) {
-    this.opts.onNotification?.({ method, params });
+    act(() => {
+      this.opts.onNotification?.({ method, params });
+    });
   }
 
   requestFromServer(id: string | number, method: string, params?: unknown) {
-    this.opts.onServerRequest?.({ id, method, params });
+    act(() => {
+      this.opts.onServerRequest?.({ id, method, params });
+    });
   }
 }
 
@@ -113,6 +121,7 @@ mock.module("../src/lib/agentSocket", () => ({
 }));
 
 const { useAppStore } = await import("../src/app/store");
+const { ChatView } = await import("../src/ui/ChatView");
 const { RUNTIME, defaultThreadRuntime } = await import("../src/app/store.helpers");
 
 function threadMeta(sessionId = "thread-session") {
@@ -210,18 +219,24 @@ function setDefaultHandlers(sessionId = "thread-session") {
 }
 
 async function flushAsyncWork() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 describe("desktop JSON-RPC event mapping", () => {
   let workspaceId = "";
   let threadId = "";
   let sessionId = "";
+  let harness: ReturnType<typeof setupJsdom> | null = null;
+  let root: ReturnType<typeof createRoot> | null = null;
 
   async function reconnectThreadAndGetSocket() {
-    await useAppStore.getState().reconnectThread(threadId);
+    await act(async () => {
+      await useAppStore.getState().reconnectThread(threadId);
+    });
     await flushAsyncWork();
     await flushAsyncWork();
 
@@ -260,7 +275,10 @@ describe("desktop JSON-RPC event mapping", () => {
       expect(useAppStore.getState().threadRuntimeById[threadId]?.feed ?? []).toHaveLength(feedLengthBefore);
       expect(useAppStore.getState().notifications).toHaveLength(notificationCountBefore);
 
-      answer();
+      await act(async () => {
+        answer();
+        await Promise.resolve();
+      });
 
       expect(socket.responses.slice(responseCountBefore)).toEqual([{ id: requestId, result: expectedResponse }]);
       expect(useAppStore.getState().promptModal).toBeNull();
@@ -272,6 +290,33 @@ describe("desktop JSON-RPC event mapping", () => {
   }
 
   beforeEach(() => {
+    harness = setupJsdom({
+      includeAnimationFrame: true,
+      extraGlobals: {
+        MutationObserver: class MockMutationObserver {
+          observe() {}
+          disconnect() {}
+          takeRecords() {
+            return [];
+          }
+        },
+      },
+      setupWindow: (dom) => {
+        Object.assign(dom.window, { event: undefined });
+        if (typeof dom.window.HTMLElement.prototype.attachEvent !== "function") {
+          (dom.window.HTMLElement.prototype as { attachEvent?: (name: string, handler: unknown) => void }).attachEvent = () => {};
+        }
+        if (typeof dom.window.HTMLElement.prototype.detachEvent !== "function") {
+          (dom.window.HTMLElement.prototype as { detachEvent?: (name: string, handler: unknown) => void }).detachEvent = () => {};
+        }
+      },
+    });
+    const container = harness.dom.window.document.getElementById("root");
+    if (!container) {
+      throw new Error("missing root");
+    }
+    root = createRoot(container);
+
     setJsonRpcSocketOverride(MockJsonRpcSocket);
     workspaceId = `ws-${crypto.randomUUID()}`;
     threadId = `thread-${crypto.randomUUID()}`;
@@ -291,110 +336,124 @@ describe("desktop JSON-RPC event mapping", () => {
     RUNTIME.optimisticUserMessageIds.clear();
     setDefaultHandlers(sessionId);
 
-    useAppStore.setState({
-      ready: true,
-      startupError: null,
-      view: "chat",
-      workspaces: [
-        {
-          id: workspaceId,
-          name: "Workspace 1",
-          path: "/tmp/workspace",
-          createdAt: "2024-01-01T00:00:00.000Z",
-          lastOpenedAt: "2024-01-01T00:00:00.000Z",
-          defaultEnableMcp: true,
-          defaultBackupsEnabled: true,
-          yolo: false,
+    act(() => {
+      useAppStore.setState({
+        ready: true,
+        startupError: null,
+        view: "chat",
+        workspaces: [
+          {
+            id: workspaceId,
+            name: "Workspace 1",
+            path: "/tmp/workspace",
+            createdAt: "2024-01-01T00:00:00.000Z",
+            lastOpenedAt: "2024-01-01T00:00:00.000Z",
+            defaultEnableMcp: true,
+            defaultBackupsEnabled: true,
+            yolo: false,
+          },
+        ],
+        selectedWorkspaceId: workspaceId,
+        selectedThreadId: threadId,
+        threads: [
+          {
+            id: threadId,
+            workspaceId,
+            title: "Recovered thread",
+            titleSource: "manual",
+            createdAt: "2024-01-01T00:00:00.000Z",
+            lastMessageAt: "2024-01-01T00:00:02.000Z",
+            status: "disconnected",
+            sessionId,
+            messageCount: 0,
+            lastEventSeq: 0,
+            draft: false,
+            legacyTranscriptId: null,
+          },
+        ],
+        workspaceRuntimeById: {
+          [workspaceId]: {
+            serverUrl: "ws://mock",
+            starting: false,
+            error: null,
+            controlSessionId: null,
+            controlConfig: null,
+            controlSessionConfig: null,
+            controlEnableMcp: null,
+            mcpServers: [],
+            mcpLegacy: null,
+            mcpFiles: [],
+            mcpWarnings: [],
+            mcpValidationByName: {},
+            mcpLastAuthChallenge: null,
+            mcpLastAuthResult: null,
+            skills: [],
+            skillsCatalog: null,
+            selectedSkillName: null,
+            selectedSkillContent: null,
+            selectedSkillInstallationId: null,
+            selectedSkillInstallation: null,
+            selectedSkillPreview: null,
+            skillUpdateChecksByInstallationId: {},
+            skillCatalogLoading: false,
+            skillCatalogError: null,
+            skillsMutationBlocked: false,
+            skillsMutationBlockedReason: null,
+            skillMutationPendingKeys: {},
+            skillMutationError: null,
+            memories: [],
+            memoriesLoading: false,
+            workspaceBackupsPath: null,
+            workspaceBackups: [],
+            workspaceBackupsLoading: false,
+            workspaceBackupsError: null,
+            workspaceBackupPendingActionKeys: {},
+            workspaceBackupDelta: null,
+            workspaceBackupDeltaLoading: false,
+            workspaceBackupDeltaError: null,
+          },
         },
-      ],
-      selectedWorkspaceId: workspaceId,
-      selectedThreadId: threadId,
-      threads: [
-        {
-          id: threadId,
-          workspaceId,
-          title: "Recovered thread",
-          titleSource: "manual",
-          createdAt: "2024-01-01T00:00:00.000Z",
-          lastMessageAt: "2024-01-01T00:00:02.000Z",
-          status: "disconnected",
-          sessionId,
-          messageCount: 0,
-          lastEventSeq: 0,
-          draft: false,
-          legacyTranscriptId: null,
+        threadRuntimeById: {
+          [threadId]: {
+            ...defaultThreadRuntime(),
+            wsUrl: "ws://mock",
+            sessionId,
+          },
         },
-      ],
-      workspaceRuntimeById: {
-        [workspaceId]: {
-          serverUrl: "ws://mock",
-          starting: false,
-          error: null,
-          controlSessionId: null,
-          controlConfig: null,
-          controlSessionConfig: null,
-          controlEnableMcp: null,
-          mcpServers: [],
-          mcpLegacy: null,
-          mcpFiles: [],
-          mcpWarnings: [],
-          mcpValidationByName: {},
-          mcpLastAuthChallenge: null,
-          mcpLastAuthResult: null,
-          skills: [],
-          skillsCatalog: null,
-          selectedSkillName: null,
-          selectedSkillContent: null,
-          selectedSkillInstallationId: null,
-          selectedSkillInstallation: null,
-          selectedSkillPreview: null,
-          skillUpdateChecksByInstallationId: {},
-          skillCatalogLoading: false,
-          skillCatalogError: null,
-          skillsMutationBlocked: false,
-          skillsMutationBlockedReason: null,
-          skillMutationPendingKeys: {},
-          skillMutationError: null,
-          memories: [],
-          memoriesLoading: false,
-          workspaceBackupsPath: null,
-          workspaceBackups: [],
-          workspaceBackupsLoading: false,
-          workspaceBackupsError: null,
-          workspaceBackupPendingActionKeys: {},
-          workspaceBackupDelta: null,
-          workspaceBackupDeltaLoading: false,
-          workspaceBackupDeltaError: null,
-        },
-      },
-      threadRuntimeById: {
-        [threadId]: {
-          ...defaultThreadRuntime(),
-          wsUrl: "ws://mock",
-          sessionId,
-        },
-      },
-      latestTodosByThreadId: {},
-      workspaceExplorerById: {},
-      promptModal: null,
-      notifications: [],
-      providerStatusByName: {},
-      providerStatusLastUpdatedAt: null,
-      providerStatusRefreshing: false,
-      providerCatalog: [],
-      providerDefaultModelByProvider: {},
-      providerConnected: [],
-      providerAuthMethodsByProvider: {},
-      providerLastAuthChallenge: null,
-      providerLastAuthResult: null,
-      composerText: "",
-      injectContext: false,
-      developerMode: false,
-      showHiddenFiles: false,
-    } as any);
+        latestTodosByThreadId: {},
+        workspaceExplorerById: {},
+        promptModal: null,
+        notifications: [],
+        providerStatusByName: {},
+        providerStatusLastUpdatedAt: null,
+        providerStatusRefreshing: false,
+        providerCatalog: [],
+        providerDefaultModelByProvider: {},
+        providerConnected: [],
+        providerAuthMethodsByProvider: {},
+        providerLastAuthChallenge: null,
+        providerLastAuthResult: null,
+        composerText: "",
+        injectContext: false,
+        developerMode: false,
+        showHiddenFiles: false,
+      } as any);
+    });
+
+    act(() => {
+      root?.render(createElement(ChatView));
+    });
   });
 
   afterEach(() => {
+    if (root) {
+      act(() => {
+        root?.unmount();
+      });
+    }
+    root = null;
+    harness?.restore();
+    harness = null;
     clearJsonRpcSocketOverride();
   });
 
@@ -904,21 +963,23 @@ describe("desktop JSON-RPC event mapping", () => {
         accepted: false,
       }],
     ]));
-    useAppStore.setState((state) => ({
-      threadRuntimeById: {
-        ...state.threadRuntimeById,
-        [threadId]: {
-          ...state.threadRuntimeById[threadId]!,
-          busy: true,
-          activeTurnId: "turn-1",
-          pendingSteer: {
-            clientMessageId: "steer-1",
-            text: "tighten scope",
-            status: "sending",
+    act(() => {
+      useAppStore.setState((state) => ({
+        threadRuntimeById: {
+          ...state.threadRuntimeById,
+          [threadId]: {
+            ...state.threadRuntimeById[threadId]!,
+            busy: true,
+            activeTurnId: "turn-1",
+            pendingSteer: {
+              clientMessageId: "steer-1",
+              text: "tighten scope",
+              status: "sending",
+            },
           },
         },
-      },
-    }));
+      }));
+    });
 
     socket.notify("cowork/session/steerAccepted", {
       type: "steer_accepted",
@@ -1049,16 +1110,20 @@ describe("desktop JSON-RPC event mapping", () => {
   test("retired shared JSON-RPC sockets do not route late notifications or server requests after a serverUrl swap", async () => {
     const firstSocket = await reconnectThreadAndGetSocket();
 
-    useAppStore.setState((state) => ({
-      workspaceRuntimeById: {
-        ...state.workspaceRuntimeById,
-        [workspaceId]: {
-          ...state.workspaceRuntimeById[workspaceId],
-          serverUrl: "ws://changed",
+    act(() => {
+      useAppStore.setState((state) => ({
+        workspaceRuntimeById: {
+          ...state.workspaceRuntimeById,
+          [workspaceId]: {
+            ...state.workspaceRuntimeById[workspaceId],
+            serverUrl: "ws://changed",
+          },
         },
-      },
-    }));
-    await useAppStore.getState().reconnectThread(threadId);
+      }));
+    });
+    await act(async () => {
+      await useAppStore.getState().reconnectThread(threadId);
+    });
     await flushAsyncWork();
     await flushAsyncWork();
 
@@ -1137,7 +1202,9 @@ describe("desktop JSON-RPC event mapping", () => {
   test("shared JSON-RPC user message notifications reconcile optimistic sends", async () => {
     const socket = await reconnectThreadAndGetSocket();
 
-    await useAppStore.getState().sendMessage("hello once");
+    await act(async () => {
+      await useAppStore.getState().sendMessage("hello once");
+    });
     await flushAsyncWork();
 
     const turnStartParams = jsonRpcRequests.find((entry) => entry.method === "turn/start")?.params as

@@ -6,6 +6,7 @@ import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
 import { Checkbox } from "../../../components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../../components/ui/collapsible";
 import { Input } from "../../../components/ui/input";
 import { modelChoicesFromCatalog, UI_DISABLED_PROVIDERS } from "../../../lib/modelChoices";
 import { compareProviderNamesForSettings } from "../../../lib/providerOrdering";
@@ -608,7 +609,7 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
         ) : null}
 
         {resultMatch ? (
-          <div className={cn("text-xs", resultMatch.ok ? "text-emerald-600" : "text-destructive")}>
+          <div className={cn("text-xs", resultMatch.ok ? "text-success" : "text-destructive")}>
             {resultMatch.message}
           </div>
         ) : null}
@@ -645,25 +646,26 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
 
       return (
         <Card key={provider} className={cn("provider-settings-card border-border/80 bg-card/85", isExpanded && "border-primary/35")}>
-          <button
-            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
-            type="button"
-            aria-expanded={isExpanded}
-            aria-controls={`provider-panel-${provider}`}
-            onClick={() => setExpandedSectionId(isExpanded ? null : sectionId)}
-          >
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-foreground">{providerDisplayName}</div>
-              <div className="mt-0.5 truncate text-xs text-muted-foreground">{lmStudioCard.subtitle}</div>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Badge variant={lmStudioEnabled && connected ? "default" : "secondary"}>{lmStudioCard.badgeLabel}</Badge>
-              <span className="text-xs text-muted-foreground">{isExpanded ? "▾" : "▸"}</span>
-            </div>
-          </button>
+          <Collapsible open={isExpanded} onOpenChange={(nextOpen) => setExpandedSectionId(nextOpen ? sectionId : null)}>
+            <CollapsibleTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto w-full justify-between gap-3 rounded-none px-5 py-4 text-left hover:bg-transparent"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-foreground">{providerDisplayName}</div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{lmStudioCard.subtitle}</div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant={lmStudioEnabled && connected ? "default" : "secondary"}>{lmStudioCard.badgeLabel}</Badge>
+                  <span className="text-xs text-muted-foreground">{isExpanded ? "▾" : "▸"}</span>
+                </div>
+              </Button>
+            </CollapsibleTrigger>
 
-          {isExpanded ? (
-            <CardContent id={`provider-panel-${provider}`} className="space-y-4 border-t border-border/70 px-4 py-3.5">
+            <CollapsibleContent>
+              <CardContent id={`provider-panel-${provider}`} className="space-y-4 border-t border-border/70 px-4 py-3.5">
               <div className="text-sm text-muted-foreground">
                 LM Studio runs on a local server. Connect it once to make its models available in Cowork, then choose which discovered models should appear in the main chat UI.
               </div>
@@ -748,39 +750,41 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
                   </div>
                 )}
               </div>
-            </CardContent>
-          ) : null}
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
         </Card>
       );
     }
 
     return (
       <Card key={provider} className={cn("provider-settings-card border-border/80 bg-card/85", isExpanded && "border-primary/35")}>
-        <button
-          className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
-          type="button"
-          aria-expanded={isExpanded}
-          aria-controls={`provider-panel-${provider}`}
-          onClick={() => setExpandedSectionId(isExpanded ? null : sectionId)}
-        >
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-foreground">{providerDisplayName}</div>
-            <div className="mt-0.5 truncate text-xs text-muted-foreground">
-              {connected
-                ? status?.account
-                  ? formatAccount(status.account)
-                  : `${models.length} model${models.length !== 1 ? "s" : ""} available`
-                : "Click to set up"}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Badge variant={connected ? "default" : "secondary"}>{label}</Badge>
-            <span className="text-xs text-muted-foreground">{isExpanded ? "▾" : "▸"}</span>
-          </div>
-        </button>
+        <Collapsible open={isExpanded} onOpenChange={(nextOpen) => setExpandedSectionId(nextOpen ? sectionId : null)}>
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-auto w-full justify-between gap-3 rounded-none px-5 py-4 text-left hover:bg-transparent"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-foreground">{providerDisplayName}</div>
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {connected
+                    ? status?.account
+                      ? formatAccount(status.account)
+                      : `${models.length} model${models.length !== 1 ? "s" : ""} available`
+                    : "Click to set up"}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge variant={connected ? "default" : "secondary"}>{label}</Badge>
+                <span className="text-xs text-muted-foreground">{isExpanded ? "▾" : "▸"}</span>
+              </div>
+            </Button>
+          </CollapsibleTrigger>
 
-        {isExpanded ? (
-          <CardContent id={`provider-panel-${provider}`} className="space-y-3.5 border-t border-border/70 px-4 py-3.5">
+          <CollapsibleContent>
+            <CardContent id={`provider-panel-${provider}`} className="space-y-3.5 border-t border-border/70 px-4 py-3.5">
             {methods.map((method) =>
               renderAuthMethod({
                 provider,
@@ -889,8 +893,9 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
                 </div>
               </div>
             ) : null}
-          </CardContent>
-        ) : null}
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
       </Card>
     );
   };
@@ -908,38 +913,40 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
 
     return (
       <Card key="exa" className={cn("provider-settings-card border-border/80 bg-card/85", exaExpanded && "border-primary/35")}>
-        <button
-          className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
-          type="button"
-          aria-expanded={exaExpanded}
-          aria-controls="provider-panel-exa-search"
-          onClick={() => setExpandedSectionId(exaExpanded ? null : EXA_SECTION_ID)}
-        >
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-foreground">Exa Search</div>
-            <div className="mt-0.5 truncate text-xs text-muted-foreground">{exaConnectionSummary(exaConnected)}</div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Badge variant={exaConnected ? "default" : "secondary"}>
-              {exaConnected ? "Connected" : "Not connected"}
-            </Badge>
-            <span className="text-xs text-muted-foreground">{exaExpanded ? "▾" : "▸"}</span>
-          </div>
-        </button>
+        <Collapsible open={exaExpanded} onOpenChange={(nextOpen) => setExpandedSectionId(nextOpen ? EXA_SECTION_ID : null)}>
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-auto w-full justify-between gap-3 rounded-none px-5 py-4 text-left hover:bg-transparent"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-foreground">Exa Search</div>
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">{exaConnectionSummary(exaConnected)}</div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge variant={exaConnected ? "default" : "secondary"}>
+                  {exaConnected ? "Connected" : "Not connected"}
+                </Badge>
+                <span className="text-xs text-muted-foreground">{exaExpanded ? "▾" : "▸"}</span>
+              </div>
+            </Button>
+          </CollapsibleTrigger>
 
-        {exaExpanded ? (
-          <CardContent id="provider-panel-exa-search" className="space-y-4 border-t border-border/70 px-5 py-4">
-            <div className="text-sm text-muted-foreground">
-              Use Exa for better web search results when Cowork searches the web.
-            </div>
-            {renderAuthMethod({
-              provider: "google",
-              providerDisplayName: "Exa Search",
-              status: providerStatusByName.google,
-              method: exaMethod,
-            })}
-          </CardContent>
-        ) : null}
+          <CollapsibleContent>
+            <CardContent id="provider-panel-exa-search" className="space-y-4 border-t border-border/70 px-5 py-4">
+              <div className="text-sm text-muted-foreground">
+                Use Exa for better web search results when Cowork searches the web.
+              </div>
+              {renderAuthMethod({
+                provider: "google",
+                providerDisplayName: "Exa Search",
+                status: providerStatusByName.google,
+                method: exaMethod,
+              })}
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
       </Card>
     );
   };
@@ -995,26 +1002,27 @@ export function ProvidersPage({ initialExpandedSectionId = null }: ProvidersPage
         </Card>
       ) : null}
 
-      <div className="relative mb-2 flex max-w-fit space-x-1 rounded-xl border border-border/70 bg-foreground/[0.04] p-1.5 shadow-sm backdrop-blur-sm">
+      <div className="app-shadow-surface relative mb-2 flex max-w-fit space-x-1 rounded-xl border border-border/70 bg-foreground/[0.04] p-1.5 backdrop-blur-sm">
         {(["models", "tools"] as const).map((tab) => (
-          <button
+          <Button
             key={tab}
-            type="button"
             onClick={() => { setActiveTab(tab); setExpandedSectionId(null); }}
             className={cn(
-              "relative z-10 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors",
+              "relative z-10 h-auto rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors",
               activeTab === tab ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
+            type="button"
+            variant="ghost"
           >
             {activeTab === tab && (
               <motion.div
                 layoutId="providers-active-tab"
-                className="absolute inset-0 -z-10 rounded-lg border border-border/55 bg-panel/85 shadow-sm backdrop-blur-sm"
+                className="app-shadow-surface absolute inset-0 -z-10 rounded-lg border border-border/55 bg-panel/85 backdrop-blur-sm"
                 transition={{ type: "spring", stiffness: 500, damping: 30 }}
               />
             )}
             {tab === "models" ? "Model Providers" : "Tool Providers"}
-          </button>
+          </Button>
         ))}
       </div>
 

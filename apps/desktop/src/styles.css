@@ -1,6 +1,8 @@
 @import "tailwindcss";
+@import "@heroui/styles";
 @import "./styles/tokens.css";
 @import "./styles/theme-bridge.css";
+@import "./styles/token-utilities.css";
 @import "./styles/platform/darwin.css";
 @import "./styles/platform/win32.css";
 @import "./styles/platform/linux.css";
@@ -16,8 +18,8 @@ body,
 body {
   margin: 0;
   overflow: hidden;
-  background: var(--window-bg);
-  color: var(--text);
+  background: var(--surface-window);
+  color: var(--text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -electron-corner-smoothing: system-ui;
@@ -29,8 +31,8 @@ body {
 
 /* Thin overlay-style scrollbars for Chromium 146+ */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -38,27 +40,27 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text) 18%, transparent);
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--text) 30%, transparent);
+  background: var(--scrollbar-thumb-hover);
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--surface-selection);
   color: inherit;
 }
 
 .is-user ::selection {
-  background: color-mix(in srgb, var(--color-primary-foreground) 30%, transparent);
+  background: var(--surface-selection-inverse);
   color: inherit;
 }
 
 :where(button, [role="button"], [role="treeitem"], a, input, textarea, select, [role="separator"]):focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--app-bg), 0 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: var(--focus-ring-shadow);
 }
 
 .app-topbar {
@@ -66,7 +68,7 @@ body {
 }
 
 .app-topbar--frame {
-  height: 3rem;
+  height: 2.75rem;
 }
 
 .app-topbar__controls {
@@ -83,12 +85,85 @@ body {
   line-height: 1;
 }
 
+.app-topbar__thread-shell {
+  z-index: 1;
+}
+
+.app-topbar__thread-anchor {
+  min-width: 0;
+  width: 100%;
+  max-width: min(38rem, 100%);
+  padding-left: 1rem;
+}
+
+.app-topbar__thread-anchor--collapsed {
+  padding-left: 4.5rem;
+}
+
+.app-topbar__thread-button {
+  min-width: 0;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0.22rem 0.35rem;
+  border-radius: 0.7rem;
+  color: inherit;
+  box-shadow: none;
+  outline: 0;
+  text-align: left;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.app-topbar__thread-button:hover,
+.app-topbar__thread-button[data-open="true"] {
+  background: var(--surface-topbar-thread-hover);
+}
+
+.app-topbar__thread-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+  color: var(--text-emphasis);
+}
+
+.app-topbar__thread-separator {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  font-weight: 560;
+}
+
+.app-topbar__thread-subtitle {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 0.74rem;
+  font-weight: 560;
+  font-style: italic;
+  color: var(--text-subtle);
+}
+
+.app-topbar__thread-popover {
+  z-index: 30;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  border: 1px solid var(--border-context);
+  border-radius: 14px;
+  background: var(--surface-topbar-popover);
+  box-shadow: var(--shadow-surface-elevated);
+  padding: 0.65rem 0.75rem 0.75rem;
+}
+
 .app-topbar__toolbar-button {
-  color: var(--muted);
+  color: var(--text-muted);
+  opacity: 0.82;
 }
 
 .app-topbar__toolbar-button:hover {
-  color: var(--text);
+  color: var(--text-primary);
+  opacity: 1;
 }
 
 .app-topbar__inline-sidebar-toggle {
@@ -99,10 +174,11 @@ body {
   display: none;
 }
 
-.app-topbar__sidebar-toggle-button {
+.app-topbar__plain-icon-button {
   background: transparent;
   box-shadow: none;
   border: 0;
+  outline: 0;
 }
 
 .app-topbar__sidebar-fill {
@@ -112,9 +188,7 @@ body {
   left: 0;
   pointer-events: none;
   z-index: 0;
-  background: var(--sidebar-pane-surface);
-  border-right-style: solid;
-  border-right-color: var(--glass-border);
+  background: var(--surface-sidebar-pane);
   backdrop-filter: blur(var(--sidebar-titlebar-blur));
 }
 
@@ -125,18 +199,17 @@ body {
   bottom: 0;
   pointer-events: none;
   z-index: 0;
-  background: var(--content-surface);
-  border-bottom: 1px solid var(--glass-border);
+  background: var(--surface-workspace-pane);
   backdrop-filter: blur(var(--titlebar-blur));
 }
 
 .app-shell {
   position: relative;
-  background: var(--shell-bg);
+  background: var(--surface-shell);
 }
 
 .app-shell--settings {
-  background: var(--shell-bg);
+  background: var(--surface-shell);
 }
 
 .app-shell--chat {
@@ -150,18 +223,32 @@ body {
 }
 
 .app-main-content {
-  background: var(--glass-fill);
-  border-left: 1px solid var(--glass-border);
+  background: var(--surface-main);
+}
+
+.app-skills-view {
+  background: var(--surface-workspace-pane);
 }
 
 .app-left-sidebar-pane {
-  border-right-color: var(--glass-border);
-  background: var(--sidebar-pane-surface);
+  border-right-color: var(--border-glass);
+  background: var(--surface-sidebar-pane);
   backdrop-filter: blur(var(--sidebar-blur));
 }
 
 .app-right-sidebar-pane {
-  background: var(--glass-fill);
+  background: var(--surface-workspace-pane);
+}
+
+.app-context-sidebar__panel {
+  border-color: var(--border-context);
+  background: var(--surface-context-panel);
+  box-shadow: var(--shadow-surface-elevated);
+}
+
+.app-context-sidebar__nested-panel {
+  border-color: var(--border-context-nested);
+  background: var(--surface-context-panel-nested);
 }
 
 /* Inline gridTemplateColumns on desktop; collapse to one column at small widths */
@@ -173,7 +260,7 @@ body {
 
 .settings-shell__main {
   border-left-width: 0;
-  background: color-mix(in srgb, var(--content-surface) 72%, var(--glass-fill) 28%);
+  background: var(--surface-settings-main);
 }
 
 .settings-shell__content {
@@ -181,38 +268,14 @@ body {
 }
 
 .settings-shell__main [data-slot="card"] {
-  border-color: color-mix(in srgb, var(--glass-border) 82%, transparent);
-  background: color-mix(in srgb, var(--panel-bg) 88%, transparent);
-  box-shadow:
-    0 1px 1px color-mix(in srgb, var(--text) 3%, transparent),
-    0 10px 24px -18px color-mix(in srgb, var(--text) 16%, transparent);
-  backdrop-filter: blur(calc(var(--titlebar-blur) + 1px));
+  border-color: var(--border-glass);
+  background: var(--surface-settings-card);
+  box-shadow: var(--shadow-surface-elevated);
+  backdrop-filter: blur(calc(var(--titlebar-blur) - 1px));
 }
 
 .settings-shell__main [data-slot="card"]:has([data-provider-card]) {
-  background: color-mix(in srgb, var(--panel-bg) 84%, transparent);
-}
-
-@keyframes collapsible-open {
-  from {
-    height: 0;
-    opacity: 0;
-  }
-  to {
-    height: var(--radix-collapsible-content-height);
-    opacity: 1;
-  }
-}
-
-@keyframes collapsible-close {
-  from {
-    height: var(--radix-collapsible-content-height);
-    opacity: 1;
-  }
-  to {
-    height: 0;
-    opacity: 0;
-  }
+  background: var(--surface-settings-card-elevated);
 }
 
 @keyframes sidebarRailIn {
@@ -227,16 +290,38 @@ body {
   }
 }
 
+@keyframes fileExplorerRowIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.file-explorer-row-enter {
+  animation: fileExplorerRowIn 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-explorer-row-enter {
+    animation: none;
+  }
+}
+
 @keyframes sidebarDropPulse {
   0%,
   100% {
-    background-color: color-mix(in srgb, var(--accent) 6%, transparent);
-    border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+    background-color: var(--surface-sidebar-drop);
+    border-color: var(--border-accent-soft);
   }
 
   50% {
-    background-color: color-mix(in srgb, var(--accent) 10%, transparent);
-    border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+    background-color: var(--surface-sidebar-drop-strong);
+    border-color: var(--border-accent-strong);
   }
 }
 
@@ -246,18 +331,10 @@ body {
 
 .sidebar-lift {
   transition:
-    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
     background-color 180ms ease,
     color 180ms ease,
-    opacity 180ms ease;
-}
-
-.sidebar-lift:hover {
-  transform: translateY(-1px);
-}
-
-.sidebar-lift:active {
-  transform: translateY(0);
+    opacity 180ms ease,
+    border-color 180ms ease;
 }
 
 .sidebar-chevron {
@@ -307,20 +384,14 @@ body {
 .sidebar-workspace-card {
   border: 1px solid transparent;
   transition:
-    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
     background-color 180ms ease,
     color 180ms ease,
     border-color 180ms ease,
     opacity 180ms ease;
 }
 
-.sidebar-workspace-card:hover {
-  transform: translateY(-1px);
-}
-
 .sidebar-workspace-card[data-dragging="true"] {
   opacity: 0.7;
-  transform: scale(0.985);
 }
 
 .sidebar-workspace-card[data-drop-target="true"] {
@@ -329,10 +400,10 @@ body {
 
 .sidebar-thread-item {
   transition:
-    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
     opacity 220ms ease,
     background-color 180ms ease,
-    color 180ms ease;
+    color 180ms ease,
+    border-color 180ms ease;
 }
 
 body.app-resizing-sidebars {
@@ -350,7 +421,9 @@ body.app-resizing-sidebars .app-left-sidebar-pane {
 }
 
 body.app-resizing-sidebars .app-topbar__sidebar-fill,
-body.app-resizing-sidebars .app-topbar__content-fill {
+body.app-resizing-sidebars .app-topbar__content-fill,
+body.app-resizing-sidebars .app-topbar__thread-shell,
+body.app-resizing-sidebars .app-topbar__thread-anchor {
   transition: none;
 }
 
@@ -361,12 +434,16 @@ body.app-resizing-sidebars .app-topbar__sidebar-fill {
 body.app-animating-sidebars .app-left-sidebar-pane,
 body.app-animating-sidebars .app-right-sidebar-pane,
 body.app-animating-sidebars .app-topbar__sidebar-fill,
-body.app-animating-sidebars .app-topbar__content-fill {
+body.app-animating-sidebars .app-topbar__content-fill,
+body.app-animating-sidebars .app-topbar__thread-shell,
+body.app-animating-sidebars .app-topbar__thread-anchor {
   transition:
-    width 300ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    left 300ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    border-right-width 300ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    border-left-width 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    left 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    right 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding-left 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-right-width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-left-width 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 body.app-animating-sidebars .app-left-sidebar-pane,

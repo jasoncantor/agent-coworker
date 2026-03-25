@@ -217,7 +217,7 @@ describe("desktop workspaces page", () => {
       if (!(helpButton instanceof harness.dom.window.HTMLButtonElement)) {
         throw new Error("missing allowed domains help button");
       }
-      expect(helpButton.title).toBe("Open to all domains unless you add one or more domains here.");
+      expect(helpButton.getAttribute("aria-label")).toBe("Allowed domains help");
 
       const domainInput = container.querySelector('[aria-label="Codex allowed domains input"]');
       if (!(domainInput instanceof harness.dom.window.HTMLInputElement)) {
@@ -497,7 +497,7 @@ describe("desktop workspaces page", () => {
       expect(expandedText).not.toContain("Baseten");
 
       const subagentModelCheckbox = container.querySelector('[aria-label="Allow subagent model opencode-go:glm-5"]');
-      if (!(subagentModelCheckbox instanceof harness.dom.window.HTMLButtonElement)) {
+      if (!(subagentModelCheckbox instanceof harness.dom.window.HTMLElement)) {
         throw new Error("missing subagent model checkbox");
       }
 

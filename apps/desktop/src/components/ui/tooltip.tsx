@@ -1,33 +1,81 @@
 import * as React from "react";
-import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import { Tooltip as HeroTooltip } from "@heroui/react";
 
 import { cn } from "@/lib/utils";
 
-function TooltipProvider({ children, ...props }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
-  return <TooltipPrimitive.Provider delayDuration={200} {...props}>{children}</TooltipPrimitive.Provider>;
+type TooltipProviderProps = React.PropsWithChildren<{
+  delayDuration?: number;
+}>;
+
+type TooltipRootProps = {
+  children: React.ReactNode;
+  delayDuration?: number;
+  open?: boolean;
+  defaultOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+};
+
+function TooltipProvider({ children }: TooltipProviderProps) {
+  return <>{children}</>;
 }
 
-function Tooltip({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return <TooltipPrimitive.Root {...props} />;
-}
-
-function TooltipTrigger({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger {...props} />;
-}
-
-function TooltipContent({ className, sideOffset = 4, ...props }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+function Tooltip({
+  children,
+  defaultOpen,
+  delayDuration = 200,
+  onOpenChange,
+  open,
+}: TooltipRootProps) {
   return (
-    <TooltipPrimitive.Portal>
-      <TooltipPrimitive.Content
-        data-slot="tooltip-content"
-        sideOffset={sideOffset}
-        className={cn(
-          "z-50 max-w-60 rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95",
-          className,
-        )}
-        {...props}
-      />
-    </TooltipPrimitive.Portal>
+    <HeroTooltip
+      defaultOpen={defaultOpen}
+      delay={delayDuration}
+      isOpen={open}
+      onOpenChange={onOpenChange}
+    >
+      {children}
+    </HeroTooltip>
+  );
+}
+
+type TooltipTriggerProps = React.ComponentProps<typeof HeroTooltip.Trigger> & {
+  asChild?: boolean;
+};
+
+function TooltipTrigger({ children, className, asChild, ...props }: TooltipTriggerProps) {
+  return (
+    <HeroTooltip.Trigger
+      data-slot="tooltip-trigger"
+      className={cn(!asChild && "inline-flex", className)}
+      {...props}
+    >
+      {children}
+    </HeroTooltip.Trigger>
+  );
+}
+
+type TooltipContentProps = React.ComponentProps<typeof HeroTooltip.Content> & {
+  side?: "bottom" | "left" | "right" | "top";
+  sideOffset?: number;
+};
+
+function TooltipContent({
+  className,
+  side = "top",
+  sideOffset = 4,
+  children,
+  ...props
+}: TooltipContentProps) {
+  return (
+    <HeroTooltip.Content
+      data-slot="tooltip-content"
+      className={cn("app-surface-overlay app-border-subtle app-shadow-overlay rounded-[10px] border px-2 py-1 text-xs", className)}
+      offset={sideOffset}
+      placement={side}
+      {...props}
+    >
+      {children}
+    </HeroTooltip.Content>
   );
 }
 

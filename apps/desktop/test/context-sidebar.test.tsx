@@ -4,20 +4,70 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { setupJsdom } from "./jsdomHarness";
 
+class MockResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
 const { useAppStore } = await import("../src/app/store");
 const { ContextSidebar } = await import("../src/ui/ContextSidebar");
+const { ContextSidebarResizer } = await import("../src/ui/layout/ContextSidebarResizer");
+
+function resetAppStore(overrides: Record<string, unknown>) {
+  const state = useAppStore.getState();
+  useAppStore.setState({
+    ...state,
+    ready: true,
+    bootstrapPending: false,
+    startupError: null,
+    view: "chat",
+    settingsPage: "providers",
+    lastNonSettingsView: "chat",
+    workspaces: [],
+    threads: [],
+    selectedWorkspaceId: null,
+    selectedThreadId: null,
+    workspaceRuntimeById: {},
+    threadRuntimeById: {},
+    latestTodosByThreadId: {},
+    workspaceExplorerById: {},
+    promptModal: null,
+    notifications: [],
+    providerStatusByName: {},
+    providerStatusLastUpdatedAt: null,
+    providerStatusRefreshing: false,
+    providerCatalog: [],
+    providerDefaultModelByProvider: {},
+    providerConnected: [],
+    providerAuthMethodsByProvider: {},
+    providerLastAuthChallenge: null,
+    providerLastAuthResult: null,
+    composerText: "",
+    injectContext: false,
+    developerMode: false,
+    showHiddenFiles: false,
+    perWorkspaceSettings: false,
+    onboardingVisible: false,
+    sidebarCollapsed: false,
+    contextSidebarCollapsed: false,
+    contextSidebarWidth: 300,
+    messageBarHeight: 120,
+    sidebarWidth: 248,
+    ...overrides,
+  } as any);
+}
 
 describe("desktop context sidebar", () => {
-  test("renders child-agent summaries for the selected thread", async () => {
-    const harness = setupJsdom();
+  test.serial("renders subagent summaries for the selected thread", async () => {
+    const harness = setupJsdom({ includeAnimationFrame: true, extraGlobals: { ResizeObserver: MockResizeObserver } });
 
     try {
       const container = harness.dom.window.document.getElementById("root");
       if (!container) throw new Error("missing root");
       const root = createRoot(container);
 
-      useAppStore.setState((state) => ({
-        ...state,
+      resetAppStore({
         selectedThreadId: "thread-1",
         selectedWorkspaceId: null,
         latestTodosByThreadId: {},
@@ -55,7 +105,7 @@ describe("desktop context sidebar", () => {
                 lifecycleState: "active",
                 executionState: "running",
                 busy: true,
-                lastMessagePreview: "Checking the failing snapshot expectation.",
+                lastMessagePreview: "**Markdown** _preview_ for the [summary](https://example.com).",
               },
             ],
             sessionUsage: null,
@@ -67,18 +117,26 @@ describe("desktop context sidebar", () => {
             transcriptOnly: false,
           },
         },
-      }) as any);
+      });
 
       await act(async () => {
         root.render(createElement(ContextSidebar));
       });
 
       const text = container.textContent ?? "";
-      expect(text).toContain("AGENTS");
+      const subagentsPanel = container.querySelector('[data-sidebar-panel="subagents"]');
+      const nestedAgentPanel = container.querySelector(".app-context-sidebar__nested-panel");
+      expect(text).toContain("Subagents");
       expect(text).toContain("Investigate parser test");
       expect(text).toContain("worker · depth 1 · gpt-5.4");
-      expect(text).toContain("Checking the failing snapshot expectation.");
+      expect(text).toContain("Markdown");
+      expect(text).toContain("preview");
+      expect(text).toContain("summary");
+      expect(text).not.toContain("**Markdown**");
       expect(text).toContain("busy");
+      expect(subagentsPanel?.className).toContain("app-context-sidebar__panel");
+      expect(nestedAgentPanel?.className).toContain("app-context-sidebar__nested-panel");
+      expect(nestedAgentPanel?.querySelector("a")).not.toBeNull();
 
       await act(async () => {
         root.unmount();
@@ -88,16 +146,15 @@ describe("desktop context sidebar", () => {
     }
   });
 
-  test("keeps tasks and agents in scrollable sections so files can keep the remaining height", async () => {
-    const harness = setupJsdom();
+  test.serial("keeps tasks and subagents in scrollable sections so files can keep the remaining height", async () => {
+    const harness = setupJsdom({ includeAnimationFrame: true, extraGlobals: { ResizeObserver: MockResizeObserver } });
 
     try {
       const container = harness.dom.window.document.getElementById("root");
       if (!container) throw new Error("missing root");
       const root = createRoot(container);
 
-      useAppStore.setState((state) => ({
-        ...state,
+      resetAppStore({
         selectedThreadId: "thread-1",
         selectedWorkspaceId: null,
         latestTodosByThreadId: {
@@ -150,29 +207,63 @@ describe("desktop context sidebar", () => {
             transcriptOnly: false,
           },
         },
-      }) as any);
+      });
 
       await act(async () => {
         root.render(createElement(ContextSidebar));
       });
 
       const tasksSection = container.querySelector('[data-sidebar-section="tasks"]');
-      const agentsSection = container.querySelector('[data-sidebar-section="agents"]');
-      const scrollCards = Array.from(container.querySelectorAll('[data-slot="card"]')).slice(0, 2);
+      const agentsSection = container.querySelector('[data-sidebar-section="subagents"]');
+      const tasksPanel = container.querySelector('[data-sidebar-panel="tasks"]');
+      const agentsPanel = container.querySelector('[data-sidebar-panel="subagents"]');
+      const filesPanel = container.querySelector('[data-sidebar-panel="files"]');
 
       expect(tasksSection?.className).toContain("overflow-y-auto");
-      expect(tasksSection?.className).toContain("flex-1");
+      expect(tasksSection?.className).toContain("max-h-[10.5rem]");
       expect(tasksSection?.className).toContain("overscroll-contain");
       expect(agentsSection?.className).toContain("overflow-y-auto");
-      expect(agentsSection?.className).toContain("flex-1");
+      expect(agentsSection?.className).toContain("max-h-[10.5rem]");
       expect(agentsSection?.className).toContain("overscroll-contain");
-      expect(scrollCards).toHaveLength(2);
-      for (const card of scrollCards) {
-        expect(card.className).toContain("flex");
-        expect(card.className).toContain("flex-col");
-        expect(card.className).toContain("max-h-[30%]");
-        expect(card.className).toContain("overflow-hidden");
-      }
+      expect(tasksPanel?.className).toContain("app-context-sidebar__panel");
+      expect(agentsPanel?.className).toContain("app-context-sidebar__panel");
+      expect(tasksPanel?.className).toContain("flex-none");
+      expect(agentsPanel?.className).toContain("flex-none");
+      expect(filesPanel?.className).toContain("app-context-sidebar__panel");
+      expect(filesPanel?.className).toContain("flex-1");
+      expect(filesPanel?.className).toContain("overflow-hidden");
+
+      await act(async () => {
+        root.unmount();
+      });
+    } finally {
+      harness.restore();
+    }
+  });
+
+  test.serial("keeps the context sidebar resize rail invisible but easy to grab", async () => {
+    const harness = setupJsdom({ includeAnimationFrame: true, extraGlobals: { ResizeObserver: MockResizeObserver } });
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      const root = createRoot(container);
+
+      resetAppStore({
+        contextSidebarWidth: 300,
+      });
+
+      await act(async () => {
+        root.render(createElement(ContextSidebarResizer));
+      });
+
+      const separator = container.querySelector('[aria-label="Resize context sidebar"]');
+
+      expect(separator).not.toBeNull();
+      expect(separator?.className).toContain("-left-1");
+      expect(separator?.className).toContain("w-3");
+      expect(separator?.className).not.toContain("bg-primary/20");
+      expect(separator?.getAttribute("aria-valuenow")).toBe("300");
 
       await act(async () => {
         root.unmount();

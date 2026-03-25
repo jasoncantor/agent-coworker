@@ -6,6 +6,7 @@ import type { OnboardingStep } from "../../app/types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../components/ui/collapsible";
 import { Input } from "../../components/ui/input";
 import {
   Select,
@@ -338,30 +339,33 @@ function ProviderStep({ onContinue, onBack }: { onContinue: () => void; onBack: 
 
           return (
             <Card key={provider} className={cn("border-border/80 bg-card/85", isExpanded && "border-primary/35")}>
-              <button
-                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-                type="button"
-                onClick={() => setExpandedProvider(isExpanded ? null : provider)}
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">{providerDisplayName}</div>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Badge variant={connected ? "default" : "secondary"}>
-                    {provider === "lmstudio"
-                      ? lmStudioEnabled
-                        ? (connected ? "Connected" : "Unavailable")
-                        : "Disabled"
-                      : connected
-                        ? "Connected"
-                        : "Not connected"}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">{isExpanded ? "▾" : "▸"}</span>
-                </div>
-              </button>
+              <Collapsible open={isExpanded} onOpenChange={(nextOpen) => setExpandedProvider(nextOpen ? provider : null)}>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-auto w-full justify-between gap-3 rounded-none px-4 py-3 text-left hover:bg-transparent"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">{providerDisplayName}</div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Badge variant={connected ? "default" : "secondary"}>
+                        {provider === "lmstudio"
+                          ? lmStudioEnabled
+                            ? (connected ? "Connected" : "Unavailable")
+                            : "Disabled"
+                          : connected
+                            ? "Connected"
+                            : "Not connected"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{isExpanded ? "▾" : "▸"}</span>
+                    </div>
+                  </Button>
+                </CollapsibleTrigger>
 
-              {isExpanded ? (
-                <CardContent className="space-y-3 border-t border-border/70 px-4 py-3">
+                <CollapsibleContent>
+                  <CardContent className="space-y-3 border-t border-border/70 px-4 py-3">
                   {provider === "lmstudio" ? (
                     <div className="space-y-3">
                       <div className="text-sm text-muted-foreground">
@@ -490,15 +494,16 @@ function ProviderStep({ onContinue, onBack }: { onContinue: () => void; onBack: 
                         ) : null}
 
                         {resultMatch ? (
-                          <div className={cn("text-xs", resultMatch.ok ? "text-emerald-600" : "text-destructive")}>
+                          <div className={cn("text-xs", resultMatch.ok ? "text-success" : "text-destructive")}>
                             {resultMatch.message}
                           </div>
                         ) : null}
                       </div>
                     );
                   })}
-                </CardContent>
-              ) : null}
+                  </CardContent>
+                </CollapsibleContent>
+              </Collapsible>
             </Card>
           );
         })}
@@ -708,16 +713,17 @@ function FirstThreadStep({ onComplete }: { onComplete: (firstMessage?: string) =
 
       <div className="space-y-2">
         {STARTER_PROMPTS.map((prompt) => (
-          <button
+          <Button
             key={prompt.label}
-            type="button"
-            disabled={creating}
-            className="w-full rounded-lg border border-border/80 bg-card/85 px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-card disabled:opacity-50"
+            className="h-auto w-full justify-start rounded-lg border border-border/80 bg-card/85 px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-card disabled:opacity-50"
             onClick={() => handleClick(prompt.message)}
+            type="button"
+            variant="ghost"
+            disabled={creating}
           >
             <div className="text-sm font-medium">{prompt.label}</div>
             <div className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{prompt.message}</div>
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -872,7 +878,7 @@ export function DesktopOnboarding() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2 }}
-        className="relative z-10 w-[min(92vw,520px)] rounded-xl border border-border/80 bg-card p-6 shadow-2xl"
+        className="app-shadow-overlay relative z-10 w-[min(92vw,520px)] rounded-xl border border-border/80 bg-card p-6"
       >
         <div className="mb-5 flex items-center justify-between">
           <StepIndicator current={step} />

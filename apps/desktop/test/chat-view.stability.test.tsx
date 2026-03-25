@@ -25,6 +25,17 @@ const MOCK_UPDATE_STATE = {
   error: null,
 };
 
+class MockMutationObserver {
+  observe() {}
+  disconnect() {}
+  takeRecords() { return []; }
+}
+
+const requestAnimationFrameMock = (callback: FrameRequestCallback) =>
+  setTimeout(() => callback(Date.now()), 0) as unknown as number;
+
+const cancelAnimationFrameMock = (id: number) => clearTimeout(id);
+
 mock.module("../src/lib/desktopCommands", () => ({
   appendTranscriptBatch: async () => {},
   appendTranscriptEvent: async () => {},
@@ -69,11 +80,14 @@ mock.module("../src/lib/agentSocket", () => ({
 function setupChatViewJsdom() {
   return setupJsdom({
     includeAnimationFrame: {
-      requestAnimationFrame: (callback: FrameRequestCallback) =>
-        setTimeout(() => callback(Date.now()), 0) as unknown as number,
-      cancelAnimationFrame: (id: number) => clearTimeout(id),
+      requestAnimationFrame: requestAnimationFrameMock,
+      cancelAnimationFrame: cancelAnimationFrameMock,
     },
+    extraGlobals: { MutationObserver: MockMutationObserver },
     setupWindow: (dom) => {
+      dom.window.requestAnimationFrame = requestAnimationFrameMock;
+      dom.window.cancelAnimationFrame = cancelAnimationFrameMock;
+      Object.assign(dom.window, { event: undefined });
       if (typeof dom.window.HTMLElement.prototype.attachEvent !== "function") {
         (dom.window.HTMLElement.prototype as { attachEvent?: (name: string, handler: unknown) => void }).attachEvent = () => {};
       }
@@ -150,10 +164,11 @@ describe("desktop chat view stability", () => {
       consoleErrors.push(args.map((arg) => String(arg)).join(" "));
     };
 
+    let root: ReturnType<typeof createRoot> | null = null;
     try {
       const container = harness.dom.window.document.getElementById("root");
       if (!container) throw new Error("missing root");
-      const root = createRoot(container);
+      root = createRoot(container);
 
       await act(async () => {
         root.render(
@@ -165,13 +180,14 @@ describe("desktop chat view stability", () => {
         );
       });
 
-      expect(container.textContent).toContain("Thread 1");
+      expect(container.textContent).toContain("Send a message to start.");
       expect(consoleErrors.some((entry) => entry.includes("Maximum update depth exceeded"))).toBe(false);
-
-      await act(async () => {
-        root.unmount();
-      });
     } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
       console.error = realError;
       harness.restore();
     }
@@ -254,6 +270,98 @@ describe("desktop chat view stability", () => {
       const modelIndicator = container.querySelector('[title="OpenAI / gpt-5.4-session-lock"]');
       expect(modelIndicator?.textContent).toContain("gpt-5.4-session-lock");
       expect(container.querySelector('[data-slot="select-trigger"]')).toBeNull();
+    } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
+      harness.restore();
+    }
+  });
+
+  test("keeps the message bar resize rail invisible and the composer shell borderless", async () => {
+    useAppStore.setState({
+      ready: true,
+      startupError: null,
+      view: "chat",
+      selectedWorkspaceId: "ws-1",
+      selectedThreadId: "thread-1",
+      workspaces: [
+        {
+          id: "ws-1",
+          name: "Workspace 1",
+          path: "/tmp/workspace-1",
+          createdAt: "2026-03-12T00:00:00.000Z",
+          lastOpenedAt: "2026-03-12T00:00:00.000Z",
+          defaultEnableMcp: true,
+          defaultBackupsEnabled: true,
+          yolo: false,
+        },
+      ],
+      threads: [
+        {
+          id: "thread-1",
+          workspaceId: "ws-1",
+          title: "Thread 1",
+          createdAt: "2026-03-12T00:00:00.000Z",
+          lastMessageAt: "2026-03-12T00:00:00.000Z",
+          status: "active",
+          sessionId: "session-1",
+          lastEventSeq: 0,
+        },
+      ],
+      threadRuntimeById: {
+        "thread-1": {
+          wsUrl: null,
+          connected: true,
+          sessionId: "session-1",
+          config: {
+            provider: "openai",
+            model: "gpt-5.4",
+          },
+          sessionConfig: null,
+          sessionUsage: null,
+          lastTurnUsage: null,
+          enableMcp: true,
+          busy: false,
+          busySince: null,
+          feed: [],
+          pendingSteer: null,
+          transcriptOnly: false,
+        },
+      },
+      composerText: "",
+      messageBarHeight: 144,
+    });
+
+    const harness = setupChatViewJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        root.render(
+          createElement(
+            StrictMode,
+            null,
+            createElement(ChatView),
+          ),
+        );
+      });
+
+      const separator = container.querySelector('[aria-label="Resize message bar"]');
+      const composerShell = separator?.parentElement;
+
+      expect(separator).not.toBeNull();
+      expect(separator?.className).toContain("-top-1");
+      expect(separator?.className).toContain("h-3");
+      expect(separator?.className).not.toContain("hover:bg-border/80");
+      expect(separator?.getAttribute("aria-valuenow")).toBe("144");
+      expect(composerShell?.className).not.toContain("border-t");
     } finally {
       if (root) {
         await act(async () => {
@@ -412,10 +520,11 @@ describe("desktop chat view stability", () => {
     });
 
     const harness = setupChatViewJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
     try {
       const container = harness.dom.window.document.getElementById("root");
       if (!container) throw new Error("missing root");
-      const root = createRoot(container);
+      root = createRoot(container);
 
       await act(async () => {
         root.render(
@@ -427,14 +536,14 @@ describe("desktop chat view stability", () => {
         );
       });
 
-      expect(container.textContent).toContain("Existing thread");
       expect(container.textContent).toContain("Loading thread");
       expect(container.textContent).not.toContain("Send a message to start.");
-
-      await act(async () => {
-        root.unmount();
-      });
     } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
       harness.restore();
     }
   });
@@ -607,10 +716,11 @@ describe("desktop chat view stability", () => {
 
     const harness = setupChatViewJsdom();
 
+    let root: ReturnType<typeof createRoot> | null = null;
     try {
       const container = harness.dom.window.document.getElementById("root");
       if (!container) throw new Error("missing root");
-      const root = createRoot(container);
+      root = createRoot(container);
 
       await act(async () => {
         root.render(createElement(StrictMode, null, createElement(ChatView)));
@@ -646,11 +756,12 @@ describe("desktop chat view stability", () => {
 
       expect(container.querySelector('[aria-label="Steer current response"]')).not.toBeNull();
       expect(container.textContent).toContain("Steer sent. Waiting for the running turn to accept it.");
-
-      await act(async () => {
-        root.unmount();
-      });
     } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
       harness.restore();
     }
   });

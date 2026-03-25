@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { clearJsonRpcSocketOverride, setJsonRpcSocketOverride } from "./helpers/jsonRpcSocketMock";
+import type { SessionSnapshot } from "../src/app/types";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -160,6 +161,7 @@ describe("workspace startup flow", () => {
     RUNTIME.workspaceStartGenerations.clear();
     RUNTIME.modelStreamByThread.clear();
     RUNTIME.jsonRpcSockets.clear();
+    RUNTIME.sessionSnapshots.clear();
     MockJsonRpcSocket.autoOpen = true;
 
     useAppStore.setState({
@@ -288,6 +290,162 @@ describe("workspace startup flow", () => {
 
     startDeferreds[0]?.resolve({ url: "ws://existing" });
     await selectPromise;
+  });
+
+  test("selectWorkspace keeps the current surface and retargets chat context to the chosen workspace", async () => {
+    const cachedSnapshot = {
+      title: "Workspace two thread",
+      titleSource: "manual",
+      updatedAt: "2026-03-09T10:00:00.000Z",
+      messageCount: 1,
+      lastEventSeq: 1,
+      sessionKind: "thread",
+      parentSessionId: null,
+      role: "assistant",
+      mode: "chat",
+      depth: 0,
+      nickname: null,
+      requestedModel: null,
+      effectiveModel: null,
+      requestedReasoningEffort: null,
+      effectiveReasoningEffort: null,
+      executionState: null,
+      lastMessagePreview: null,
+      agents: [],
+      sessionUsage: null,
+      lastTurnUsage: null,
+      feed: [
+        {
+          kind: "message",
+          id: "snapshot-message",
+          ts: "2026-03-09T10:00:00.000Z",
+        },
+      ],
+    } as unknown as SessionSnapshot;
+
+    useAppStore.setState({
+      view: "skills",
+      workspaces: [
+        {
+          id: "ws-1",
+          name: "Workspace One",
+          path: "/tmp/workspace-one",
+          createdAt: "2026-03-08T00:00:00.000Z",
+          lastOpenedAt: "2026-03-08T00:00:00.000Z",
+          defaultEnableMcp: true,
+          yolo: false,
+        },
+        {
+          id: "ws-2",
+          name: "Workspace Two",
+          path: "/tmp/workspace-two",
+          createdAt: "2026-03-09T00:00:00.000Z",
+          lastOpenedAt: "2026-03-09T00:00:00.000Z",
+          defaultEnableMcp: true,
+          yolo: false,
+        },
+      ],
+      threads: [
+        {
+          id: "thread-ws-1",
+          workspaceId: "ws-1",
+          title: "Workspace one thread",
+          titleSource: "manual",
+          createdAt: "2026-03-08T09:00:00.000Z",
+          lastMessageAt: "2026-03-08T10:00:00.000Z",
+          status: "active",
+          sessionId: "session-ws-1",
+          messageCount: 1,
+          lastEventSeq: 1,
+          draft: false,
+        },
+        {
+          id: "thread-ws-2",
+          workspaceId: "ws-2",
+          title: "Workspace two thread",
+          titleSource: "manual",
+          createdAt: "2026-03-09T09:00:00.000Z",
+          lastMessageAt: "2026-03-09T10:00:00.000Z",
+          status: "active",
+          sessionId: "session-ws-2",
+          messageCount: 1,
+          lastEventSeq: 1,
+          draft: false,
+        },
+      ],
+      selectedWorkspaceId: "ws-1",
+      selectedThreadId: "thread-ws-1",
+    });
+    RUNTIME.sessionSnapshots.set("session-ws-2", {
+      fingerprint: {
+        updatedAt: "2026-03-09T10:00:00.000Z",
+        messageCount: 1,
+        lastEventSeq: 1,
+      },
+      snapshot: cachedSnapshot,
+    });
+
+    const selectPromise = useAppStore.getState().selectWorkspace("ws-2");
+    await flushAsyncWork();
+
+    expect(useAppStore.getState().view).toBe("skills");
+    expect(useAppStore.getState().selectedWorkspaceId).toBe("ws-2");
+    expect(useAppStore.getState().selectedThreadId).toBe("thread-ws-2");
+    expect(useAppStore.getState().threadRuntimeById["thread-ws-2"]?.feed.length ?? 0).toBeGreaterThan(0);
+
+    startDeferreds[0]?.resolve({ url: "ws://workspace-two" });
+    await selectPromise;
+
+    expect(useAppStore.getState().threadRuntimeById["thread-ws-2"]?.hydrating).toBe(false);
+    expect(useAppStore.getState().threadRuntimeById["thread-ws-2"]?.feed.length ?? 0).toBeGreaterThan(0);
+  });
+
+  test("selectThread returns from skills to chat even when the thread is already active", async () => {
+    useAppStore.setState({
+      view: "skills",
+      workspaces: [
+        {
+          id: "ws-1",
+          name: "Workspace One",
+          path: "/tmp/workspace-one",
+          createdAt: "2026-03-08T00:00:00.000Z",
+          lastOpenedAt: "2026-03-08T00:00:00.000Z",
+          defaultEnableMcp: true,
+          yolo: false,
+        },
+      ],
+      threads: [
+        {
+          id: "thread-ws-1",
+          workspaceId: "ws-1",
+          title: "Workspace one thread",
+          titleSource: "manual",
+          createdAt: "2026-03-08T09:00:00.000Z",
+          lastMessageAt: "2026-03-08T10:00:00.000Z",
+          status: "active",
+          sessionId: "session-ws-1",
+          messageCount: 1,
+          lastEventSeq: 1,
+          draft: false,
+        },
+      ],
+      selectedWorkspaceId: "ws-1",
+      selectedThreadId: "thread-ws-1",
+      threadRuntimeById: {
+        "thread-ws-1": {
+          ...useAppStore.getState().threadRuntimeById["thread-ws-1"],
+          connected: true,
+          sessionId: "session-ws-1",
+        },
+      },
+    });
+
+    await useAppStore.getState().selectThread("thread-ws-1");
+
+    const state = useAppStore.getState();
+    expect(state.view).toBe("chat");
+    expect(state.selectedWorkspaceId).toBe("ws-1");
+    expect(state.selectedThreadId).toBe("thread-ws-1");
   });
 
   test("provider auth method refresh stays quiet while the control socket is still handshaking", async () => {
