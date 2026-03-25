@@ -41,7 +41,11 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import {
   availableProvidersFromCatalog,
+  decodeProviderModelSelection,
+  encodeProviderModelSelection,
   modelChoicesFromCatalog,
+  modelDisplayNamesFromCatalog,
+  resolveModelDisplayLabel,
   type CatalogVisibilityOptions,
 } from "../lib/modelChoices";
 import { readFile } from "../lib/desktopCommands";
@@ -442,11 +446,13 @@ function DraftThreadModelSelector({
   threadId,
   provider,
   model,
+  modelDisplayNames,
   disabled,
 }: {
   threadId: string;
   provider: ProviderName;
   model: string;
+  modelDisplayNames: Record<ProviderName, Record<string, string>>;
   disabled?: boolean;
 }) {
   const setThreadModel = useAppStore((s) => s.setThreadModel);
@@ -470,15 +476,16 @@ function DraftThreadModelSelector({
     }),
     [providerCatalog, providerConnected, provider, chatCatalogVisibility, choices],
   );
-  const value = `${provider}:${model}`;
+  const value = encodeProviderModelSelection(provider, model);
 
   return (
     <Select
       value={value}
       disabled={disabled}
       onValueChange={(val) => {
-        const [p, ...mParts] = val.split(":");
-        setThreadModel(threadId, p as ProviderName, mParts.join(":"));
+        const parsed = decodeProviderModelSelection(val);
+        if (!parsed) return;
+        setThreadModel(threadId, parsed.provider, parsed.modelId);
       }}
     >
       <SelectTrigger
@@ -491,14 +498,22 @@ function DraftThreadModelSelector({
         {providers.map((p) => (
           <SelectGroup key={p}>
             <SelectLabel className="px-2 py-1.5 text-xs font-semibold">{PROVIDER_LABELS[p] ?? p}</SelectLabel>
-            {(choices[p] ?? []).map((m) => (
-              <SelectItem key={`${p}:${m}`} value={`${p}:${m}`} className="pl-6 text-xs">
-                {m}
-              </SelectItem>
-            ))}
+            {(choices[p] ?? []).map((m) => {
+              const sel = encodeProviderModelSelection(p, m);
+              const label = resolveModelDisplayLabel(p, m, modelDisplayNames);
+              return (
+                <SelectItem key={sel} value={sel} className="pl-6 text-xs">
+                  <span title={m}>{label}</span>
+                </SelectItem>
+              );
+            })}
             {p === provider && model && !(choices[p] ?? []).includes(model) ? (
-              <SelectItem key={`${p}:${model}`} value={`${p}:${model}`} className="pl-6 text-xs">
-                {model} (custom)
+              <SelectItem
+                key={encodeProviderModelSelection(p, model)}
+                value={encodeProviderModelSelection(p, model)}
+                className="pl-6 text-xs"
+              >
+                <span title={model}>{resolveModelDisplayLabel(p, model, modelDisplayNames)} (custom)</span>
               </SelectItem>
             ) : null}
           </SelectGroup>
@@ -511,13 +526,17 @@ function DraftThreadModelSelector({
 function ThreadModelIndicator({
   provider,
   model,
+  modelDisplayNames,
 }: {
   provider: ProviderName;
   model: string;
+  modelDisplayNames: Record<ProviderName, Record<string, string>>;
 }) {
-  const label = model.trim();
-  if (!label) return null;
-  const title = `${PROVIDER_LABELS[provider] ?? provider} / ${label}`;
+  const id = model.trim();
+  if (!id) return null;
+  const friendly = resolveModelDisplayLabel(provider, id, modelDisplayNames);
+  const title =
+    friendly !== id ? `${PROVIDER_LABELS[provider] ?? provider} / ${friendly} (${id})` : `${PROVIDER_LABELS[provider] ?? provider} / ${id}`;
 
   return (
     <Badge
@@ -526,7 +545,7 @@ function ThreadModelIndicator({
       aria-label={`Session model ${title}`}
       className="h-6 max-w-[220px] rounded-md border-border/55 bg-muted/20 px-2 font-normal text-muted-foreground shadow-none"
     >
-      <span className="truncate">{label}</span>
+      <span className="truncate">{friendly}</span>
     </Badge>
   );
 }
@@ -610,6 +629,8 @@ export function ChatView() {
     if (!th) return null;
     return s.workspaces.find((w) => w.id === th.workspaceId) ?? null;
   });
+  const providerCatalog = useAppStore((s) => s.providerCatalog);
+  const modelDisplayNames = useMemo(() => modelDisplayNamesFromCatalog(providerCatalog), [providerCatalog]);
 
   const threadModelConfig = useMemo(() => {
     if (!selectedThreadId || !thread) return null;
@@ -872,12 +893,14 @@ export function ChatView() {
                         threadId={selectedThreadId}
                         provider={threadModelConfig.provider}
                         model={threadModelConfig.model}
+                        modelDisplayNames={modelDisplayNames}
                         disabled={disabled}
                       />
                     ) : (
                       <ThreadModelIndicator
                         provider={threadModelConfig.provider}
                         model={threadModelConfig.model}
+                        modelDisplayNames={modelDisplayNames}
                       />
                     )
                   ) : null}
