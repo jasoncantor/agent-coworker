@@ -138,8 +138,11 @@ export function SettingsShell() {
       <main className="settings-shell__main app-main-content min-h-0 overflow-auto">
         <div
           className={cn(
-            "settings-shell__content w-full max-[960px]:p-4",
-            activePage.id === "backup" ? "h-full p-0" : "p-5 lg:p-6"
+            "settings-shell__content w-full",
+            // Narrow: even padding. Wide: flush to the nav divider on the left; keep right/top/bottom inset.
+            activePage.id === "backup"
+              ? "h-full p-0"
+              : "max-[960px]:p-4 min-[961px]:pl-0 min-[961px]:py-5 min-[961px]:pr-5 lg:py-6 lg:pr-6",
           )}
         >
           <div key={activePage.id} className="animate-in fade-in slide-in-from-bottom-2 duration-200 ease-out h-full">
