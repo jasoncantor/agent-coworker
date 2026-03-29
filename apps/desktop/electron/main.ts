@@ -14,6 +14,7 @@ import {
   syncWindowAppearance,
 } from "./services/appearance";
 import { installDesktopApplicationMenu } from "./services/menu";
+import { MobileRelayBridge } from "./services/mobileRelayBridge";
 import { PersistenceService } from "./services/persistence";
 import { resolveDesktopRendererUrl } from "./services/rendererUrl";
 import { ServerManager } from "./services/serverManager";
@@ -30,8 +31,18 @@ const __dirname = path.dirname(__filename);
 const PACKAGED_RENDERER_DIR = path.resolve(path.join(__dirname, "../renderer"));
 const DESKTOP_SMOKE_WORKSPACE_ENV = "COWORK_DESKTOP_SMOKE_WORKSPACE";
 const DESKTOP_SMOKE_OUTPUT_ENV = "COWORK_DESKTOP_SMOKE_OUTPUT";
+const DESKTOP_APP_NAME = "Cowork";
+const WINDOWS_APP_USER_MODEL_ID = "com.cowork.desktop";
+
+// App identity must be established before any service resolves `userData`.
+app.setName(DESKTOP_APP_NAME);
+
+if (process.platform === "win32") {
+  app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+}
 
 const serverManager = new ServerManager();
+const mobileRelayBridge = new MobileRelayBridge({ serverManager });
 const persistence = new PersistenceService();
 const updater = new DesktopUpdaterService({
   currentVersion: app.getVersion(),
@@ -47,16 +58,10 @@ let unregisterAppearanceListener = () => {};
 let mainWindow: BrowserWindow | null = null;
 const WINDOW_SHOW_FALLBACK_TIMEOUT_MS = 2_000;
 
-app.setName("Cowork");
-
 if (!app.isPackaged && process.env.COWORK_ELECTRON_REMOTE_DEBUG === "1") {
   const port = process.env.COWORK_ELECTRON_REMOTE_DEBUG_PORT?.trim() || "9222";
   app.commandLine.appendSwitch("remote-debugging-port", port);
   app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
-}
-
-if (process.platform === "win32") {
-  app.setAppUserModelId("com.cowork.desktop");
 }
 
 function emitDesktopEvent(channel: string, payload: unknown): void {
@@ -369,6 +374,7 @@ if (!gotSingleInstanceLock) {
     }
 
     registerDesktopIpc({
+      mobileRelayBridge,
       persistence,
       serverManager,
       updater,
@@ -406,6 +412,9 @@ if (!gotSingleInstanceLock) {
     createBeforeQuitHandler({
       unregisterAppearanceListener: () => unregisterAppearanceListener(),
       stopUpdater: () => updater.dispose(),
+      stopMobileRelayBridge: async () => {
+        await mobileRelayBridge.stop();
+      },
       stopAllServers: () => serverManager.stopAll(),
       quit: () => app.quit(),
       onError: (error) => {

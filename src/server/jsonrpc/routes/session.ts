@@ -39,7 +39,7 @@ export function createSessionRouteHandlers(
 
     "cowork/session/state/read": async (ws, message) => {
       const params = toJsonRpcParams(message.params);
-      const cwd = context.utils.requireWorkspacePath(params, message.method);
+      const cwd = context.utils.resolveWorkspacePath(params, message.method);
       await context.workspaceControl.withSession(cwd, async (_binding, session) => {
         context.jsonrpc.sendResult(ws, message.id, {
           events: context.utils.buildControlSessionStateEvents(session),
@@ -194,7 +194,7 @@ export function createSessionRouteHandlers(
 
     "cowork/session/defaults/apply": async (ws, message) => {
       const params = toJsonRpcParams(message.params);
-      const cwd = context.utils.requireWorkspacePath(params, message.method);
+      const cwd = context.utils.resolveWorkspacePath(params, message.method);
       const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
       const binding = threadId
         ? context.threads.load(threadId)
@@ -233,9 +233,34 @@ export function createSessionRouteHandlers(
       });
     },
 
+    "cowork/session/file/upload": async (ws, message) => {
+      const parsed = jsonRpcSessionRequestSchemas["cowork/session/file/upload"].safeParse(message.params);
+      if (!parsed.success) {
+        const detail = parsed.error.issues[0]?.message;
+        context.jsonrpc.sendError(ws, message.id, {
+          code: JSONRPC_ERROR_CODES.invalidParams,
+          message: detail ? `${message.method}: ${detail}` : `${message.method}: invalid params`,
+        });
+        return;
+      }
+
+      const cwd = context.utils.resolveWorkspacePath(parsed.data, message.method);
+      const outcome = await captureWorkspaceControlOutcome(
+        context,
+        cwd,
+        async (session) => await session.uploadFile(parsed.data.filename, parsed.data.contentBase64),
+        (event): event is Extract<ServerEvent, { type: "file_uploaded" }> => event.type === "file_uploaded",
+      );
+      if (outcome.type === "error") {
+        sendSessionMutationError(context, ws, message.id, outcome);
+        return;
+      }
+      context.jsonrpc.sendResult(ws, message.id, { event: outcome });
+    },
+
     "cowork/session/delete": async (ws, message) => {
       const params = toJsonRpcParams(message.params);
-      const cwd = context.utils.requireWorkspacePath(params, message.method);
+      const cwd = context.utils.resolveWorkspacePath(params, message.method);
       const targetSessionId = typeof params.targetSessionId === "string" ? params.targetSessionId.trim() : "";
       const session = context.workspaceControl.getOrCreateBinding(cwd).session!;
       const outcome = await captureWorkspaceControlOutcome(

@@ -7,28 +7,24 @@ import {
   nonEmptyTrimmedStringSchema,
   optionalNonEmptyTrimmedStringSchema,
 } from "./schema.shared";
+import {
+  configUpdatedEventSchema as sharedConfigUpdatedEventSchema,
+  jsonRpcControlRequestSchemas,
+  jsonRpcControlResultSchemas,
+  sessionConfigEventSchema as sharedSessionConfigEventSchema,
+  sessionSettingsEventSchema as sharedSessionSettingsEventSchema,
+} from "../../shared/jsonrpcControlSchemas";
 
 export const sessionInfoEventSchema = z.object({
   type: z.literal("session_info"),
   title: z.string(),
 }).passthrough();
 
-export const configUpdatedEventSchema = z.object({
-  type: z.literal("config_updated"),
-  config: anyObjectSchema,
-}).passthrough();
+export const configUpdatedEventSchema = sharedConfigUpdatedEventSchema;
 
-export const sessionConfigEventSchema = z.object({
-  type: z.literal("session_config"),
-  config: anyObjectSchema,
-}).passthrough();
+export const sessionConfigEventSchema = sharedSessionConfigEventSchema;
 
-export const sessionSettingsEventSchema = z.object({
-  type: z.literal("session_settings"),
-  enableMcp: z.boolean(),
-  enableMemory: z.boolean(),
-  memoryRequireApproval: z.boolean(),
-}).passthrough();
+export const sessionSettingsEventSchema = sharedSessionSettingsEventSchema;
 
 export const sessionUsageEventSchema = z.object({
   type: z.literal("session_usage"),
@@ -78,14 +74,18 @@ export const sessionDeletedEventSchema = z.object({
   type: z.literal("session_deleted"),
 }).passthrough();
 
+export const fileUploadedEventSchema = z.object({
+  type: z.literal("file_uploaded"),
+  filename: nonEmptyTrimmedStringSchema,
+  path: nonEmptyTrimmedStringSchema,
+}).passthrough();
+
 export const jsonRpcSessionRequestSchemas = {
   "cowork/session/title/set": z.object({
     threadId: nonEmptyTrimmedStringSchema,
     title: z.string(),
   }).strict(),
-  "cowork/session/state/read": z.object({
-    cwd: nonEmptyTrimmedStringSchema,
-  }).strict(),
+  "cowork/session/state/read": jsonRpcControlRequestSchemas["cowork/session/state/read"],
   "cowork/session/model/set": z.object({
     threadId: nonEmptyTrimmedStringSchema,
     provider: optionalNonEmptyTrimmedStringSchema,
@@ -107,16 +107,14 @@ export const jsonRpcSessionRequestSchemas = {
     threadId: nonEmptyTrimmedStringSchema,
     context: harnessContextPayloadSchema,
   }).strict(),
-  "cowork/session/defaults/apply": z.object({
-    cwd: nonEmptyTrimmedStringSchema,
-    threadId: optionalNonEmptyTrimmedStringSchema,
-    provider: optionalNonEmptyTrimmedStringSchema,
-    model: optionalNonEmptyTrimmedStringSchema,
-    enableMcp: z.boolean().optional(),
-    config: anyObjectSchema.optional(),
+  "cowork/session/defaults/apply": jsonRpcControlRequestSchemas["cowork/session/defaults/apply"],
+  "cowork/session/file/upload": z.object({
+    cwd: nonEmptyTrimmedStringSchema.optional(),
+    filename: nonEmptyTrimmedStringSchema,
+    contentBase64: z.string().min(1),
   }).strict(),
   "cowork/session/delete": z.object({
-    cwd: nonEmptyTrimmedStringSchema,
+    cwd: nonEmptyTrimmedStringSchema.optional(),
     targetSessionId: nonEmptyTrimmedStringSchema,
   }).strict(),
 } as const;
@@ -137,16 +135,13 @@ export const jsonRpcSessionNotificationSchemas = {
 
 export const jsonRpcSessionResultSchemas = {
   "cowork/session/title/set": legacyEventEnvelope(sessionInfoEventSchema),
-  "cowork/session/state/read": legacyEventsEnvelope(z.union([
-    configUpdatedEventSchema,
-    sessionSettingsEventSchema,
-    sessionConfigEventSchema,
-  ])),
+  "cowork/session/state/read": jsonRpcControlResultSchemas["cowork/session/state/read"],
   "cowork/session/model/set": legacyEventEnvelope(configUpdatedEventSchema),
   "cowork/session/usageBudget/set": legacyEventEnvelope(sessionUsageEventSchema),
   "cowork/session/config/set": legacyEventEnvelope(sessionConfigEventSchema),
   "cowork/session/harnessContext/get": legacyEventEnvelope(harnessContextEventSchema),
   "cowork/session/harnessContext/set": legacyEventEnvelope(harnessContextEventSchema),
-  "cowork/session/defaults/apply": legacyEventEnvelope(sessionConfigEventSchema),
+  "cowork/session/defaults/apply": jsonRpcControlResultSchemas["cowork/session/defaults/apply"],
+  "cowork/session/file/upload": legacyEventEnvelope(fileUploadedEventSchema),
   "cowork/session/delete": legacyEventEnvelope(sessionDeletedEventSchema),
 } as const;

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { clearJsonRpcSocketOverride, setJsonRpcSocketOverride } from "./helpers/jsonRpcSocketMock";
+import { createDesktopCommandsMock } from "./helpers/mockDesktopCommands";
 
 const jsonRpcRequests: Array<{ method: string; params?: unknown }> = [];
 const jsonRpcActivityLog: string[] = [];
@@ -292,7 +293,7 @@ class MockJsonRpcSocket {
   }
 }
 
-mock.module("../src/lib/desktopCommands", () => ({
+mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   appendTranscriptBatch: async (events: Array<{
     ts: string;
     threadId: string;
@@ -564,6 +565,7 @@ describe("workspace settings sync", () => {
     RUNTIME.jsonRpcSockets.clear();
     RUNTIME.optimisticUserMessageIds.clear();
     RUNTIME.pendingThreadMessages.clear();
+    RUNTIME.pendingThreadAttachments.clear();
     RUNTIME.threadSelectionRequests.clear();
     RUNTIME.pendingWorkspaceDefaultApplyByThread.clear();
     RUNTIME.workspaceStartPromises.clear();
@@ -1666,6 +1668,30 @@ describe("workspace settings sync", () => {
       input: [{ type: "text", text: "first queued" }],
     });
     expect(RUNTIME.pendingThreadMessages.get(threadId)).toEqual(["second queued"]);
+  });
+
+  test("applyWorkspaceDefaultsToThread flushes queued attachment-only sends after defaults apply", async () => {
+    primeWorkspaceConnection();
+    const { threadId, sessionId } = seedConnectedThread();
+    const attachment = {
+      filename: "queued.png",
+      contentBase64: "aGVsbG8=",
+      mimeType: "image/png",
+    };
+    RUNTIME.pendingThreadMessages.set(threadId, ["", "second queued"]);
+    RUNTIME.pendingThreadAttachments.set(threadId, [[attachment], undefined]);
+    jsonRpcRequests.length = 0;
+
+    await useAppStore.getState().applyWorkspaceDefaultsToThread(threadId);
+    await flushAsyncWork();
+
+    expect(requestsFor("turn/start")).toHaveLength(1);
+    expect(latestRequest("turn/start")?.params).toMatchObject({
+      threadId: sessionId,
+      input: [{ type: "file", ...attachment }],
+    });
+    expect(RUNTIME.pendingThreadMessages.get(threadId)).toEqual(["second queued"]);
+    expect(RUNTIME.pendingThreadAttachments.get(threadId)).toEqual([undefined]);
   });
 
   test("applyWorkspaceDefaultsToThread does not persist a transcript entry when the request fails", async () => {

@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
+import { createDesktopCommandsMock } from "./helpers/mockDesktopCommands";
 import { setupJsdom } from "./jsdomHarness";
 
 const MOCK_SYSTEM_APPEARANCE = {
@@ -27,7 +28,7 @@ const MOCK_UPDATE_STATE = {
   progress: null,
 };
 
-mock.module("../src/lib/desktopCommands", () => ({
+mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   appendTranscriptBatch: async () => {},
   appendTranscriptEvent: async () => {},
   deleteTranscript: async () => {},
@@ -320,7 +321,13 @@ describe("desktop sidebar", () => {
       if (!(newChatButton instanceof harness.dom.window.HTMLButtonElement)) {
         throw new Error("missing new chat button");
       }
-      expect(newChatButton.className).toContain("w-full");
+      expect(newChatButton.className).toMatch(/w-full|flex-1/);
+      const titlebandButtons = Array.from(
+        container.querySelectorAll(".app-sidebar__titleband-row > button"),
+      );
+      expect(titlebandButtons).toHaveLength(2);
+      expect(titlebandButtons[0]?.textContent).toContain("New Chat");
+      expect(titlebandButtons[1]?.getAttribute("aria-label")).toBe("Hide sidebar");
 
       const skillsButton = Array.from(container.querySelectorAll("button")).find((button) =>
         button.textContent?.includes("Skills"),

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -89,6 +89,26 @@ describe("google interactions runtime", () => {
       interactionId: "interaction_abc123",
       updatedAt: expect.any(String),
     });
+  });
+
+  test("caches the Google interactions client so the SDK experimental warning is only emitted once per api key", () => {
+    const realWarn = console.warn;
+    const warn = mock(() => {});
+    console.warn = warn as typeof console.warn;
+
+    try {
+      googleNativeInternal.__testResetGoogleInteractionsClientCache();
+
+      const first = googleNativeInternal.getGoogleInteractionsClient("test-google-api-key");
+      const second = googleNativeInternal.getGoogleInteractionsClient("test-google-api-key");
+
+      expect(first).toBe(second);
+      expect(googleNativeInternal.__testGetGoogleInteractionsClientCacheSize()).toBe(1);
+      expect(warn.mock.calls.filter(([message]) => String(message).includes("GoogleGenAI.interactions: Interactions usage is experimental")).length).toBe(1);
+    } finally {
+      console.warn = realWarn;
+      googleNativeInternal.__testResetGoogleInteractionsClientCache();
+    }
   });
 
   test("thinking content is extracted as reasoningText", async () => {
@@ -825,6 +845,9 @@ describe("google native interactions request building", () => {
         content: [
           { type: "text", text: "Describe this image" },
           { type: "image", data: "abc123", mimeType: "image/png" },
+          { type: "audio", data: "def456", mimeType: "audio/mp3" },
+          { type: "document", data: "ghi789", mimeType: "application/pdf" },
+          { type: "video", data: "jkl012", mimeType: "video/mp4" },
         ],
       },
     ] as ModelMessage[]);
@@ -835,6 +858,9 @@ describe("google native interactions request building", () => {
         content: [
           { type: "text", text: "Describe this image" },
           { type: "image", data: "abc123", mime_type: "image/png" },
+          { type: "audio", data: "def456", mime_type: "audio/mp3" },
+          { type: "document", data: "ghi789", mime_type: "application/pdf" },
+          { type: "video", data: "jkl012", mime_type: "video/mp4" },
         ],
       },
     ]);

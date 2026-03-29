@@ -1,7 +1,16 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import { describe, expect, test } from "bun:test";
 
+import { jsonRpcThreadTurnRequestSchemas } from "../src/server/jsonrpc/schema.threadTurn";
 import { startAgentServer } from "../src/server/startServer";
-import { makeTmpProject, serverOpts } from "./helpers/wsHarness";
+import {
+  MAX_ATTACHMENT_BASE64_SIZE,
+  MAX_TURN_ATTACHMENT_COUNT,
+  MAX_TURN_ATTACHMENT_TOTAL_BASE64_SIZE,
+} from "../src/shared/attachments";
+import { makeTmpProject, serverOpts, stopTestServer } from "./helpers/wsHarness";
 
 type JsonRpcConnection = {
   ws: WebSocket;
@@ -10,6 +19,9 @@ type JsonRpcConnection = {
   waitFor: (predicate: (message: any) => boolean, timeoutMs?: number) => Promise<any>;
   close: () => void;
 };
+
+const JSONRPC_REPLAY_TEST_TIMEOUT_MS = 45_000;
+const JSONRPC_REPLAY_WAIT_TIMEOUT_MS = 30_000;
 
 async function connectJsonRpc(
   url: string,
@@ -139,7 +151,31 @@ describe("server JSON-RPC flows", () => {
       expect(read.result.coworkSnapshot.sessionId).toBe(thread1.result.thread.id);
       rpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
+    }
+  });
+
+  test("thread/list defaults omitted cwd to the server working directory", async () => {
+    const tmpDir = await makeTmpProject();
+    const otherTmpDir = await makeTmpProject("agent-harness-other-");
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const localThread = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+      const otherThread = await rpc.sendRequest("thread/start", { cwd: otherTmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const listed = await rpc.sendRequest("thread/list", {});
+
+      expect(listed.result.threads.map((thread: any) => thread.id)).toContain(localThread.result.thread.id);
+      expect(listed.result.threads.map((thread: any) => thread.id)).not.toContain(otherThread.result.thread.id);
+      expect(listed.result.threads.every((thread: any) => thread.cwd === tmpDir)).toBe(true);
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+      await Bun.$`rm -rf ${otherTmpDir}`.quiet();
     }
   });
 
@@ -173,7 +209,7 @@ describe("server JSON-RPC flows", () => {
 
       rpc.close();
     } finally {
-      await liveServer.server.stop();
+      await stopTestServer(liveServer.server);
     }
 
     const persistedServer = await startAgentServer(serverOpts(tmpDir));
@@ -187,7 +223,7 @@ describe("server JSON-RPC flows", () => {
       expect(persistedThread.lastEventSeq).toBeGreaterThan(0);
       rpc.close();
     } finally {
-      await persistedServer.server.stop();
+      await stopTestServer(persistedServer.server);
     }
   });
 
@@ -233,7 +269,224 @@ describe("server JSON-RPC flows", () => {
       expect(turnCompleted.params.turn.status).toBe("completed");
       rpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
+    }
+  });
+
+  test("turn/start accepts legacy string input payloads", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async () => ({
+        text: "streamed reply",
+        responseMessages: [],
+      })) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const turnResponse = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        clientMessageId: "msg-legacy-1",
+        input: "hello there",
+      });
+      expect(turnResponse.result.turn.threadId).toBe(started.result.thread.id);
+
+      await rpc.waitFor((message) => message.method === "turn/started");
+      const userItemStarted = await rpc.waitFor((message) =>
+        message.method === "item/started" && message.params.item.type === "userMessage",
+      );
+      expect(userItemStarted.params.item.content[0].text).toBe("hello there");
+      expect(userItemStarted.params.item.clientMessageId).toBe("msg-legacy-1");
+
+      await rpc.waitFor((message) => message.method === "turn/completed");
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("turn/start request schema rejects oversized inline attachment payloads", () => {
+    const parsed = jsonRpcThreadTurnRequestSchemas["turn/start"].safeParse({
+      threadId: "thread-1",
+      input: [{
+        type: "file",
+        filename: "large.bin",
+        contentBase64: "a".repeat(MAX_ATTACHMENT_BASE64_SIZE + 1),
+        mimeType: "application/octet-stream",
+      }],
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  test("turn/start request schema rejects aggregate inline attachment payloads", () => {
+    const chunk = Math.floor(MAX_TURN_ATTACHMENT_TOTAL_BASE64_SIZE / 3);
+    const totalOverflow = MAX_TURN_ATTACHMENT_TOTAL_BASE64_SIZE - (chunk * 2) + 1;
+    const parsed = jsonRpcThreadTurnRequestSchemas["turn/start"].safeParse({
+      threadId: "thread-1",
+      input: [
+        {
+          type: "file",
+          filename: "first.bin",
+          contentBase64: "a".repeat(chunk),
+          mimeType: "application/octet-stream",
+        },
+        {
+          type: "file",
+          filename: "second.bin",
+          contentBase64: "b".repeat(chunk),
+          mimeType: "application/octet-stream",
+        },
+        {
+          type: "file",
+          filename: "overflow.bin",
+          contentBase64: "c".repeat(totalOverflow),
+          mimeType: "application/octet-stream",
+        },
+      ],
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toContain("Inline attachments too large in total");
+    }
+  });
+
+  test("turn/start accepts uploaded file path parts after workspace upload", async () => {
+    const tmpDir = await makeTmpProject();
+    let lastMessages: any[] = [];
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async (params: any) => {
+        lastMessages = params.messages;
+        return {
+          text: "done",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const uploadResponse = await rpc.sendRequest("cowork/session/file/upload", {
+        cwd: tmpDir,
+        filename: "large.bin",
+        contentBase64: Buffer.from("uploaded over control route").toString("base64"),
+      });
+      const uploadedPath = uploadResponse.result.event.path as string;
+
+      await expect(fs.readFile(uploadedPath, "utf8")).resolves.toBe("uploaded over control route");
+
+      const turnResponse = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{
+          type: "uploadedFile",
+          filename: "large.bin",
+          path: uploadedPath,
+          mimeType: "application/octet-stream",
+        }],
+      });
+
+      expect(turnResponse.result.turn.threadId).toBe(started.result.thread.id);
+      await rpc.waitFor((message) => message.method === "turn/started");
+      await rpc.waitFor((message) => message.method === "turn/completed");
+      expect(lastMessages.at(-1)?.content).toContainEqual({
+        type: "text",
+        text: `[System: The user uploaded a file which has been saved to ${uploadedPath}]`,
+      });
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("turn/start rejects uploaded file paths outside the uploads directory before starting the turn", async () => {
+    const tmpDir = await makeTmpProject();
+    let runTurnCalled = false;
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async () => {
+        runTurnCalled = true;
+        return {
+          text: "done",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const turnResponse = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{
+          type: "uploadedFile",
+          filename: "outside.txt",
+          path: `${tmpDir}/outside.txt`,
+          mimeType: "text/plain",
+        }],
+      });
+
+      expect(turnResponse.error?.message).toBe("Uploaded file path is outside the uploads directory.");
+      expect(turnResponse.result).toBeUndefined();
+      expect(runTurnCalled).toBe(false);
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("turn/start rejects uploaded file paths that escape the uploads directory via symlinks", async () => {
+    const tmpDir = await makeTmpProject();
+    let runTurnCalled = false;
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async () => {
+        runTurnCalled = true;
+        return {
+          text: "done",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const uploadsDir = path.join(tmpDir, "User Uploads");
+      const outsideDir = path.join(tmpDir, "outside");
+      const outsideFile = path.join(outsideDir, "secret.pdf");
+      const linkedDir = path.join(uploadsDir, "linked");
+      const escapedPath = path.join(linkedDir, "secret.pdf");
+
+      await fs.mkdir(uploadsDir, { recursive: true });
+      await fs.mkdir(outsideDir, { recursive: true });
+      await fs.writeFile(outsideFile, "top secret");
+      await fs.symlink(outsideDir, linkedDir, process.platform === "win32" ? "junction" : "dir");
+
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const turnResponse = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{
+          type: "uploadedFile",
+          filename: "secret.pdf",
+          path: escapedPath,
+          mimeType: "application/pdf",
+        }],
+      });
+
+      expect(turnResponse.error?.message).toBe("Uploaded file path is outside the uploads directory.");
+      expect(turnResponse.result).toBeUndefined();
+      expect(runTurnCalled).toBe(false);
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
     }
   });
 
@@ -307,7 +560,7 @@ describe("server JSON-RPC flows", () => {
       expect(turnCompleted.params.turn.status).toBe("completed");
       rpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -346,7 +599,7 @@ describe("server JSON-RPC flows", () => {
       await rpc.waitFor((message) => message.method === "turn/completed");
       rpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -390,7 +643,139 @@ describe("server JSON-RPC flows", () => {
       await rpc.waitFor((message) => message.method === "turn/completed");
       rpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
+    }
+  });
+
+  test("turn/steer accepts legacy inputText parts", async () => {
+    const tmpDir = await makeTmpProject();
+    const releaseTurn = Promise.withResolvers<void>();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async () => {
+        await releaseTurn.promise;
+        return {
+          text: "done",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const turnStart = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "start turn" }],
+      });
+      const turnId = turnStart.result.turn.id;
+
+      const steerResponse = await rpc.sendRequest("turn/steer", {
+        threadId: started.result.thread.id,
+        turnId,
+        input: [{ type: "inputText", text: "keep going" }],
+        clientMessageId: "steer-legacy-1",
+      });
+      expect(steerResponse.result.turnId).toBe(turnId);
+
+      const steerAccepted = await rpc.waitFor((message) => message.method === "cowork/session/steerAccepted");
+      expect(steerAccepted.params.turnId).toBe(turnId);
+      expect(steerAccepted.params.clientMessageId).toBe("steer-legacy-1");
+
+      releaseTurn.resolve();
+      await rpc.waitFor((message) => message.method === "turn/completed");
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("turn/steer falls back to the active turn when turnId is omitted", async () => {
+    const tmpDir = await makeTmpProject();
+    const releaseTurn = Promise.withResolvers<void>();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async () => {
+        await releaseTurn.promise;
+        return {
+          text: "done",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const turnStart = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "start turn" }],
+      });
+      const turnId = turnStart.result.turn.id;
+
+      const steerResponse = await rpc.sendRequest("turn/steer", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "keep going without explicit turn id" }],
+        clientMessageId: "steer-without-turn-id",
+      });
+      expect(steerResponse.result.turnId).toBe(turnId);
+
+      const steerAccepted = await rpc.waitFor((message) => message.method === "cowork/session/steerAccepted");
+      expect(steerAccepted.params.turnId).toBe(turnId);
+      expect(steerAccepted.params.clientMessageId).toBe("steer-without-turn-id");
+
+      releaseTurn.resolve();
+      await rpc.waitFor((message) => message.method === "turn/completed");
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("turn/start preserves ordered mixed text and file input parts", async () => {
+    const tmpDir = await makeTmpProject();
+    let capturedMessages: any[] = [];
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async (params: any) => {
+        capturedMessages = params.messages;
+        return {
+          text: "done",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const turnStart = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [
+          { type: "text", text: "first caption" },
+          { type: "file", filename: "one.png", contentBase64: "b25l", mimeType: "image/png" },
+          { type: "text", text: "second caption" },
+          { type: "file", filename: "two.png", contentBase64: "dHdv", mimeType: "image/png" },
+        ],
+      });
+      expect(turnStart.result.turn.status).toBe("inProgress");
+      await rpc.waitFor((message) => message.method === "turn/completed");
+
+      expect(capturedMessages.at(-1)?.content).toEqual([
+        { type: "text", text: "first caption" },
+        { type: "text", text: `[System: The user uploaded a file which has been saved to ${tmpDir}/User Uploads/one.png]` },
+        { type: "image", data: "b25l", mimeType: "image/png" },
+        { type: "text", text: "second caption" },
+        { type: "text", text: `[System: The user uploaded a file which has been saved to ${tmpDir}/User Uploads/two.png]` },
+        { type: "image", data: "dHdv", mimeType: "image/png" },
+      ]);
+
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
     }
   });
 
@@ -429,7 +814,100 @@ describe("server JSON-RPC flows", () => {
       await rpc.waitFor((message) => message.method === "turn/completed");
       rpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
+    }
+  });
+
+  test("turn/steer rejects too many attachment parts at the request layer", async () => {
+    const tmpDir = await makeTmpProject();
+    const releaseTurn = Promise.withResolvers<void>();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async () => {
+        await releaseTurn.promise;
+        return {
+          text: "done",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const turnStart = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "start turn" }],
+      });
+      const turnId = turnStart.result.turn.id;
+
+      const steerResponse = await rpc.sendRequest("turn/steer", {
+        threadId: started.result.thread.id,
+        turnId,
+        input: Array.from({ length: MAX_TURN_ATTACHMENT_COUNT + 1 }, (_, index) => ({
+          type: "file" as const,
+          filename: `file-${index}.txt`,
+          contentBase64: "YQ==",
+          mimeType: "text/plain",
+        })),
+      });
+      expect(steerResponse.error?.code).toBe(-32602);
+      expect(steerResponse.error?.message).toContain(`Too many file attachments (max ${MAX_TURN_ATTACHMENT_COUNT})`);
+      expect(steerResponse.result).toBeUndefined();
+
+      releaseTurn.resolve();
+      await rpc.waitFor((message) => message.method === "turn/completed");
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("turn/steer rejects invalid uploaded file paths without aborting the active turn", async () => {
+    const tmpDir = await makeTmpProject();
+    const releaseTurn = Promise.withResolvers<void>();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir, {
+      runTurnImpl: (async () => {
+        await releaseTurn.promise;
+        return {
+          text: "done",
+          responseMessages: [],
+        };
+      }) as any,
+    }));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const started = await rpc.sendRequest("thread/start", { cwd: tmpDir });
+      await rpc.waitFor((message) => message.method === "thread/started");
+
+      const turnStart = await rpc.sendRequest("turn/start", {
+        threadId: started.result.thread.id,
+        input: [{ type: "text", text: "start turn" }],
+      });
+      const turnId = turnStart.result.turn.id;
+
+      const steerResponse = await rpc.sendRequest("turn/steer", {
+        threadId: started.result.thread.id,
+        turnId,
+        input: [{
+          type: "uploadedFile",
+          filename: "outside.txt",
+          path: `${tmpDir}/outside.txt`,
+          mimeType: "text/plain",
+        }],
+        clientMessageId: "steer-invalid-upload",
+      });
+
+      expect(steerResponse.error?.message).toBe("Uploaded file path is outside the uploads directory.");
+      expect(steerResponse.result).toBeUndefined();
+
+      releaseTurn.resolve();
+      await rpc.waitFor((message) => message.method === "turn/completed");
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
     }
   });
 
@@ -469,7 +947,7 @@ describe("server JSON-RPC flows", () => {
 
       rpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -513,7 +991,7 @@ describe("server JSON-RPC flows", () => {
       expect(agentCompleted.params.item.text).toBe("answer:b");
       rpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -557,7 +1035,7 @@ describe("server JSON-RPC flows", () => {
       expect(agentCompleted.params.item.text).toBe("approved");
       rpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -618,7 +1096,7 @@ describe("server JSON-RPC flows", () => {
       expect(agentCompleted.params.item.text).toBe("answer:b");
       replayRpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -679,7 +1157,7 @@ describe("server JSON-RPC flows", () => {
       expect(agentCompleted.params.item.text).toBe("approved");
       replayRpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -744,11 +1222,13 @@ describe("server JSON-RPC flows", () => {
       expect(agentCompleted.params.item.text).toBe("answer:a");
       replayRpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 
-  test("thread/read can include journal-projected turns and thread/resume can replay from a journal cursor", async () => {
+  test("thread/read can include journal-projected turns and thread/resume can replay from a journal cursor", {
+    timeout: JSONRPC_REPLAY_TEST_TIMEOUT_MS,
+  }, async () => {
     const tmpDir = await makeTmpProject();
     const { server, url } = await startAgentServer(serverOpts(tmpDir, {
       runTurnImpl: (async (params: any) => {
@@ -813,9 +1293,9 @@ describe("server JSON-RPC flows", () => {
       replayRpc.close();
       rpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
     }
-  }, 15_000);
+  });
 
   test("thread/resume honors notification opt-outs while replaying journal events", async () => {
     const tmpDir = await makeTmpProject();
@@ -862,11 +1342,13 @@ describe("server JSON-RPC flows", () => {
       replayRpc.close();
       rpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 
-  test("thread/resume replays a journal cursor once before reattaching the live thread sink", async () => {
+  test("thread/resume replays a journal cursor once before reattaching the live thread sink", {
+    timeout: JSONRPC_REPLAY_TEST_TIMEOUT_MS,
+  }, async () => {
     const tmpDir = await makeTmpProject();
     let releaseSecondChunk: (() => void) | undefined;
     const runTurnImpl = async (params: any) => {
@@ -930,7 +1412,7 @@ describe("server JSON-RPC flows", () => {
       replayRpc.close();
     } finally {
       releaseSecondChunk?.();
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -989,11 +1471,13 @@ describe("server JSON-RPC flows", () => {
       replayRpc.close();
     } finally {
       releaseFinish?.();
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 
-  test("thread/read and thread/resume replay journals beyond 1000 events", async () => {
+  test("thread/read and thread/resume replay journals beyond 1000 events", {
+    timeout: JSONRPC_REPLAY_TEST_TIMEOUT_MS,
+  }, async () => {
     const tmpDir = await makeTmpProject();
     const deltaCount = 1_005;
     const finalText = Array.from({ length: deltaCount }, (_, index) => `chunk-${index}`).join("");
@@ -1022,7 +1506,7 @@ describe("server JSON-RPC flows", () => {
         threadId: started.result.thread.id,
         input: [{ type: "text", text: "flood the journal" }],
       });
-      await rpc.waitFor((message) => message.method === "turn/completed", 15_000);
+      await rpc.waitFor((message) => message.method === "turn/completed", JSONRPC_REPLAY_WAIT_TIMEOUT_MS);
 
       const read = await rpc.sendRequest("thread/read", {
         threadId: started.result.thread.id,
@@ -1040,7 +1524,7 @@ describe("server JSON-RPC flows", () => {
       await replayRpc.waitFor((message) => message.method === "thread/started");
       const replayedLastDelta = await replayRpc.waitFor(
         (message) => message.method === "item/agentMessage/delta" && message.params.delta === "chunk-1004",
-        15_000,
+        JSONRPC_REPLAY_WAIT_TIMEOUT_MS,
       );
       const resumed = await resumeResponse;
 
@@ -1048,7 +1532,7 @@ describe("server JSON-RPC flows", () => {
       expect(replayedLastDelta.params.delta).toBe("chunk-1004");
       replayRpc.close();
     } finally {
-      await server.stop();
+      await stopTestServer(server);
     }
   });
 });

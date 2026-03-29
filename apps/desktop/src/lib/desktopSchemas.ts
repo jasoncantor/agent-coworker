@@ -35,6 +35,7 @@ import type {
   UpdaterReleaseInfo,
   UpdaterState,
   TrashPathInput,
+  WindowDragPointInput,
 } from "./desktopApi";
 import type { PersistedState } from "../app/types";
 
@@ -140,6 +141,11 @@ export const transcriptBatchInputSchema: z.ZodType<TranscriptBatchInput> = z.obj
 
 export const showContextMenuInputSchema: z.ZodType<ShowContextMenuInput> = z.object({
   items: z.array(contextMenuItemSchema),
+});
+
+export const windowDragPointInputSchema: z.ZodType<WindowDragPointInput> = z.object({
+  screenX: z.number().finite(),
+  screenY: z.number().finite(),
 });
 
 export const listDirectoryInputSchema: z.ZodType<ListDirectoryInput> = z.object({
@@ -320,4 +326,37 @@ export const systemAppearanceSchema: z.ZodType<SystemAppearance> = z.object({
   shouldUseInvertedColorScheme: z.boolean(),
   prefersReducedTransparency: z.boolean(),
   inForcedColorsMode: z.boolean(),
+});
+
+const mobileRelayPairingPayloadSchema = z.object({
+  v: z.number().int().nonnegative(),
+  relay: nonEmptyStringSchema,
+  sessionId: nonEmptyStringSchema,
+  macDeviceId: nonEmptyStringSchema,
+  macIdentityPublicKey: nonEmptyStringSchema,
+  pairingSecret: nonEmptyStringSchema,
+  expiresAt: z.number().int().nonnegative(),
+});
+
+export const mobileRelayStartInputSchema = z.object({
+  workspaceId: safeIdSchema,
+  workspacePath: nonEmptyStringSchema,
+  yolo: z.boolean(),
+});
+
+export const mobileRelayBridgeStateSchema = z.object({
+  status: z.enum(["idle", "starting", "pairing", "connected", "reconnecting", "error"]),
+  workspaceId: z.string().nullable(),
+  workspacePath: z.string().nullable(),
+  relaySource: z.enum(["remodex", "managed", "override", "unavailable"]),
+  relaySourceMessage: z.string().nullable(),
+  relayServiceStatus: z.enum(["unknown", "running", "not-running", "disconnected", "unavailable"]),
+  relayServiceMessage: z.string().nullable(),
+  relayServiceUpdatedAt: z.string().nullable(),
+  relayUrl: z.string().nullable(),
+  sessionId: z.string().nullable(),
+  pairingPayload: mobileRelayPairingPayloadSchema.nullable(),
+  trustedPhoneDeviceId: z.string().nullable(),
+  trustedPhoneFingerprint: z.string().nullable(),
+  lastError: z.string().nullable(),
 });

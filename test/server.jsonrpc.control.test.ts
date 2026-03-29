@@ -1,9 +1,11 @@
+import fs from "node:fs/promises";
+
 import { describe, expect, test } from "bun:test";
 
 import { MemoryStore } from "../src/memoryStore";
 import { startAgentServer } from "../src/server/startServer";
 import { WorkspaceBackupService } from "../src/server/workspaceBackups";
-import { makeTmpProject, serverOpts } from "./helpers/wsHarness";
+import { makeTmpProject, serverOpts, stopTestServer } from "./helpers/wsHarness";
 
 async function connectJsonRpc(url: string) {
   const ws = new WebSocket(`${url}?protocol=jsonrpc`);
@@ -92,7 +94,7 @@ describe("server JSON-RPC control methods", () => {
       expect(response.result).toBeUndefined();
       rpc.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -120,7 +122,27 @@ describe("server JSON-RPC control methods", () => {
       expect(sessionConfig.config.defaultBackupsEnabled).toBe(true);
       rpc.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
+    }
+  });
+
+  test("session state read defaults omitted cwd to the server working directory", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const response = await rpc.request("cowork/session/state/read", {});
+
+      expect(response.result.events.map((event: any) => event.type)).toEqual([
+        "config_updated",
+        "session_settings",
+        "session_config",
+      ]);
+      expect(response.result.events[0]?.config?.workingDirectory).toBe(tmpDir);
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
     }
   });
 
@@ -139,7 +161,43 @@ describe("server JSON-RPC control methods", () => {
       expect(response.result.event.default.google).toBeDefined();
       rpc.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
+    }
+  });
+
+  test("provider auth methods read returns a legacy-compatible provider_auth_methods event payload", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const response = await rpc.request("cowork/provider/authMethods/read", {
+        cwd: tmpDir,
+      });
+
+      expect(response.result.event.type).toBe("provider_auth_methods");
+      expect(response.result.event.methods.google).toEqual(expect.any(Array));
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("provider status refresh returns a legacy-compatible provider_status event payload", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const response = await rpc.request("cowork/provider/status/refresh", {
+        cwd: tmpDir,
+      });
+
+      expect(response.result.event.type).toBe("provider_status");
+      expect(Array.isArray(response.result.event.providers)).toBe(true);
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
     }
   });
 
@@ -160,7 +218,44 @@ describe("server JSON-RPC control methods", () => {
       });
       rpc.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
+    }
+  });
+
+  test("MCP servers read returns a legacy-compatible mcp_servers event payload", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const response = await rpc.request("cowork/mcp/servers/read", {
+        cwd: tmpDir,
+      });
+
+      expect(response.result.event.type).toBe("mcp_servers");
+      expect(Array.isArray(response.result.event.servers)).toBe(true);
+      expect(response.result.event.legacy.workspace.path).toContain("mcp-servers.json");
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("skills catalog read returns a legacy-compatible skills_catalog event payload", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const response = await rpc.request("cowork/skills/catalog/read", {
+        cwd: tmpDir,
+      });
+
+      expect(response.result.event.type).toBe("skills_catalog");
+      expect(Array.isArray(response.result.event.catalog.installations)).toBe(true);
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
     }
   });
 
@@ -179,7 +274,7 @@ describe("server JSON-RPC control methods", () => {
       expect(Array.isArray(response.result.event.backups)).toBe(true);
       rpc.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -203,7 +298,7 @@ describe("server JSON-RPC control methods", () => {
         expect(response.result).toBeUndefined();
         rpc.close();
       } finally {
-        server.stop();
+        await stopTestServer(server);
       }
     });
   }
@@ -223,7 +318,7 @@ describe("server JSON-RPC control methods", () => {
       expect(response.result).toBeUndefined();
       rpc.close();
       } finally {
-        server.stop();
+        await stopTestServer(server);
       }
   });
 
@@ -242,7 +337,7 @@ describe("server JSON-RPC control methods", () => {
       expect(response.result).toBeUndefined();
       rpc.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -267,7 +362,7 @@ describe("server JSON-RPC control methods", () => {
         expect(response.result).toBeUndefined();
         rpc.close();
       } finally {
-        server.stop();
+        await stopTestServer(server);
       }
     });
   }
@@ -313,7 +408,7 @@ describe("server JSON-RPC control methods", () => {
         rpc.close();
       } finally {
         (MemoryStore.prototype as any)[scenario.patch] = original;
-        server.stop();
+        await stopTestServer(server);
       }
     });
   }
@@ -359,7 +454,7 @@ describe("server JSON-RPC control methods", () => {
         rpc.close();
       } finally {
         (WorkspaceBackupService.prototype as any)[scenario.patch] = original;
-        server.stop();
+        await stopTestServer(server);
       }
     });
   }
@@ -395,7 +490,48 @@ describe("server JSON-RPC control methods", () => {
       expect(usageUpdated.result.event.type).toBe("session_usage");
       rpc.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
+    }
+  });
+
+  test("workspace file upload returns the saved path in a legacy event envelope", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const response = await rpc.request("cowork/session/file/upload", {
+        cwd: tmpDir,
+        filename: "upload.txt",
+        contentBase64: Buffer.from("hello upload").toString("base64"),
+      });
+
+      expect(response.result.event.type).toBe("file_uploaded");
+      expect(response.result.event.filename).toBe("upload.txt");
+      await expect(fs.readFile(response.result.event.path, "utf8")).resolves.toBe("hello upload");
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("workspace file upload rejects malformed base64 payloads", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const response = await rpc.request("cowork/session/file/upload", {
+        cwd: tmpDir,
+        filename: "upload.txt",
+        contentBase64: "!not-base64!",
+      });
+
+      expect(response.error.message).toBe("Invalid base64 file contents");
+      await expect(fs.readdir(`${tmpDir}/User Uploads`)).rejects.toThrow();
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
     }
   });
 
@@ -418,7 +554,7 @@ describe("server JSON-RPC control methods", () => {
       expect(response.result.event.config.model).toBe(thread.model);
       rpc.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -438,7 +574,7 @@ describe("server JSON-RPC control methods", () => {
       expect(response.result.event.config.defaultBackupsEnabled).toBe(true);
       rpc.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -459,7 +595,7 @@ describe("server JSON-RPC control methods", () => {
       expect(response.result).toBeUndefined();
       rpc.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 });

@@ -12,6 +12,37 @@ export type StopWorkspaceServerInput = {
   workspaceId: string;
 };
 
+export type MobileRelayStartInput = {
+  workspaceId: string;
+  workspacePath: string;
+  yolo: boolean;
+};
+
+export type MobileRelayBridgeState = {
+  status: "idle" | "starting" | "pairing" | "connected" | "reconnecting" | "error";
+  workspaceId: string | null;
+  workspacePath: string | null;
+  relaySource: "remodex" | "managed" | "override" | "unavailable";
+  relaySourceMessage: string | null;
+  relayServiceStatus: "unknown" | "running" | "not-running" | "disconnected" | "unavailable";
+  relayServiceMessage: string | null;
+  relayServiceUpdatedAt: string | null;
+  relayUrl: string | null;
+  sessionId: string | null;
+  pairingPayload: {
+    v: number;
+    relay: string;
+    sessionId: string;
+    macDeviceId: string;
+    macIdentityPublicKey: string;
+    pairingSecret: string;
+    expiresAt: number;
+  } | null;
+  trustedPhoneDeviceId: string | null;
+  trustedPhoneFingerprint: string | null;
+  lastError: string | null;
+};
+
 export type ReadTranscriptInput = {
   threadId: string;
 };
@@ -35,6 +66,11 @@ export type ContextMenuItem = {
 
 export type ShowContextMenuInput = {
   items: ContextMenuItem[];
+};
+
+export type WindowDragPointInput = {
+  screenX: number;
+  screenY: number;
 };
 
 export type ListDirectoryInput = {
@@ -195,6 +231,11 @@ export type SetWindowAppearanceInput = {
 export interface DesktopApi {
   startWorkspaceServer(opts: StartWorkspaceServerInput): Promise<{ url: string }>;
   stopWorkspaceServer(opts: StopWorkspaceServerInput): Promise<void>;
+  startMobileRelay(opts: MobileRelayStartInput): Promise<MobileRelayBridgeState>;
+  stopMobileRelay(): Promise<MobileRelayBridgeState>;
+  getMobileRelayState(): Promise<MobileRelayBridgeState>;
+  rotateMobileRelaySession(): Promise<MobileRelayBridgeState>;
+  forgetMobileRelayTrustedPhone(): Promise<MobileRelayBridgeState>;
   loadState(): Promise<PersistedState>;
   saveState(state: PersistedState): Promise<void>;
   readTranscript(opts: ReadTranscriptInput): Promise<TranscriptEvent[]>;
@@ -207,6 +248,9 @@ export interface DesktopApi {
   windowMinimize(): Promise<void>;
   windowMaximize(): Promise<void>;
   windowClose(): Promise<void>;
+  windowDragStart(opts: WindowDragPointInput): Promise<void>;
+  windowDragMove(opts: WindowDragPointInput): Promise<void>;
+  windowDragEnd(): Promise<void>;
   getPlatform(): Promise<string>;
   listDirectory(opts: ListDirectoryInput): Promise<ExplorerEntry[]>;
   readFile(opts: ReadFileInput): Promise<ReadFileOutput>;
@@ -228,11 +272,17 @@ export interface DesktopApi {
   onUpdateStateChanged(listener: (state: UpdaterState) => void): () => void;
   onSystemAppearanceChanged(listener: (appearance: SystemAppearance) => void): () => void;
   onMenuCommand(listener: (command: DesktopMenuCommand) => void): () => void;
+  onMobileRelayStateChanged(listener: (state: MobileRelayBridgeState) => void): () => void;
 }
 
 export const DESKTOP_IPC_CHANNELS = {
   startWorkspaceServer: "desktop:startWorkspaceServer",
   stopWorkspaceServer: "desktop:stopWorkspaceServer",
+  mobileRelayStart: "desktop:mobileRelayStart",
+  mobileRelayStop: "desktop:mobileRelayStop",
+  mobileRelayGetState: "desktop:mobileRelayGetState",
+  mobileRelayRotateSession: "desktop:mobileRelayRotateSession",
+  mobileRelayForgetTrustedPhone: "desktop:mobileRelayForgetTrustedPhone",
   loadState: "desktop:loadState",
   saveState: "desktop:saveState",
   readTranscript: "desktop:readTranscript",
@@ -245,6 +295,9 @@ export const DESKTOP_IPC_CHANNELS = {
   windowMinimize: "desktop:windowMinimize",
   windowMaximize: "desktop:windowMaximize",
   windowClose: "desktop:windowClose",
+  windowDragStart: "desktop:windowDragStart",
+  windowDragMove: "desktop:windowDragMove",
+  windowDragEnd: "desktop:windowDragEnd",
   getPlatform: "desktop:getPlatform",
   listDirectory: "desktop:listDirectory",
   readFile: "desktop:readFile",
@@ -269,4 +322,5 @@ export const DESKTOP_EVENT_CHANNELS = {
   menuCommand: "desktop:event:menuCommand",
   updateStateChanged: "desktop:event:updateState",
   systemAppearanceChanged: "desktop:event:systemAppearanceChanged",
+  mobileRelayStateChanged: "desktop:event:mobileRelayStateChanged",
 } as const;

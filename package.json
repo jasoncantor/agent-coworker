@@ -7,7 +7,7 @@
     "cowork": "./src/index.ts"
   },
   "scripts": {
-    "postinstall": "bun install --cwd apps/desktop",
+    "postinstall": "bun install --cwd apps/desktop && bun install --cwd apps/mobile",
     "start": "cd apps/desktop && bun run dev",
     "cli": "bun src/index.ts",
     "dev": "bun --watch src/index.ts",
@@ -15,6 +15,11 @@
     "build:server-binary": "bun scripts/build_cowork_server_binary.ts",
     "desktop:dev": "cd apps/desktop && bun run dev",
     "desktop:build": "cd apps/desktop && bun run build",
+    "app:mobile:dev": "cd apps/mobile && npx expo start --dev-client",
+    "app:mobile:ios": "cd apps/mobile && npx expo run:ios",
+    "app:mobile:android": "cd apps/mobile && npx expo run:android",
+    "app:mobile:xcode": "cd apps/mobile && open ios/CoworkMobile.xcworkspace",
+    "app:mobile:typecheck": "bunx tsc --noEmit -p apps/mobile/tsconfig.json",
     "build:desktop-resources": "bun scripts/build_desktop_resources.ts",
     "docs:check": "bun scripts/check_docs.ts",
     "docs:generate-jsonrpc": "bun scripts/generate_ws_jsonrpc_schema.ts",
@@ -38,6 +43,7 @@
     "partial-json": "^0.1.7",
     "react": "^19.2.4",
     "turndown": "^7.2.2",
+    "tweetnacl": "^1.0.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {

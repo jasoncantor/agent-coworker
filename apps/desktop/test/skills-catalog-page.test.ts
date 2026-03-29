@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 
 import { NoopJsonRpcSocket } from "./helpers/jsonRpcSocketMock";
+import { createDesktopCommandsMock } from "./helpers/mockDesktopCommands";
 import { setupJsdom } from "./jsdomHarness";
 
 const MOCK_SYSTEM_APPEARANCE = {
@@ -26,7 +27,7 @@ const MOCK_UPDATE_STATE = {
   error: null,
 };
 
-mock.module("../src/lib/desktopCommands", () => ({
+mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   appendTranscriptBatch: async () => {},
   appendTranscriptEvent: async () => {},
   deleteTranscript: async () => {},
@@ -67,18 +68,10 @@ mock.module("../src/lib/agentSocket", () => ({
   JsonRpcSocket: NoopJsonRpcSocket,
 }));
 
-mock.module("../src/ui/skills/HeaderAndFilters", () => ({
-  HeaderAndFilters: () => createElement("div", null, "header"),
-}));
-
-mock.module("../src/ui/skills/InstallationCardGrid", () => ({
-  InstallationCardGrid: ({ installations }: { installations: unknown[] }) =>
-    createElement("div", null, `grid:${installations.length}`),
-}));
-
 const { useAppStore } = await import("../src/app/store");
 const { defaultWorkspaceRuntime } = await import("../src/app/store.helpers/runtimeState");
 const { SkillsCatalogPage } = await import("../src/ui/skills/SkillsCatalogPage");
+mock.restore();
 
 describe("skills catalog page", () => {
   test("shows a loading state while the catalog is loading", async () => {

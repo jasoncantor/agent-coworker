@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { WebSocket as NodeWebSocket } from "ws";
 
 import { startAgentServer } from "../src/server/startServer";
-import { makeTmpProject, serverOpts } from "./helpers/wsHarness";
+import { makeTmpProject, serverOpts, stopTestServer } from "./helpers/wsHarness";
 
 function waitForOpen(ws: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -97,7 +97,7 @@ describe("server JSON-RPC websocket mode", () => {
       expect(notInitialized.error?.code).toBe(-32002);
       ws.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -156,7 +156,7 @@ describe("server JSON-RPC websocket mode", () => {
       });
       ws.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -184,7 +184,7 @@ describe("server JSON-RPC websocket mode", () => {
       expect(response.result.serverInfo.subprotocol).toBe("cowork.jsonrpc.v1");
       ws.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -211,7 +211,7 @@ describe("server JSON-RPC websocket mode", () => {
       expect(response.result.serverInfo.subprotocol).toBe("cowork.jsonrpc.v1");
       ws.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 
@@ -257,11 +257,11 @@ describe("server JSON-RPC websocket mode", () => {
       });
       ws.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 
-  test("JSON-RPC returns internal error when a handler throws before sending a response", async () => {
+  test("JSON-RPC workspace control routes fall back to the server cwd when params.cwd is omitted", async () => {
     const tmpDir = await makeTmpProject();
     const { server, url } = await startAgentServer(serverOpts(tmpDir));
 
@@ -286,17 +286,13 @@ describe("server JSON-RPC websocket mode", () => {
         method: "cowork/provider/status/refresh",
         params: {},
       }));
-      const errorResponse = await waitForSingleMessage(ws);
-      expect(errorResponse).toEqual({
-        id: 2,
-        error: {
-          code: -32603,
-          message: "cowork/provider/status/refresh requires cwd",
-        },
-      });
+      const response = await waitForSingleMessage(ws);
+      expect(response.id).toBe(2);
+      expect(response.result?.event?.type).toBe("provider_status");
+      expect(Array.isArray(response.result?.event?.providers)).toBe(true);
       ws.close();
     } finally {
-      server.stop();
+      await stopTestServer(server);
     }
   });
 });

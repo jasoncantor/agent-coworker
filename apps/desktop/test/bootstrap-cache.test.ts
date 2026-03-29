@@ -1,5 +1,7 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 
+import { createDesktopCommandsMock } from "./helpers/mockDesktopCommands";
+
 const DESKTOP_STATE_CACHE_KEY = "cowork.desktop.state-cache.v2";
 const storage = new Map<string, string>();
 
@@ -222,7 +224,7 @@ const MOCK_UPDATE_STATE = {
   error: null,
 };
 
-mock.module("../src/lib/desktopCommands", () => ({
+mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   appendTranscriptBatch: async () => {},
   appendTranscriptEvent: async () => {},
   deleteTranscript: async () => {},
@@ -565,8 +567,14 @@ describe("desktop bootstrap cache", () => {
 
   test("init preserves cached state when authoritative load fails", async () => {
     loadStateError = new Error("state load exploded");
+    const realError = console.error;
+    console.error = mock(() => {});
 
-    await useAppStore.getState().init();
+    try {
+      await useAppStore.getState().init();
+    } finally {
+      console.error = realError;
+    }
 
     const state = useAppStore.getState();
     expect(state.bootstrapPending).toBe(false);
