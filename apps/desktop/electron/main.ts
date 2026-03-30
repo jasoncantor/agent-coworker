@@ -13,6 +13,7 @@ import {
   registerSystemAppearanceListener,
   syncWindowAppearance,
 } from "./services/appearance";
+import { runDesktopSmokePromptLoadCheck } from "./services/desktopSmoke";
 import { installDesktopApplicationMenu } from "./services/menu";
 import { MobileRelayBridge } from "./services/mobileRelayBridge";
 import { PersistenceService } from "./services/persistence";
@@ -218,6 +219,11 @@ async function maybeRunPackagedSmoke(): Promise<boolean> {
       workspacePath: smokeConfig.workspacePath,
       yolo: true,
     });
+    await runDesktopSmokePromptLoadCheck({
+      url: listening.url,
+      workspacePath: smokeConfig.workspacePath,
+      clientVersion: app.getVersion(),
+    });
 
     await fs.mkdir(path.dirname(smokeConfig.outputPath), { recursive: true });
     await fs.writeFile(
@@ -225,6 +231,8 @@ async function maybeRunPackagedSmoke(): Promise<boolean> {
       `${JSON.stringify({
         ok: true,
         type: "server_listening",
+        promptLoaded: true,
+        turnCompleted: true,
         url: listening.url,
         platform: process.platform,
         arch: process.arch,

@@ -55,6 +55,8 @@ describe("desktop release workflow", () => {
     expect(workflow).toContain("Desktop smoke output was not written within");
     expect(workflow).toContain("Packaged ARM64 desktop smoke run exited before writing output");
     expect(workflow).toContain("Expected desktop smoke output type=server_listening");
+    expect(workflow).toContain("Expected desktop smoke run to confirm a packaged system prompt load");
+    expect(workflow).toContain("Expected desktop smoke run to exercise the packaged first-turn path");
   });
 
   test("publishes release assets only after the ARM64 smoke job passes", () => {
