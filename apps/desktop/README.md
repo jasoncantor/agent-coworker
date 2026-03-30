@@ -59,7 +59,7 @@ Each run:
 - packages the desktop app on macOS, Windows x64, and Windows ARM64
 - uploads the generated installers as workflow artifacts
 - uploads an unpacked Windows ARM64 build for native smoke verification
-- runs a native `windows-11-arm` smoke job that launches the packaged ARM64 app and verifies the sidecar reaches `server_listening`
+- runs a native `windows-11-arm` smoke job that launches the packaged ARM64 app, verifies the sidecar reaches `server_listening`, confirms the packaged build can load a system prompt, and exercises the first packaged turn path
 - publishes those installers to the matching GitHub Release when the workflow is running on a tag ref
 
 Windows release artifact names are arch-specific, and the ARM64 updater metadata is published as `latest-arm64.yml` instead of sharing the default Windows `latest.yml`. The packaged Windows ARM64 app sets that updater channel at runtime, so x64 installs continue to read `latest.yml` while ARM64 installs read `latest-arm64.yml`.

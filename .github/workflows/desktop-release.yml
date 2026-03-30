@@ -370,6 +370,14 @@ jobs:
             throw "Expected desktop smoke output type=server_listening but saw '$($result.type)'"
           }
 
+          if (-not $result.promptLoaded) {
+            throw "Expected desktop smoke run to confirm a packaged system prompt load"
+          }
+
+          if (-not $result.turnCompleted) {
+            throw "Expected desktop smoke run to exercise the packaged first-turn path"
+          }
+
   publish:
     name: Publish GitHub Release
     if: ${{ startsWith(github.ref, 'refs/tags/') }}

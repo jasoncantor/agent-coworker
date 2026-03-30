@@ -1,6 +1,5 @@
-import { createRequire } from "node:module";
-
-import type { connectProvider as connectModelProvider, getAiCoworkerPaths, ConnectProviderResult } from "../../connect";
+import type { connectProvider as connectModelProvider, ConnectProviderResult } from "../../connect";
+import { getAiCoworkerPaths } from "../../connect";
 import type { loadSystemPromptWithSkills } from "../../prompt";
 import type { runTurn } from "../../agent";
 import { HarnessContextStore } from "../../harness/contextStore";
@@ -37,11 +36,11 @@ import { DEFAULT_SESSION_TITLE } from "../sessionTitleService";
 import type { generateSessionTitle } from "../sessionTitleService";
 import { HistoryManager } from "./HistoryManager";
 import { InteractionManager, type PendingPromptReplayEvent } from "./InteractionManager";
-import type { McpManager } from "./McpManager";
+import { McpManager } from "./McpManager";
 import { PersistenceManager } from "./PersistenceManager";
-import type { ProviderAuthManager } from "./ProviderAuthManager";
-import type { ProviderCatalogManager } from "./ProviderCatalogManager";
-import type { SessionAdminManager } from "./SessionAdminManager";
+import { ProviderAuthManager } from "./ProviderAuthManager";
+import { ProviderCatalogManager } from "./ProviderCatalogManager";
+import { SessionAdminManager } from "./SessionAdminManager";
 import { SessionBackupController } from "./SessionBackupController";
 import type {
   HydratedSessionState,
@@ -59,27 +58,62 @@ import { SessionMetadataManager } from "./SessionMetadataManager";
 import { SessionRuntimeSupport } from "./SessionRuntimeSupport";
 import { SessionSnapshotProjector } from "./SessionSnapshotProjector";
 import { SessionSnapshotBuilder } from "./SessionSnapshotBuilder";
-import type { SkillManager } from "./SkillManager";
-import type { TurnExecutionManager } from "./TurnExecutionManager";
+import { SkillManager } from "./SkillManager";
+import { TurnExecutionManager } from "./TurnExecutionManager";
 import type { AgentReasoningEffort, AgentRole } from "../../shared/agents";
 import type { SessionSnapshot } from "../../shared/sessionSnapshot";
 
-const require = createRequire(import.meta.url);
+let connectModulePromise: Promise<typeof import("../../connect")> | null = null;
+let promptModulePromise: Promise<typeof import("../../prompt")> | null = null;
+let providerCatalogModulePromise: Promise<typeof import("../../providers/connectionCatalog")> | null = null;
+let providerStatusModulePromise: Promise<typeof import("../../providerStatus")> | null = null;
+let agentModulePromise: Promise<typeof import("../../agent")> | null = null;
+let sessionTitleServiceModulePromise: Promise<typeof import("../sessionTitleService")> | null = null;
+
+const loadConnectModule = async (): Promise<typeof import("../../connect")> => {
+  connectModulePromise ??= import("../../connect");
+  return await connectModulePromise;
+};
+
+const loadPromptModule = async (): Promise<typeof import("../../prompt")> => {
+  promptModulePromise ??= import("../../prompt");
+  return await promptModulePromise;
+};
+
+const loadProviderCatalogModule = async (): Promise<typeof import("../../providers/connectionCatalog")> => {
+  providerCatalogModulePromise ??= import("../../providers/connectionCatalog");
+  return await providerCatalogModulePromise;
+};
+
+const loadProviderStatusModule = async (): Promise<typeof import("../../providerStatus")> => {
+  providerStatusModulePromise ??= import("../../providerStatus");
+  return await providerStatusModulePromise;
+};
+
+const loadAgentModule = async (): Promise<typeof import("../../agent")> => {
+  agentModulePromise ??= import("../../agent");
+  return await agentModulePromise;
+};
+
+const loadSessionTitleServiceModule = async (): Promise<typeof import("../sessionTitleService")> => {
+  sessionTitleServiceModulePromise ??= import("../sessionTitleService");
+  return await sessionTitleServiceModulePromise;
+};
 
 const lazyConnectProvider: typeof connectModelProvider = async (...args) =>
-  await (require("../../connect") as typeof import("../../connect")).connectProvider(...args);
+  await (await loadConnectModule()).connectProvider(...args);
 const lazyGetAiCoworkerPaths: typeof getAiCoworkerPaths = (...args) =>
-  (require("../../connect") as typeof import("../../connect")).getAiCoworkerPaths(...args);
+  getAiCoworkerPaths(...args);
 const lazyLoadSystemPromptWithSkills: typeof loadSystemPromptWithSkills = async (...args) =>
-  await (require("../../prompt") as typeof import("../../prompt")).loadSystemPromptWithSkills(...args);
+  await (await loadPromptModule()).loadSystemPromptWithSkills(...args);
 const lazyGetProviderCatalog: typeof getProviderCatalog = async (...args) =>
-  await (require("../../providers/connectionCatalog") as typeof import("../../providers/connectionCatalog")).getProviderCatalog(...args);
+  await (await loadProviderCatalogModule()).getProviderCatalog(...args);
 const lazyGetProviderStatuses: typeof getProviderStatuses = async (...args) =>
-  await (require("../../providerStatus") as typeof import("../../providerStatus")).getProviderStatuses(...args);
+  await (await loadProviderStatusModule()).getProviderStatuses(...args);
 const lazyRunTurn: typeof runTurn = async (...args) =>
-  await (require("../../agent") as typeof import("../../agent")).runTurn(...args);
+  await (await loadAgentModule()).runTurn(...args);
 const lazyGenerateSessionTitle: typeof generateSessionTitle = async (...args) =>
-  await (require("../sessionTitleService") as typeof import("../sessionTitleService")).generateSessionTitle(...args);
+  await (await loadSessionTitleServiceModule()).generateSessionTitle(...args);
 
 function makeId(): string {
   return crypto.randomUUID();
@@ -519,7 +553,6 @@ export class AgentSession {
 
   private getSkillManager(): SkillManager {
     if (!this.skillManager) {
-      const { SkillManager } = require("./SkillManager") as typeof import("./SkillManager");
       this.skillManager = new SkillManager(this.context, {
         sendUserMessage: (text, clientMessageId, displayText) =>
           this.sendUserMessage(text, clientMessageId, displayText),
@@ -530,7 +563,6 @@ export class AgentSession {
 
   private getMcpManager(): McpManager {
     if (!this.mcpManager) {
-      const { McpManager } = require("./McpManager") as typeof import("./McpManager");
       this.mcpManager = new McpManager(this.context);
     }
     return this.mcpManager;
@@ -538,7 +570,6 @@ export class AgentSession {
 
   private getTurnExecutionManager(): TurnExecutionManager {
     if (!this.turnExecutionManager) {
-      const { TurnExecutionManager } = require("./TurnExecutionManager") as typeof import("./TurnExecutionManager");
       this.turnExecutionManager = new TurnExecutionManager(this.context, {
         interactionManager: this.interactionManager,
         historyManager: this.historyManager,
@@ -551,7 +582,6 @@ export class AgentSession {
 
   private getAdminManager(): SessionAdminManager {
     if (!this.adminManager) {
-      const { SessionAdminManager } = require("./SessionAdminManager") as typeof import("./SessionAdminManager");
       this.adminManager = new SessionAdminManager(this.context);
     }
     return this.adminManager;
@@ -559,7 +589,6 @@ export class AgentSession {
 
   private getProviderCatalogManager(): ProviderCatalogManager {
     if (!this.providerCatalogManager) {
-      const { ProviderCatalogManager } = require("./ProviderCatalogManager") as typeof import("./ProviderCatalogManager");
       this.providerCatalogManager = new ProviderCatalogManager({
         sessionId: this.id,
         getConfig: () => this.state.config,
@@ -577,7 +606,6 @@ export class AgentSession {
 
   private getProviderAuthManager(): ProviderAuthManager {
     if (!this.providerAuthManager) {
-      const { ProviderAuthManager } = require("./ProviderAuthManager") as typeof import("./ProviderAuthManager");
       this.providerAuthManager = new ProviderAuthManager({
         sessionId: this.id,
         getConfig: () => this.state.config,
