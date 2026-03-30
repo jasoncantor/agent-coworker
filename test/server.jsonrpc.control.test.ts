@@ -1,8 +1,7 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 
 import { describe, expect, test } from "bun:test";
-import fs from "node:fs/promises";
-import path from "node:path";
 
 import { MemoryStore } from "../src/memoryStore";
 import { startAgentServer } from "../src/server/startServer";
