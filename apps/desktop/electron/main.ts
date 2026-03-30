@@ -3,7 +3,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { app, BrowserWindow, Menu, Notification, shell } from "electron";
-import { WebSocket } from "ws";
 
 import { DESKTOP_EVENT_CHANNELS, type DesktopMenuCommand, type UpdaterState } from "../src/lib/desktopApi";
 import { registerDesktopIpc } from "./ipc";
@@ -14,6 +13,7 @@ import {
   registerSystemAppearanceListener,
   syncWindowAppearance,
 } from "./services/appearance";
+import { runDesktopSmokePromptLoadCheck } from "./services/desktopSmoke";
 import { installDesktopApplicationMenu } from "./services/menu";
 import { MobileRelayBridge } from "./services/mobileRelayBridge";
 import { PersistenceService } from "./services/persistence";
@@ -205,152 +205,6 @@ function resolveDesktopSmokeConfig(): { workspacePath: string; outputPath: strin
   return { workspacePath, outputPath };
 }
 
-type DesktopSmokeJsonRpcMessage = {
-  id?: string | number;
-  method?: string;
-  params?: unknown;
-  result?: unknown;
-  error?: {
-    code?: number;
-    message?: string;
-  };
-};
-
-async function connectDesktopSmokeJsonRpc(url: string) {
-  const endpoint = new URL(url);
-  endpoint.searchParams.set("protocol", "jsonrpc");
-
-  const ws = new WebSocket(endpoint.toString());
-  const queue: DesktopSmokeJsonRpcMessage[] = [];
-  const waiters = new Set<{
-    predicate: (message: DesktopSmokeJsonRpcMessage) => boolean;
-    resolve: (message: DesktopSmokeJsonRpcMessage) => void;
-    reject: (error: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
-  }>();
-
-  const resolveWaiters = (message: DesktopSmokeJsonRpcMessage) => {
-    for (const waiter of [...waiters]) {
-      if (!waiter.predicate(message)) {
-        continue;
-      }
-      clearTimeout(waiter.timer);
-      waiters.delete(waiter);
-      waiter.resolve(message);
-      return true;
-    }
-    return false;
-  };
-
-  ws.on("message", (data) => {
-    const raw = typeof data === "string" ? data : data.toString();
-    const message = JSON.parse(raw) as DesktopSmokeJsonRpcMessage;
-    if (!resolveWaiters(message)) {
-      queue.push(message);
-    }
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Timed out waiting for desktop smoke websocket open")), 10_000);
-    ws.once("open", () => {
-      clearTimeout(timer);
-      resolve();
-    });
-    ws.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error instanceof Error ? error : new Error(String(error)));
-    });
-  });
-
-  const waitFor = async (
-    predicate: (message: DesktopSmokeJsonRpcMessage) => boolean,
-    timeoutMs = 10_000,
-  ): Promise<DesktopSmokeJsonRpcMessage> => {
-    const existingIndex = queue.findIndex(predicate);
-    if (existingIndex >= 0) {
-      return queue.splice(existingIndex, 1)[0]!;
-    }
-
-    return await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        waiters.delete(waiter);
-        reject(new Error("Timed out waiting for desktop smoke JSON-RPC message"));
-      }, timeoutMs);
-      const waiter = { predicate, resolve, reject, timer };
-      waiters.add(waiter);
-    });
-  };
-
-  let nextId = 0;
-  const sendRequest = async (method: string, params?: unknown) => {
-    const id = ++nextId;
-    ws.send(JSON.stringify({ id, method, ...(params !== undefined ? { params } : {}) }));
-    const response = await waitFor((message) => message.id === id);
-    if (response.error) {
-      const code = typeof response.error.code === "number" ? ` (${response.error.code})` : "";
-      throw new Error(`${method} failed${code}: ${response.error.message ?? "unknown_error"}`);
-    }
-    return response;
-  };
-
-  const initializeResponse = await sendRequest("initialize", {
-    clientInfo: {
-      name: "desktop-smoke",
-      version: app.getVersion(),
-    },
-  });
-  if ((initializeResponse.result as { protocolVersion?: string } | undefined)?.protocolVersion !== "0.1") {
-    throw new Error("Desktop smoke initialize returned an unexpected protocol version");
-  }
-  ws.send(JSON.stringify({ method: "initialized" }));
-
-  return {
-    sendRequest,
-    waitFor,
-    close: () => ws.close(),
-  };
-}
-
-async function runDesktopSmokePromptLoadCheck(url: string, workspacePath: string): Promise<void> {
-  const rpc = await connectDesktopSmokeJsonRpc(url);
-  try {
-    const started = await rpc.sendRequest("thread/start", { cwd: workspacePath });
-    const threadId = (started.result as { thread?: { id?: string } } | undefined)?.thread?.id;
-    if (!threadId) {
-      throw new Error("Desktop smoke thread/start did not return a thread id");
-    }
-
-    await rpc.waitFor(
-      (message) => message.method === "thread/started" && (message.params as { thread?: { id?: string } } | undefined)?.thread?.id === threadId,
-    );
-
-    await rpc.sendRequest("cowork/session/config/set", {
-      threadId,
-      config: {
-        userName: `Desktop Smoke ${Date.now()}`,
-      },
-    });
-
-    const turnStartedResponse = await rpc.sendRequest("turn/start", {
-      threadId,
-      input: "Desktop smoke packaged turn check",
-    });
-    const turnId = (turnStartedResponse.result as { turn?: { id?: string } } | undefined)?.turn?.id;
-    if (!turnId) {
-      throw new Error("Desktop smoke turn/start did not return a turn id");
-    }
-
-    await rpc.waitFor(
-      (message) =>
-        message.method === "turn/completed"
-        && (message.params as { turn?: { id?: string } } | undefined)?.turn?.id === turnId,
-      30_000,
-    );
-  } finally {
-    rpc.close();
-  }
-}
-
 async function maybeRunPackagedSmoke(): Promise<boolean> {
   const smokeConfig = resolveDesktopSmokeConfig();
   if (!smokeConfig) {
@@ -365,7 +219,11 @@ async function maybeRunPackagedSmoke(): Promise<boolean> {
       workspacePath: smokeConfig.workspacePath,
       yolo: true,
     });
-    await runDesktopSmokePromptLoadCheck(listening.url, smokeConfig.workspacePath);
+    await runDesktopSmokePromptLoadCheck({
+      url: listening.url,
+      workspacePath: smokeConfig.workspacePath,
+      clientVersion: app.getVersion(),
+    });
 
     await fs.mkdir(path.dirname(smokeConfig.outputPath), { recursive: true });
     await fs.writeFile(

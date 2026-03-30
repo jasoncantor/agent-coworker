@@ -1,5 +1,4 @@
 import type { connectProvider as connectModelProvider, ConnectProviderResult } from "../../connect";
-import { getAiCoworkerPaths } from "../../connect";
 import type { loadSystemPromptWithSkills } from "../../prompt";
 import type { runTurn } from "../../agent";
 import { HarnessContextStore } from "../../harness/contextStore";
@@ -10,6 +9,7 @@ import type { getProviderStatuses } from "../../providerStatus";
 import { defaultSupportedModel, getSupportedModel } from "../../models/registry";
 import { getKnownResolvedModelMetadata, isDynamicModelProvider } from "../../models/metadata";
 import { MemoryStore, type MemoryScope } from "../../memoryStore";
+import { getAiCoworkerPaths } from "../../store/connections";
 import type {
   AgentConfig,
   HarnessContextPayload,
@@ -63,6 +63,9 @@ import { TurnExecutionManager } from "./TurnExecutionManager";
 import type { AgentReasoningEffort, AgentRole } from "../../shared/agents";
 import type { SessionSnapshot } from "../../shared/sessionSnapshot";
 
+// Packaged Bun sidecar builds need these dynamic imports because the old createRequire
+// path is unavailable there, and we want to avoid eagerly loading the heavier
+// connection/prompt/agent modules at startup.
 let connectModulePromise: Promise<typeof import("../../connect")> | null = null;
 let promptModulePromise: Promise<typeof import("../../prompt")> | null = null;
 let providerCatalogModulePromise: Promise<typeof import("../../providers/connectionCatalog")> | null = null;
@@ -102,8 +105,6 @@ const loadSessionTitleServiceModule = async (): Promise<typeof import("../sessio
 
 const lazyConnectProvider: typeof connectModelProvider = async (...args) =>
   await (await loadConnectModule()).connectProvider(...args);
-const lazyGetAiCoworkerPaths: typeof getAiCoworkerPaths = (...args) =>
-  getAiCoworkerPaths(...args);
 const lazyLoadSystemPromptWithSkills: typeof loadSystemPromptWithSkills = async (...args) =>
   await (await loadPromptModule()).loadSystemPromptWithSkills(...args);
 const lazyGetProviderCatalog: typeof getProviderCatalog = async (...args) =>
@@ -401,7 +402,7 @@ export class AgentSession {
 
     this.deps = {
       connectProviderImpl: opts.connectProviderImpl ?? lazyConnectProvider,
-      getAiCoworkerPathsImpl: opts.getAiCoworkerPathsImpl ?? lazyGetAiCoworkerPaths,
+      getAiCoworkerPathsImpl: opts.getAiCoworkerPathsImpl ?? getAiCoworkerPaths,
       loadSystemPromptWithSkillsImpl: opts.loadSystemPromptWithSkillsImpl ?? lazyLoadSystemPromptWithSkills,
       getProviderCatalogImpl: opts.getProviderCatalogImpl ?? lazyGetProviderCatalog,
       getProviderStatusesImpl: opts.getProviderStatusesImpl ?? lazyGetProviderStatuses,

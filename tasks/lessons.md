@@ -1,5 +1,6 @@
 # Lessons
 
+- When the user adds or corrects required commit trailers in this repo, carry that requirement forward into the active plan and the eventual commit message instead of treating it as a one-off chat note.
 - When cleaning up unrelated local diffs in this repo, do not revert adjacent user-wanted changes just because they were outside the current feature slice; confirm intent from the conversation first and preserve explicitly requested model/catalog phrasing updates.
 - When the user mentions merge errors in this repo, immediately scan for conflict markers and `UU` paths before continuing implementation; resolve the active merge state first so new edits do not stack on unresolved files.
 - When redesigning native mobile screens in this repo, do not treat a large-title header as disposable chrome; if the user expects a collapsable top header, preserve the native scroll-collapse behavior and improve the content composition underneath it instead.
