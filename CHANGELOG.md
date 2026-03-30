@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file.
 - **Session Bootstrap** — Fast-path for control session startup with lazy initialization of non-critical subsystems
 - Fixed prompt readiness tracking so empty skill catalogs don't trigger reloads on every turn
 - Fixed child session skill preservation across session boundaries
+- **Desktop Composer** — Fixed busy composer hint overlapping footer controls (#65, @jasoncantor)
+  - Dedicated status row for steering/streaming hints above the textarea
+  - Composer footer now wraps properly on narrow layouts
+  - Restored submit button color tokens (primary, warning, destructive)
 
 ## 0.1.37 - 2026-03-29
 
