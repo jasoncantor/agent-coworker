@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.40 - 2026-03-30
+
+### Fixed
+
+- **Packaged Desktop Startup** — Fixed broken first-turn startup in the packaged desktop app (#66, @jasoncantor)
+  - Replaced compile-unsafe packaged sidecar lazy loads in AgentSession with import-safe loaders
+  - Removed remaining sync local manager requires that broke the first packaged turn path
+  - Extended the desktop ARM64 release smoke to load the prompt and complete a real packaged first turn
+  - This regression was caused by the startup performance optimization in 0.1.39 — credit to @jasoncantor for catching and fixing it
+
 ## 0.1.39 - 2026-03-30
 
 ### Changed
