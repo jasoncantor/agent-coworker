@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.41 - 2026-03-30
+
+### Fixed
+
+- fixed mcp oauth
+
 ## 0.1.40 - 2026-03-30
 
 ### Fixed
