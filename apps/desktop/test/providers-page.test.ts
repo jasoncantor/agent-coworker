@@ -81,6 +81,14 @@ const defaultProviderActions = {
   restartWorkspaceServer: useAppStore.getState().restartWorkspaceServer,
 };
 
+function getButtonByText(container: HTMLElement, label: string): HTMLButtonElement {
+  const button = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === label);
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`missing button: ${label}`);
+  }
+  return button;
+}
+
 describe("desktop providers page", () => {
   beforeEach(() => {
     (useAppStore as any).getInitialState = useAppStore.getState;
@@ -806,7 +814,8 @@ describe("desktop providers page", () => {
     expect(html).toContain("Restart workspace server");
   });
 
-  test("aws-bedrock-proxy global URL controls remain available when a workspace exists but none is selected", () => {
+  test("aws-bedrock-proxy global URL controls remain available when a workspace exists but none is selected", async () => {
+    const harness = setupJsdom();
     useAppStore.setState({
       ...useAppStore.getState(),
       workspaces: [
@@ -827,20 +836,36 @@ describe("desktop providers page", () => {
       providerAuthMethodsByProvider: {
         "aws-bedrock-proxy": [{ id: "api_key", type: "api", label: "API key" }],
       } as any,
+      userConfig: {
+        awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+      },
     });
 
-    const html = renderToStaticMarkup(
-      createElement(ProvidersPage, {
-        initialExpandedSectionId: "provider:aws-bedrock-proxy",
-      }),
-    );
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      const root = createRoot(container);
 
-    expect(html).toContain("Global proxy URL");
-    expect(html).not.toContain("Add a workspace first to connect providers.");
-    expect(html).not.toContain("title=\"Add a workspace first.\"");
+      await act(async () => {
+        root.render(createElement(ProvidersPage, {
+          initialExpandedSectionId: "provider:aws-bedrock-proxy",
+        }));
+      });
+
+      expect(container.textContent).toContain("Global proxy URL");
+      expect(container.textContent).not.toContain("Add a workspace first to connect providers.");
+      expect(getButtonByText(container, "Clear").disabled).toBe(false);
+
+      await act(async () => {
+        root.unmount();
+      });
+    } finally {
+      harness.restore();
+    }
   });
 
-  test("aws-bedrock-proxy global URL controls remain disabled only when no workspace exists", () => {
+  test("aws-bedrock-proxy global URL controls remain disabled only when no workspace exists", async () => {
+    const harness = setupJsdom();
     useAppStore.setState({
       ...useAppStore.getState(),
       workspaces: [],
@@ -851,17 +876,32 @@ describe("desktop providers page", () => {
       providerAuthMethodsByProvider: {
         "aws-bedrock-proxy": [{ id: "api_key", type: "api", label: "API key" }],
       } as any,
+      userConfig: {
+        awsBedrockProxyBaseUrl: "https://proxy.example.com/v1",
+      },
     });
 
-    const html = renderToStaticMarkup(
-      createElement(ProvidersPage, {
-        initialExpandedSectionId: "provider:aws-bedrock-proxy",
-      }),
-    );
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      const root = createRoot(container);
 
-    expect(html).toContain("Global proxy URL");
-    expect(html).toContain("Add a workspace first to connect providers.");
-    expect(html).toContain("title=\"Add a workspace first.\"");
+      await act(async () => {
+        root.render(createElement(ProvidersPage, {
+          initialExpandedSectionId: "provider:aws-bedrock-proxy",
+        }));
+      });
+
+      expect(container.textContent).toContain("Global proxy URL");
+      expect(container.textContent).toContain("Add a workspace first to connect providers.");
+      expect(getButtonByText(container, "Clear").disabled).toBe(true);
+
+      await act(async () => {
+        root.unmount();
+      });
+    } finally {
+      harness.restore();
+    }
   });
 
   test("aws-bedrock-proxy fetch models shows unreachable proxy message", async () => {
@@ -1160,7 +1200,8 @@ describe("desktop providers page", () => {
     }
   });
 
-  test("aws-bedrock-proxy with empty models catalog is classified as a model provider, not a tool provider", () => {
+  test("aws-bedrock-proxy with empty models catalog is classified as a model provider, not a tool provider", async () => {
+    const harness = setupJsdom();
     useAppStore.setState({
       ...useAppStore.getState(),
       providerCatalog: [
@@ -1175,19 +1216,32 @@ describe("desktop providers page", () => {
       },
     });
 
-    const html = renderToStaticMarkup(
-      createElement(ProvidersPage, {}),
-    );
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      const root = createRoot(container);
 
-    // Model Providers tab must be active (no muted class on the tab button text)
-    expect(html).toMatch(/class="[^"]*text-foreground[^"]*">.*Model Providers<\/button>/);
-    // Tool Providers tab must be inactive
-    expect(html).toMatch(/class="[^"]*text-muted-foreground hover:text-foreground[^"]*">Tool Providers<\/button>/);
-    // The AWS Bedrock Proxy card must appear somewhere in the rendered output
-    expect(html).toContain("AWS Bedrock Proxy");
+      await act(async () => {
+        root.render(createElement(ProvidersPage));
+      });
+
+      const modelProvidersButton = getButtonByText(container, "Model Providers");
+      const toolProvidersButton = getButtonByText(container, "Tool Providers");
+
+      expect(modelProvidersButton.className).toContain("text-foreground");
+      expect(toolProvidersButton.className).toContain("text-muted-foreground");
+      expect(container.textContent).toContain("AWS Bedrock Proxy");
+
+      await act(async () => {
+        root.unmount();
+      });
+    } finally {
+      harness.restore();
+    }
   });
 
-  test("deep link to provider:aws-bedrock-proxy with empty model discovery resolves to model tab", () => {
+  test("deep link to provider:aws-bedrock-proxy with empty model discovery resolves to model tab", async () => {
+    const harness = setupJsdom();
     useAppStore.setState({
       ...useAppStore.getState(),
       providerCatalog: [
@@ -1202,18 +1256,30 @@ describe("desktop providers page", () => {
       },
     });
 
-    const html = renderToStaticMarkup(
-      createElement(ProvidersPage, {
-        initialExpandedSectionId: "provider:aws-bedrock-proxy",
-      }),
-    );
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      const root = createRoot(container);
 
-    // Model Providers tab must be the selected tab
-    expect(html).toMatch(/class="[^"]*text-foreground[^"]*">.*Model Providers<\/button>/);
-    // Tool Providers tab must NOT be the selected tab
-    expect(html).toMatch(/class="[^"]*text-muted-foreground hover:text-foreground[^"]*">Tool Providers<\/button>/);
-    // The card itself must render its controls
-    expect(html).toContain("AWS Bedrock Proxy");
-    expect(html).toContain("Global proxy URL");
+      await act(async () => {
+        root.render(createElement(ProvidersPage, {
+          initialExpandedSectionId: "provider:aws-bedrock-proxy",
+        }));
+      });
+
+      const modelProvidersButton = getButtonByText(container, "Model Providers");
+      const toolProvidersButton = getButtonByText(container, "Tool Providers");
+
+      expect(modelProvidersButton.className).toContain("text-foreground");
+      expect(toolProvidersButton.className).toContain("text-muted-foreground");
+      expect(container.textContent).toContain("AWS Bedrock Proxy");
+      expect(container.textContent).toContain("Global proxy URL");
+
+      await act(async () => {
+        root.unmount();
+      });
+    } finally {
+      harness.restore();
+    }
   });
 });
