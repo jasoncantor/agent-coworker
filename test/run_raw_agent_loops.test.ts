@@ -185,7 +185,7 @@ describe("raw loop child-agent control", () => {
     });
   });
 
-  test("passes parent messages into delegate runs when forkContext is requested", async () => {
+  test("passes parent messages into delegate runs when contextMode is full", async () => {
     const run = mock(async () => makeDelegateRunResult("SUBAGENT_OK"));
     const parentMessages: ModelMessage[] = [
       { role: "user", content: "Root context" },
@@ -207,7 +207,7 @@ describe("raw loop child-agent control", () => {
     await control.spawn({
       role: "worker",
       message: "Use the parent context",
-      forkContext: true,
+      contextMode: "full",
     });
 
     expect(run).toHaveBeenCalledWith(
@@ -218,7 +218,7 @@ describe("raw loop child-agent control", () => {
     );
   });
 
-  test("passes harness context into delegate runs when forkContext is requested", async () => {
+  test("builds a briefing seed and passes harness context when requested", async () => {
     const run = mock(async () => makeDelegateRunResult("SUBAGENT_OK"));
     const harnessContext = {
       runId: "run-ctx",
@@ -243,12 +243,49 @@ describe("raw loop child-agent control", () => {
     await control.spawn({
       role: "worker",
       message: "Use the parent context",
-      forkContext: true,
+      contextMode: "brief",
+      briefing: "Focus on the parent objective only.",
+      includeHarnessContext: true,
     });
 
     expect(run).toHaveBeenCalledWith(
       expect.objectContaining({
+        seedMessages: [
+          { role: "user", content: "Parent briefing:\nFocus on the parent objective only." },
+        ],
         harnessContext,
+      }),
+    );
+  });
+
+  test("seeds parent todos into raw-loop child runs when requested", async () => {
+    const seededTodos = [
+      { content: "Reuse the parent checklist", status: "in_progress", activeForm: "Reusing the parent checklist" },
+    ];
+    const run = mock(async () => makeDelegateRunResult("SUBAGENT_OK"));
+    const control = createRawLoopAgentControl(
+      {
+        config: makeConfig(),
+        log: () => {},
+        askUser: async () => "",
+        approveCommand: async () => true,
+        getParentTodos: () => seededTodos,
+      },
+      {
+        createDelegateRunner: () => ({ run }),
+      },
+    );
+
+    await control.spawn({
+      role: "worker",
+      message: "Use the parent todo state",
+      includeParentTodos: true,
+    });
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialTodos: seededTodos,
+        updateTodos: expect.any(Function),
       }),
     );
   });
