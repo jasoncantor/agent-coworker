@@ -11,11 +11,13 @@ import { MemoryStore } from "./memoryStore";
 import {
   AGENT_ROLE_DEFINITIONS,
   buildSpawnAgentRolePromptLines,
+  SPAWN_AGENT_COORDINATION_RULES,
   SPAWN_AGENT_MODEL_OVERRIDE_GUIDANCE,
   SPAWN_AGENT_ORCHESTRATION_RULES,
   SPAWN_AGENT_PROMPT_OVERVIEW,
   SPAWN_AGENT_WHEN_TO_USE,
 } from "./server/agents/roles";
+import type { AgentRoleDefinition } from "./server/agents/roles";
 import type { AgentRole } from "./shared/agents";
 import {
   getCodexWebSearchBackendFromProviderOptions,
@@ -282,6 +284,7 @@ export function buildSpawnAgentPromptBody(config: AgentConfig): string {
   const roleLines = buildSpawnAgentRolePromptLines().join("\n");
   const whenToUseLines = SPAWN_AGENT_WHEN_TO_USE.map((item) => `- **${item.label}**: ${item.description}`);
   const orchestrationRuleLines = SPAWN_AGENT_ORCHESTRATION_RULES.map((rule) => `- ${rule}`);
+  const coordinationRuleLines = SPAWN_AGENT_COORDINATION_RULES.map((rule) => `- ${rule}`);
   const modelOverrideGuidanceLines = SPAWN_AGENT_MODEL_OVERRIDE_GUIDANCE.map((rule) => `- ${rule}`);
 
   const crossProviderRefs = (config.allowedChildModelRefs ?? [])
@@ -316,6 +319,9 @@ export function buildSpawnAgentPromptBody(config: AgentConfig): string {
     "",
     "Orchestration rules:",
     ...orchestrationRuleLines,
+    "",
+    "Coordinator rules:",
+    ...coordinationRuleLines,
     "",
     "Model override guidance:",
     ...modelOverrideGuidanceLines,
@@ -409,6 +415,65 @@ function buildEnabledPluginSummary(skills: Array<{ name: string; description: st
     });
 }
 
+function buildAvailableSubagentTypesList(): string {
+  return Object.values(AGENT_ROLE_DEFINITIONS)
+    .map((role) => `- \`${role.id}\`: ${role.description}`)
+    .join("\n");
+}
+
+function selectRoleByCapabilities(
+  roles: AgentRoleDefinition[],
+  options: {
+    preferredIds: AgentRole[];
+    requireReadOnly?: boolean;
+    excludeId?: AgentRole;
+  },
+): AgentRoleDefinition | null {
+  const filtered = roles.filter((role) => {
+    if (options.requireReadOnly !== undefined && role.readOnly !== options.requireReadOnly) {
+      return false;
+    }
+    if (options.excludeId && role.id === options.excludeId) {
+      return false;
+    }
+    return true;
+  });
+  if (filtered.length === 0) return null;
+
+  for (const preferredId of options.preferredIds) {
+    const preferred = filtered.find((role) => role.id === preferredId);
+    if (preferred) return preferred;
+  }
+  return filtered[0] ?? null;
+}
+
+function resolveDefaultSubagentRoleIds(): {
+  discoveryRoleId: string;
+  implementationRoleId: string;
+  verificationRoleId: string;
+} {
+  const roles = Object.values(AGENT_ROLE_DEFINITIONS);
+  const discovery = selectRoleByCapabilities(roles, {
+    preferredIds: ["explorer", "research"],
+    requireReadOnly: true,
+  });
+  const implementation = selectRoleByCapabilities(roles, {
+    preferredIds: ["worker", "default"],
+    requireReadOnly: false,
+  });
+  const verification = selectRoleByCapabilities(roles, {
+    preferredIds: ["reviewer", "research", "explorer"],
+    requireReadOnly: true,
+    excludeId: discovery?.id,
+  }) ?? discovery;
+
+  return {
+    discoveryRoleId: discovery?.id ?? "explorer",
+    implementationRoleId: implementation?.id ?? "worker",
+    verificationRoleId: verification?.id ?? discovery?.id ?? "reviewer",
+  };
+}
+
 function buildSkillPolicySection(skillNames: string, skillExamples: string, config: AgentConfig): string {
   return [
     "## Skill Loading Policy (Strict)",
@@ -495,6 +560,7 @@ export async function loadSystemPromptWithSkills(config: AgentConfig): Promise<S
       .join("\n");
   }
 
+  const defaultSubagentRoles = resolveDefaultSubagentRoleIds();
   const vars: Record<string, string> = {
     workingDirectory: config.workingDirectory,
     currentDate: new Date().toLocaleDateString("en-US", {
@@ -509,6 +575,10 @@ export async function loadSystemPromptWithSkills(config: AgentConfig): Promise<S
     userProfileInstructions: config.userProfile?.instructions || "",
     userProfileWork: config.userProfile?.work || "",
     userProfileDetails: config.userProfile?.details || "",
+    availableSubagentTypes: buildAvailableSubagentTypesList(),
+    defaultDiscoveryRole: defaultSubagentRoles.discoveryRoleId,
+    defaultImplementationRole: defaultSubagentRoles.implementationRoleId,
+    defaultVerificationRole: defaultSubagentRoles.verificationRoleId,
     knowledgeCutoff: supportedModel.knowledgeCutoff,
     skillNames: skillNames || '"pdf", "doc", "slides", "spreadsheet"',
     skillExamples:
