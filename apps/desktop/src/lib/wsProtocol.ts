@@ -40,6 +40,16 @@ export function safeJsonParse(raw: unknown): unknown | null {
 }
 
 const nonEmptyStringSchema = z.string().trim().min(1);
+const agentWaitModeSchema = z.enum(["any", "all"]);
+const agentWaitResultEventSchema = z.object({
+  type: z.literal("agent_wait_result"),
+  sessionId: nonEmptyStringSchema,
+  agentIds: z.array(nonEmptyStringSchema),
+  timedOut: z.boolean(),
+  mode: agentWaitModeSchema.default("any"),
+  agents: z.array(persistentAgentSummarySchema),
+  readyAgentIds: z.array(nonEmptyStringSchema).default([]),
+}).strict();
 
 const desktopServerEventSchema = z.discriminatedUnion("type", [
   z.object({
@@ -63,13 +73,7 @@ const desktopServerEventSchema = z.discriminatedUnion("type", [
     sessionId: nonEmptyStringSchema,
     agent: persistentAgentSummarySchema,
   }).strict(),
-  z.object({
-    type: z.literal("agent_wait_result"),
-    sessionId: nonEmptyStringSchema,
-    agentIds: z.array(nonEmptyStringSchema),
-    timedOut: z.boolean(),
-    agents: z.array(persistentAgentSummarySchema),
-  }).strict(),
+  agentWaitResultEventSchema,
 ]);
 
 export function safeParseServerEvent(raw: unknown): CoreServerEvent | null {

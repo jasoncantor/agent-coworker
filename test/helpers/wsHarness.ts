@@ -229,6 +229,7 @@ export function withSession<T>(
                 threadId,
                 agentIds: message.agentIds,
                 ...(message.timeoutMs !== undefined ? { timeoutMs: message.timeoutMs } : {}),
+                ...(message.mode !== undefined ? { mode: message.mode } : {}),
               });
               return;
             case "agent_resume":

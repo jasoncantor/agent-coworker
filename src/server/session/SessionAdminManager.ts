@@ -4,6 +4,7 @@ import path from "node:path";
 import { decodeBase64Strict, MAX_ATTACHMENT_UPLOAD_BASE64_SIZE } from "../../shared/attachments";
 import type { SessionSnapshot } from "../../shared/sessionSnapshot";
 import type { AgentReasoningEffort, AgentRole, AgentSpawnContextOptions } from "../../shared/agents";
+import type { AgentWaitMode } from "../agents/types";
 import { sameWorkspacePath } from "../../utils/workspacePath";
 import {
   deletePersistedSessionSnapshot,
@@ -298,7 +299,7 @@ export class SessionAdminManager {
     }
   }
 
-  async waitForAgents(agentIds: string[], timeoutMs?: number) {
+  async waitForAgents(agentIds: string[], timeoutMs?: number, mode?: AgentWaitMode) {
     if ((this.context.state.sessionInfo.sessionKind ?? "root") !== "root") {
       this.context.emitError("validation_failed", "session", "Only root sessions can wait on child agents");
       return;
@@ -308,17 +309,21 @@ export class SessionAdminManager {
       return;
     }
     try {
+      const requestedAgentIds = [...new Set(agentIds)];
       const result = await this.context.deps.waitForAgentImpl({
         parentSessionId: this.context.id,
-        agentIds,
+        agentIds: requestedAgentIds,
         ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+        ...(mode !== undefined ? { mode } : {}),
       });
       this.context.emit({
         type: "agent_wait_result",
         sessionId: this.context.id,
-        agentIds,
+        agentIds: requestedAgentIds,
         timedOut: result.timedOut,
+        mode: result.mode,
         agents: result.agents,
+        readyAgentIds: result.readyAgentIds,
       });
     } catch (err) {
       this.context.emitError("internal_error", "session", `Failed to wait on child agents: ${String(err)}`);

@@ -74,7 +74,9 @@ describe("persistent agent tools", () => {
     const sendInput = mock(async () => {});
     const wait = mock(async () => ({
       timedOut: false,
+      mode: "all" as const,
       agents: [makeSummary({ executionState: "completed" })],
+      readyAgentIds: ["child-1"],
     }));
     const inspect = mock(async () => ({
       agent: makeSummary({ executionState: "completed", lastMessagePreview: "done" }),
@@ -113,9 +115,11 @@ describe("persistent agent tools", () => {
       agentId: "child-1",
       queued: true,
     });
-    await expect(waitTool.execute({ agentIds: ["child-1"], timeoutMs: 10 })).resolves.toEqual({
+    await expect(waitTool.execute({ agentIds: ["child-1"], timeoutMs: 10, mode: "all" })).resolves.toEqual({
       timedOut: false,
+      mode: "all",
       agents: [makeSummary({ executionState: "completed" })],
+      readyAgentIds: ["child-1"],
     });
     await expect(inspectTool.execute({ agentId: "child-1" })).resolves.toEqual(expect.objectContaining({
       agent: expect.objectContaining({ agentId: "child-1" }),
@@ -126,7 +130,7 @@ describe("persistent agent tools", () => {
     await expect(closeTool.execute({ agentId: "child-1" })).resolves.toEqual(closed);
 
     expect(sendInput).toHaveBeenCalledWith({ agentId: "child-1", message: "next step", interrupt: true });
-    expect(wait).toHaveBeenCalledWith({ agentIds: ["child-1"], timeoutMs: 10 });
+    expect(wait).toHaveBeenCalledWith({ agentIds: ["child-1"], timeoutMs: 10, mode: "all" });
     expect(inspect).toHaveBeenCalledWith({ agentId: "child-1" });
     expect(resume).toHaveBeenCalledWith({ agentId: "child-1" });
     expect(close).toHaveBeenCalledWith({ agentId: "child-1" });

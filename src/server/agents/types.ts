@@ -30,10 +30,21 @@ export type AgentSendInputOptions = {
   interrupt?: boolean;
 };
 
+export const AGENT_WAIT_MODE_VALUES = ["any", "all"] as const;
+export type AgentWaitMode = (typeof AGENT_WAIT_MODE_VALUES)[number];
+
+export type AgentWaitResult = {
+  timedOut: boolean;
+  mode: AgentWaitMode;
+  agents: PersistentAgentSummary[];
+  readyAgentIds: string[];
+};
+
 export type AgentWaitOptions = {
   parentSessionId: string;
   agentIds: string[];
   timeoutMs?: number;
+  mode?: AgentWaitMode;
 };
 
 export type AgentResumeOptions = {

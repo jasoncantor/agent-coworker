@@ -5,30 +5,41 @@ import {
   agentInspectResultSchema,
   agentReasoningEffortSchema,
   agentRoleSchema,
+  persistentAgentSummarySchema,
   resolveAgentSpawnContextOptions,
 } from "../../shared/agents";
+import { AGENT_WAIT_MODE_VALUES } from "../agents/types";
 import { legacyEventEnvelope, nonEmptyTrimmedStringSchema, optionalNonEmptyTrimmedStringSchema } from "./schema.shared";
 
 export const agentListEventSchema = z.object({
   type: z.literal("agent_list"),
-  agents: z.array(z.unknown()),
-}).passthrough();
+  sessionId: nonEmptyTrimmedStringSchema,
+  agents: z.array(persistentAgentSummarySchema),
+}).strict();
 
 export const agentSpawnedEventSchema = z.object({
   type: z.literal("agent_spawned"),
-  agent: z.unknown(),
-}).passthrough();
+  sessionId: nonEmptyTrimmedStringSchema,
+  agent: persistentAgentSummarySchema,
+}).strict();
 
 export const agentStatusEventSchema = z.object({
   type: z.literal("agent_status"),
-  agent: z.unknown(),
-}).passthrough();
+  sessionId: nonEmptyTrimmedStringSchema,
+  agent: persistentAgentSummarySchema,
+}).strict();
+
+export const agentWaitModeSchema = z.enum(AGENT_WAIT_MODE_VALUES);
 
 export const agentWaitResultEventSchema = z.object({
   type: z.literal("agent_wait_result"),
-  agentIds: z.array(z.string()),
-  agents: z.array(z.unknown()),
-}).passthrough();
+  sessionId: nonEmptyTrimmedStringSchema,
+  agentIds: z.array(nonEmptyTrimmedStringSchema).min(1),
+  timedOut: z.boolean(),
+  mode: agentWaitModeSchema,
+  agents: z.array(persistentAgentSummarySchema),
+  readyAgentIds: z.array(nonEmptyTrimmedStringSchema),
+}).strict();
 
 export const jsonRpcAgentNotificationSchemas = {
   "cowork/session/agentList": agentListEventSchema,
@@ -76,6 +87,7 @@ export const jsonRpcAgentRequestSchemas = {
     threadId: nonEmptyTrimmedStringSchema,
     agentIds: z.array(nonEmptyTrimmedStringSchema).min(1),
     timeoutMs: z.number().int().nonnegative().optional(),
+    mode: agentWaitModeSchema.optional(),
   }).strict(),
   "cowork/session/agent/inspect": z.object({
     threadId: nonEmptyTrimmedStringSchema,

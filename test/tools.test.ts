@@ -3734,6 +3734,7 @@ describe("createTools", () => {
     const sendInput = mock(async () => ({ queued: true }));
     const wait = mock(async () => ({
       timedOut: false,
+      mode: "all" as const,
       agents: [
         {
           agentId: "child",
@@ -3752,6 +3753,7 @@ describe("createTools", () => {
           lastMessagePreview: "done",
         },
       ],
+      readyAgentIds: ["child"],
     }));
     const inspect = mock(async () => ({
       agent: {
@@ -3839,8 +3841,9 @@ describe("createTools", () => {
       agentId: "child",
       queued: true,
     });
-    await expect(waitTool.execute({ agentIds: ["child"], timeoutMs: 10 })).resolves.toEqual({
+    await expect(waitTool.execute({ agentIds: ["child"], timeoutMs: 10, mode: "all" })).resolves.toEqual({
       timedOut: false,
+      mode: "all",
       agents: [
         expect.objectContaining({
           agentId: "child",
@@ -3849,6 +3852,7 @@ describe("createTools", () => {
           lastMessagePreview: "done",
         }),
       ],
+      readyAgentIds: ["child"],
     });
     await expect(inspectTool.execute({ agentId: "child" })).resolves.toEqual(expect.objectContaining({
       agent: expect.objectContaining({ agentId: "child" }),

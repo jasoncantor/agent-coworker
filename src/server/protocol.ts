@@ -39,6 +39,7 @@ import type {
   PersistentAgentSummary,
   SessionKind,
 } from "../shared/agents";
+import type { AgentWaitMode } from "./agents/types";
 export { ASK_SKIP_TOKEN } from "../shared/ask";
 
 export type MCPServerEventSource = "workspace" | "user" | "system" | "workspace_legacy" | "user_legacy" | "plugin";
@@ -46,7 +47,7 @@ export type MCPServerAuthMode = "none" | "missing" | "api_key" | "oauth" | "oaut
 
 // Keep the legacy websocket version string exported for docs/tests that still
 // reference the pre-JSON-RPC protocol metadata.
-export const WEBSOCKET_PROTOCOL_VERSION = "7.29";
+export const WEBSOCKET_PROTOCOL_VERSION = "7.30";
 
 export type SessionConfigPatch = {
   yolo?: boolean;
@@ -419,7 +420,9 @@ export type ServerEvent =
     sessionId: string;
     agentIds: string[];
     timedOut: boolean;
+    mode: AgentWaitMode;
     agents: PersistentAgentSummary[];
+    readyAgentIds: string[];
   }
   | { type: "session_deleted"; sessionId: string; targetSessionId: string }
   | {

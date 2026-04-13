@@ -677,7 +677,7 @@ export class TurnExecutionManager {
                     ...(interrupt !== undefined ? { interrupt } : {}),
                   });
                 },
-                wait: async ({ agentIds, timeoutMs }) => {
+                wait: async ({ agentIds, timeoutMs, mode }) => {
                   if (!this.context.deps.waitForAgentImpl) {
                     throw new Error("Child-agent waiting is unavailable.");
                   }
@@ -685,6 +685,7 @@ export class TurnExecutionManager {
                     parentSessionId: this.context.id,
                     agentIds,
                     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+                    ...(mode !== undefined ? { mode } : {}),
                   });
                 },
                 inspect: async ({ agentId }) => {

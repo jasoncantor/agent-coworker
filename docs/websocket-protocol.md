@@ -13,8 +13,8 @@ The Electron desktop app now uses the JSON-RPC mode exclusively for live workspa
 
 - URL: `ws://127.0.0.1:{port}/ws`
 - Session resume: `?resumeSessionId=<sessionId>`
-- Current protocol version: `7.29`
-- Legacy protocol version: `7.29`
+- Current protocol version: `7.30`
+- Legacy protocol version: `7.30`
 - Default WebSocket protocol mode: `legacy` unless overridden by `COWORK_WS_DEFAULT_PROTOCOL` or `--ws-protocol-default`
 
 ## Protocol negotiation
@@ -380,6 +380,11 @@ Changes in `7.28`:
 - New client message: `apply_session_defaults`.
 - Clients can now apply provider/model, editable session defaults, and MCP enablement in one composite write instead of replaying `set_model`, `set_config`, and `set_enable_mcp` separately.
 - The harness now serializes session-db bootstrap and write mutations across processes so desktop and CLI instances can safely share the same per-user SQLite database.
+
+Changes in `7.30`:
+
+- `agent_wait` now accepts optional `mode: "any" | "all"`. Omitted mode defaults to `"any"`.
+- `agent_wait_result` now includes the resolved `mode`, always returns the latest known child status snapshot for every requested id, and includes `readyAgentIds` for the terminal subset even on timeout.
 
 Changes in `7.29`:
 
@@ -2557,7 +2562,7 @@ Send a follow-up message to an existing child agent.
 Wait for one or more child agents to reach a terminal state.
 
 ```json
-{ "type": "agent_wait", "sessionId": "...", "agentIds": ["child-456"], "timeoutMs": 30000 }
+{ "type": "agent_wait", "sessionId": "...", "agentIds": ["child-456"], "timeoutMs": 30000, "mode": "all" }
 ```
 
 | Field | Type | Required | Description |
@@ -2566,6 +2571,7 @@ Wait for one or more child agents to reach a terminal state.
 | `sessionId` | `string` | Yes | Root session identifier |
 | `agentIds` | `string[]` | Yes | One or more child-agent session identifiers |
 | `timeoutMs` | `number` | No | Max time to wait before timing out |
+| `mode` | `"any" \| "all"` | No | Wait for the first terminal child (`"any"`, default) or for every requested child (`"all"`) |
 
 **Response:** `agent_wait_result`, plus any `agent_status` updates emitted during the wait window.
 **Error:** `validation_failed` when called from a child session.
@@ -4310,6 +4316,7 @@ Result event emitted after an `agent_wait` request resolves or times out.
   "sessionId": "root-123",
   "agentIds": ["child-456"],
   "timedOut": false,
+  "mode": "any",
   "agents": [
     {
       "agentId": "child-456",
@@ -4326,7 +4333,8 @@ Result event emitted after an `agent_wait` request resolves or times out.
       "executionState": "completed",
       "busy": false
     }
-  ]
+  ],
+  "readyAgentIds": ["child-456"]
 }
 ```
 
@@ -4335,8 +4343,10 @@ Result event emitted after an `agent_wait` request resolves or times out.
 | `type` | `"agent_wait_result"` | — |
 | `sessionId` | `string` | Root session identifier |
 | `agentIds` | `string[]` | Requested child-agent identifiers from the matching `agent_wait` call |
-| `timedOut` | `boolean` | `true` when the wait window elapsed before any requested child reached a terminal state |
-| `agents` | `PersistentAgentSummary[]` | Terminal child summaries observed before the wait resolved. Empty on timeout |
+| `timedOut` | `boolean` | `true` when the wait window elapsed before the requested wait condition was satisfied |
+| `mode` | `"any" \| "all"` | Wait mode used for this request |
+| `agents` | `PersistentAgentSummary[]` | Latest known child summaries for the requested ids, returned in request order even on timeout |
+| `readyAgentIds` | `string[]` | Requested child ids currently in a terminal state (`completed`, `errored`, or `closed`) |
 
 ---
 

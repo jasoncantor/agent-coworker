@@ -6322,7 +6322,7 @@ describe("AgentSession", () => {
         createAgentSessionImpl,
         listAgentSessionsImpl: async () => [],
         sendAgentInputImpl: async () => {},
-        waitForAgentImpl: async () => ({ sessionId: "sub-1", status: "completed" as const, busy: false }),
+        waitForAgentImpl: async () => ({ timedOut: false, mode: "any" as const, agents: [], readyAgentIds: [] }),
         closeAgentImpl: async () => ({
           sessionId: "sub-1",
           parentSessionId: "parent-1",

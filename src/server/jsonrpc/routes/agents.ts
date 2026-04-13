@@ -92,14 +92,17 @@ export function createAgentRouteHandlers(
     },
 
     "cowork/session/agent/wait": async (ws, message) => {
-      const params = toJsonRpcParams(message.params);
-      const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
-      const agentIds = Array.isArray(params.agentIds)
-        ? params.agentIds.filter((agentId): agentId is string => typeof agentId === "string" && agentId.trim().length > 0)
-        : [];
-      const timeoutMs = typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
-        ? Math.max(0, Math.floor(params.timeoutMs))
-        : undefined;
+      const parsed = jsonRpcAgentRequestSchemas["cowork/session/agent/wait"].safeParse(message.params);
+      if (!parsed.success) {
+        const detail = parsed.error.issues[0]?.message;
+        context.jsonrpc.sendError(ws, message.id, {
+          code: JSONRPC_ERROR_CODES.invalidParams,
+          message: detail ? `${message.method}: ${detail}` : `${message.method}: invalid params`,
+        });
+        return;
+      }
+
+      const { threadId, agentIds, timeoutMs, mode } = parsed.data;
       const binding = context.threads.getLive(threadId);
       const session = binding?.session;
       if (!session || agentIds.length === 0) {
@@ -110,7 +113,7 @@ export function createAgentRouteHandlers(
         return;
       }
 
-      await session.waitForAgents(agentIds, timeoutMs);
+      await session.waitForAgents(agentIds, timeoutMs, mode);
       context.jsonrpc.sendResult(ws, message.id, {});
     },
 

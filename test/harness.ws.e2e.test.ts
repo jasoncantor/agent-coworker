@@ -335,7 +335,8 @@ describe("WebSocket harness golden flows", () => {
           if (message.type === "agent_wait_result") {
             state.waited =
               !message.timedOut
-              && message.agents.some((agent: any) => agent.agentId === message.agentIds[0]);
+              && message.mode === "any"
+              && message.readyAgentIds.includes(message.agentIds[0]);
           }
 
           if (state.childId && state.listed && state.waited) {

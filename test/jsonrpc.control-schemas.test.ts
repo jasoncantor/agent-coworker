@@ -4,7 +4,11 @@ import {
   jsonRpcControlRequestSchemas,
   jsonRpcControlResultSchemas,
 } from "../src/shared/jsonrpcControlSchemas";
-import { jsonRpcAgentRequestSchemas, jsonRpcAgentResultSchemas } from "../src/server/jsonrpc/schema.agents";
+import {
+  jsonRpcAgentNotificationSchemas,
+  jsonRpcAgentRequestSchemas,
+  jsonRpcAgentResultSchemas,
+} from "../src/server/jsonrpc/schema.agents";
 
 describe("shared JSON-RPC control schemas", () => {
   test("parses provider auth and status envelopes", () => {
@@ -251,5 +255,56 @@ describe("shared JSON-RPC control schemas", () => {
 
     expect(request.agentId).toBe("agent-1");
     expect(result.event.parsedReport?.summary).toBe("Task done");
+  });
+
+  test("parses waitForAgent any/all request modes and wait-result notifications", () => {
+    const waitRequest = jsonRpcAgentRequestSchemas["cowork/session/agent/wait"].parse({
+      threadId: "thread-1",
+      agentIds: ["agent-1", "agent-2"],
+      timeoutMs: 250,
+      mode: "all",
+    });
+    const waitNotification = jsonRpcAgentNotificationSchemas["cowork/session/agentWaitResult"].parse({
+      type: "agent_wait_result",
+      sessionId: "thread-1",
+      agentIds: ["agent-1", "agent-2"],
+      timedOut: true,
+      mode: "all",
+      agents: [{
+        agentId: "agent-1",
+        parentSessionId: "thread-1",
+        role: "worker",
+        mode: "collaborative",
+        depth: 1,
+        effectiveModel: "gpt-5.4",
+        title: "child",
+        provider: "openai",
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+        lifecycleState: "active",
+        executionState: "completed",
+        busy: false,
+      }, {
+        agentId: "agent-2",
+        parentSessionId: "thread-1",
+        role: "worker",
+        mode: "collaborative",
+        depth: 1,
+        effectiveModel: "gpt-5.4",
+        title: "child 2",
+        provider: "openai",
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+        lifecycleState: "active",
+        executionState: "running",
+        busy: true,
+      }],
+      readyAgentIds: ["agent-1"],
+    });
+
+    expect(waitRequest.mode).toBe("all");
+    expect(waitNotification.mode).toBe("all");
+    expect(waitNotification.readyAgentIds).toEqual(["agent-1"]);
+    expect(waitNotification.agents).toHaveLength(2);
   });
 });

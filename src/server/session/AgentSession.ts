@@ -34,6 +34,7 @@ import {
 } from "../sessionStore";
 import { DEFAULT_SESSION_TITLE } from "../sessionTitleService";
 import type { generateSessionTitle } from "../sessionTitleService";
+import type { AgentWaitMode } from "../agents/types";
 import { HistoryManager } from "./HistoryManager";
 import { InteractionManager, type PendingPromptReplayEvent } from "./InteractionManager";
 import { McpManager } from "./McpManager";
@@ -1526,8 +1527,8 @@ export class AgentSession {
     await this.getAdminManager().sendAgentInput(agentId, message, interrupt);
   }
 
-  async waitForAgents(agentIds: string[], timeoutMs?: number) {
-    await this.getAdminManager().waitForAgents(agentIds, timeoutMs);
+  async waitForAgents(agentIds: string[], timeoutMs?: number, mode?: AgentWaitMode) {
+    await this.getAdminManager().waitForAgents(agentIds, timeoutMs, mode);
   }
 
   async inspectAgent(agentId: string): Promise<AgentInspectResult> {

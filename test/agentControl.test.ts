@@ -512,11 +512,14 @@ describe("AgentControl persisted child control", () => {
       parentSessionId: "root-1",
       agentIds: ["child-1"],
       timeoutMs: 10,
+      mode: "all",
     });
 
     expect(result.timedOut).toBe(false);
+    expect(result.mode).toBe("all");
     expect(result.agents).toHaveLength(1);
     expect(result.agents[0]?.executionState).toBe("completed");
+    expect(result.readyAgentIds).toEqual(["child-1"]);
     expect(emitParentAgentStatus).toHaveBeenCalled();
   });
 
@@ -552,8 +555,10 @@ describe("AgentControl persisted child control", () => {
     });
 
     expect(result.timedOut).toBe(false);
+    expect(result.mode).toBe("any");
     expect(result.agents).toHaveLength(1);
     expect(result.agents[0]?.executionState).toBe("completed");
+    expect(result.readyAgentIds).toEqual(["child-1"]);
   });
 
   test("inspect returns latest assistant text, parsed report, and usage for hydrated children", async () => {

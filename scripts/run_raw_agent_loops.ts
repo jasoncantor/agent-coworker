@@ -706,11 +706,11 @@ export function createRawLoopAgentControl(
       }
       startRun(state, message);
     },
-    wait: async ({ agentIds, timeoutMs }) => {
+    wait: async ({ agentIds, timeoutMs, mode }) => {
       for (const agentId of agentIds) {
         getState(agentId);
       }
-      return await statusBus.wait(agentIds, timeoutMs);
+      return await statusBus.wait(agentIds, timeoutMs, mode);
     },
     inspect: async ({ agentId }): Promise<AgentInspectResult> => {
       const state = getState(agentId);

@@ -15,6 +15,7 @@ import type {
   PersistentAgentSummary,
   AgentRole,
 } from "../../shared/agents";
+import type { AgentWaitMode, AgentWaitResult } from "../agents/types";
 import type {
   AgentConfig,
   ChildModelRoutingMode,
@@ -167,7 +168,8 @@ export type SessionDependencies = {
     parentSessionId: string;
     agentIds: string[];
     timeoutMs?: number;
-  }) => Promise<{ timedOut: boolean; agents: PersistentAgentSummary[] }>;
+    mode?: AgentWaitMode;
+  }) => Promise<AgentWaitResult>;
   inspectAgentImpl?: (opts: {
     parentSessionId: string;
     agentId: string;

@@ -16,6 +16,7 @@ import type {
   AgentCloseOptions,
   AgentControlDeps,
   AgentInspectOptions,
+  AgentWaitResult,
   AgentControlSummaryOverrides,
   AgentResumeOptions,
   AgentSendInputOptions,
@@ -238,12 +239,12 @@ export class AgentControl {
     this.trackRun(opts.parentSessionId, session, opts.message, "running");
   }
 
-  async wait(opts: AgentWaitOptions): Promise<{ timedOut: boolean; agents: PersistentAgentSummary[] }> {
+  async wait(opts: AgentWaitOptions): Promise<AgentWaitResult> {
     for (const agentId of opts.agentIds) {
       const session = this.ensureAgentSession(opts.parentSessionId, agentId);
       this.publish(opts.parentSessionId, session);
     }
-    return await this.statusBus.wait(opts.agentIds, opts.timeoutMs);
+    return await this.statusBus.wait(opts.agentIds, opts.timeoutMs, opts.mode);
   }
 
   async inspect(opts: AgentInspectOptions): Promise<AgentInspectResult> {

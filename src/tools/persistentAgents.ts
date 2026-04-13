@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { AGENT_WAIT_MODE_VALUES } from "../server/agents/types";
 import type { ToolContext } from "./context";
 import { defineTool } from "./defineTool";
 
@@ -37,13 +38,14 @@ export function createSendAgentInputTool(ctx: ToolContext) {
 
 export function createWaitForAgentTool(ctx: ToolContext) {
   return defineTool({
-    description: "Wait for one or more child agents to reach a terminal state. Returns empty status when timed out.",
+    description: "Wait for child agents to reach terminal states. mode='any' resolves on the first terminal child; mode='all' waits for every requested child. Returns the latest known status for all requested ids even when timed out.",
     inputSchema: z.object({
       agentIds: z.array(z.string().trim().min(1)).min(1),
-      timeoutMs: z.number().int().min(1).max(300_000).optional(),
+      timeoutMs: z.number().int().min(0).max(300_000).optional(),
+      mode: z.enum(AGENT_WAIT_MODE_VALUES).optional(),
     }),
-    execute: async ({ agentIds, timeoutMs }: { agentIds: string[]; timeoutMs?: number }) =>
-      await requireAgentControl(ctx).wait({ agentIds, timeoutMs }),
+    execute: async ({ agentIds, timeoutMs, mode }: { agentIds: string[]; timeoutMs?: number; mode?: "any" | "all" }) =>
+      await requireAgentControl(ctx).wait({ agentIds, timeoutMs, mode }),
   });
 }
 

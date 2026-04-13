@@ -174,6 +174,7 @@ describe("raw loop child-agent control", () => {
     );
     expect(waited).toEqual({
       timedOut: false,
+      mode: "any",
       agents: [
         expect.objectContaining({
           agentId: "child-1",
@@ -182,6 +183,7 @@ describe("raw loop child-agent control", () => {
           lastMessagePreview: "SUBAGENT_OK",
         }),
       ],
+      readyAgentIds: ["child-1"],
     });
   });
 

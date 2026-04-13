@@ -72,7 +72,7 @@ describe("spawnAgent tool", () => {
         spawn,
         list: async () => [],
         sendInput: async () => {},
-        wait: async () => ({ timedOut: false, agents: [] }),
+        wait: async () => ({ timedOut: false, mode: "any" as const, agents: [], readyAgentIds: [] }),
         inspect: async () => ({
           agent: summary,
           latestAssistantText: null,
@@ -117,7 +117,7 @@ describe("spawnAgent tool", () => {
         spawn,
         list: async () => [],
         sendInput: async () => {},
-        wait: async () => ({ timedOut: false, agents: [] }),
+        wait: async () => ({ timedOut: false, mode: "any" as const, agents: [], readyAgentIds: [] }),
         inspect: async () => ({
           agent: summary,
           latestAssistantText: null,
@@ -150,7 +150,7 @@ describe("spawnAgent tool", () => {
         spawn,
         list: async () => [],
         sendInput: async () => {},
-        wait: async () => ({ timedOut: false, agents: [] }),
+        wait: async () => ({ timedOut: false, mode: "any" as const, agents: [], readyAgentIds: [] }),
         inspect: async () => ({
           agent: summary,
           latestAssistantText: null,
@@ -186,7 +186,7 @@ describe("spawnAgent tool", () => {
         spawn,
         list: async () => [],
         sendInput: async () => {},
-        wait: async () => ({ timedOut: false, agents: [] }),
+        wait: async () => ({ timedOut: false, mode: "any" as const, agents: [], readyAgentIds: [] }),
         inspect: async () => ({
           agent: summary,
           latestAssistantText: null,
