@@ -68,6 +68,39 @@
   - `bun run typecheck`
   - `bun test` on 2026-04-01 (`2913 pass`, `3 skip`, `0 fail`)
 
+## Fix PR #72 Unresolved Shell Policy Comments
+
+- [x] Confirm the three unresolved `src/server/agents/commandPolicy.ts` review threads are still real against current `HEAD`.
+- [x] Fix the shared parser so `env` wrapper options with values still reach the real executable, PowerShell `-Command` payloads are parsed as command strings, and `tee` only counts as a write when it is the executable with output operands.
+- [x] Add focused regressions in `test/bash.readonly-policy.test.ts` and rerun the policy verification slice plus `bun run typecheck`.
+
+## Fix PR #72 Unresolved Shell Policy Comments Review
+
+- Confirmed the unresolved review comments with direct `getShellCommandPolicyViolation(...)` probes before editing: `env -C . touch bypass.txt` and `powershell -Command "mkdir bypass"` returned `null`, while `grep tee file.txt` incorrectly returned `shell redirection or tee write`.
+- `src/server/agents/commandPolicy.ts` now consumes value-taking `env` options before selecting the executable, recognizes PowerShell `-Command`/`-Command=...` payloads without treating them as short `-c...` inline strings, and checks `tee` through executable-aware token parsing instead of a word-boundary regex.
+- `test/bash.readonly-policy.test.ts` now covers the `env -C` / `--chdir` bypasses, PowerShell `-Command` write path, and read-only commands that merely mention `tee` as an argument or path segment.
+- A second follow-up pass hardened shell launcher parsing so bash option-value pairs like `--rcfile /etc/profile` and `-O extglob` no longer hide later `-c` payloads, and candidate collection now walks nested shell payloads via a bounded queue instead of stopping at a shallow fixed depth.
+- `test/bash.readonly-policy.test.ts` now also covers launcher options with values before `-c` plus a third-level nested `bash -c` payload chain.
+- A third follow-up pass treats standalone brace groups as shell separators, preserves newline-delimited raw commands for tokenizer-based policy checks, and ignores escaped line continuations so multiline command sequences cannot hide later filesystem mutators.
+- The focused regression slice now also covers newline-delimited writes and brace-grouped mutators under `no_project_write`.
+- A fourth follow-up pass replaced the old stripped-input redirection regex with a quote-aware raw redirection scanner so quoted redirect targets like `> "out.txt"` no longer bypass write detection while quoted `>` literals remain allowed.
+- The focused regression slice now also covers quoted redirect targets for both double-quoted and single-quoted filenames.
+- A fifth follow-up pass treats standalone shell reserved words and `!` as segment boundaries so compound forms like `if touch ...; then ...; fi` and `! touch ...` still expose the mutating executable to shared policy checks.
+- The focused regression slice now also covers `if` / `for` / `!` shell forms that previously hid later mutating commands behind control-flow tokens.
+- A sixth follow-up pass switches git mutation detection to a conservative read-only allowlist, skips package-manager global flags before install verbs, and removes the fixed candidate-count cap so long nested shell chains cannot push a later mutating payload out of the scan window.
+- The focused regression slice now also covers mutating `git init` / `git clone` / `git stash`, package-manager option-prefixed installs, and a long `bash -c` chain whose final payload writes to disk.
+- A seventh follow-up pass accepts GNU `env` short options with attached values like `-C.` and extends the shared install classifier to catch `pip` and `python -m pip` invocations even when global flags like `--quiet` appear before `install`.
+- The focused regression slice now also covers `env -C.` plus option-prefixed `pip` install forms.
+- An eighth follow-up pass normalizes package-manager `-C` option matching to lowercase, treats `<>` redirections as writes, and verifies nested escaped-backtick substitutions using an exact constructed shell string so recursive command-substitution scans cannot miss the inner mutator.
+- The focused regression slice now also covers `pnpm -C` / `bun -C`, `true <> file`, and the exact escaped-backtick nesting form reported in review.
+- A ninth follow-up pass makes shell-specific option-with-value parsing run before generic `-c` command extraction so Fish init-command forms like `fish -C "echo ok" -c "touch secret.txt"` no longer mask the real executed payload.
+- The focused regression slice now also covers the Fish `-C ... -c ...` launcher form.
+- A tenth follow-up pass teaches recursive candidate extraction to inspect `env -S` split-string payloads and `eval` argument strings as executable shell content, closing the last practical embedded-command executors still surfaced in review.
+- The focused regression slice now also covers `env -S "sh -c ..."` and `eval "..."` write forms.
+- Focused verification passed with:
+  - `~/.bun/bin/bun test test/bash.readonly-policy.test.ts test/tools.test.ts`
+  - `~/.bun/bin/bun run typecheck`
+
 ## Fix Plugin Review Regressions
 
 - [ ] Fix duplicate-scope plugin rendering in the desktop catalog so same-ID workspace/user plugins no longer collide in React state or list identity.
@@ -75,6 +108,23 @@
 - [ ] Make plugin detail reads fail fast with a terminal validation error for missing or ambiguous plugin selections instead of hanging the JSON-RPC request.
 - [ ] Add/update focused backend and desktop regression tests for the above fixes.
 - [ ] Re-run focused Bun test slices, `bun run typecheck`, and a manual desktop walkthrough before closing the task.
+
+## Enforce Read-only Shell Policy
+
+- [x] Add role-level `shellPolicy` metadata and default effective policy helpers for child-agent roles.
+- [x] Thread the effective shell policy through root-session and delegated `ToolContext` construction.
+- [x] Enforce a conservative `no_project_write` bash guard for obvious mutating commands before approval/execution.
+- [x] Add focused regressions in `test/tools.test.ts` and `test/bash.readonly-policy.test.ts`, then rerun targeted Bun tests plus `bun run typecheck`.
+
+## Enforce Read-only Shell Policy Review
+
+- Added `src/server/agents/commandPolicy.ts` to centralize the shell policy contract and a conservative regex-based classifier for obvious mutations such as filesystem writes, shell redirection/`tee`, in-place editors, git write commands, and package install commands.
+- `src/server/agents/roles.ts` now declares `shellPolicy` per role, with `explorer` and `reviewer` locked to `no_project_write`, `research` also marked `no_project_write` despite not receiving bash, and write-capable roles remaining `full`.
+- The effective shell policy now flows through `RunTurnParams`, live session tool context, delegated child-agent tool context, and auxiliary tool-listing contexts so bash sees a real enforcement signal instead of relying only on role prompts.
+- `src/tools/bash.ts` now checks the shell policy before `approveCommand(...)` and rejects blocked commands with a clear error message, keeping read-only bash useful for inspection, test, build, and typecheck commands.
+- Added focused regressions in `test/bash.readonly-policy.test.ts` plus `test/tools.test.ts`, and verification passed with:
+  - `~/.bun/bin/bun test test/bash.readonly-policy.test.ts test/tools.test.ts`
+  - `~/.bun/bin/bun run typecheck`
 
 ## Add Plugin Install Flow
 
