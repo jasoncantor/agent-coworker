@@ -280,7 +280,36 @@ function sortAgentSummaries(agents: ThreadAgentSummary[]): ThreadAgentSummary[] 
   });
 }
 
-function upsertAgentSummary(agents: ThreadAgentSummary[], nextAgent: ThreadAgentSummary): ThreadAgentSummary[] {
+function isTerminalAgentSummary(agent: Pick<ThreadAgentSummary, "executionState" | "lifecycleState">): boolean {
+  return agent.lifecycleState === "closed"
+    || agent.executionState === "completed"
+    || agent.executionState === "errored"
+    || agent.executionState === "closed";
+}
+
+function shouldReplaceAgentSummary(existing: ThreadAgentSummary, nextAgent: ThreadAgentSummary): boolean {
+  const existingTs = Date.parse(existing.updatedAt);
+  const nextTs = Date.parse(nextAgent.updatedAt);
+  if (Number.isFinite(existingTs) && Number.isFinite(nextTs) && existingTs !== nextTs) {
+    return nextTs > existingTs;
+  }
+
+  const existingTerminal = isTerminalAgentSummary(existing);
+  const nextTerminal = isTerminalAgentSummary(nextAgent);
+  if (existingTerminal !== nextTerminal) {
+    return nextTerminal;
+  }
+  if (existing.lifecycleState === "closed" && nextAgent.lifecycleState !== "closed") {
+    return false;
+  }
+  return true;
+}
+
+export function upsertAgentSummary(agents: ThreadAgentSummary[], nextAgent: ThreadAgentSummary): ThreadAgentSummary[] {
+  const existing = agents.find((agent) => agent.agentId === nextAgent.agentId);
+  if (existing && !shouldReplaceAgentSummary(existing, nextAgent)) {
+    return agents;
+  }
   const nextAgents = agents.filter((agent) => agent.agentId !== nextAgent.agentId);
   nextAgents.push(nextAgent);
   return sortAgentSummaries(nextAgents);

@@ -20,10 +20,39 @@ function sortAgentSummaries(agents: PersistentAgentSummary[]): PersistentAgentSu
   });
 }
 
+function isTerminalAgentSummary(agent: Pick<PersistentAgentSummary, "executionState" | "lifecycleState">): boolean {
+  return agent.lifecycleState === "closed"
+    || agent.executionState === "completed"
+    || agent.executionState === "errored"
+    || agent.executionState === "closed";
+}
+
+function shouldReplaceAgentSummary(existing: PersistentAgentSummary, nextAgent: PersistentAgentSummary): boolean {
+  const existingTs = Date.parse(existing.updatedAt);
+  const nextTs = Date.parse(nextAgent.updatedAt);
+  if (Number.isFinite(existingTs) && Number.isFinite(nextTs) && existingTs !== nextTs) {
+    return nextTs > existingTs;
+  }
+
+  const existingTerminal = isTerminalAgentSummary(existing);
+  const nextTerminal = isTerminalAgentSummary(nextAgent);
+  if (existingTerminal !== nextTerminal) {
+    return nextTerminal;
+  }
+  if (existing.lifecycleState === "closed" && nextAgent.lifecycleState !== "closed") {
+    return false;
+  }
+  return true;
+}
+
 function upsertAgentSummary(
   agents: PersistentAgentSummary[],
   nextAgent: PersistentAgentSummary,
 ): PersistentAgentSummary[] {
+  const existing = agents.find((agent) => agent.agentId === nextAgent.agentId);
+  if (existing && !shouldReplaceAgentSummary(existing, nextAgent)) {
+    return agents;
+  }
   const nextAgents = agents.filter((agent) => agent.agentId !== nextAgent.agentId);
   nextAgents.push(nextAgent);
   return sortAgentSummaries(nextAgents);

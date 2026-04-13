@@ -23,6 +23,7 @@ import {
   shouldSkipAssistantMessageAfterStreamReplay,
   shouldSuppressRawDebugLogLine,
   unhandledEventSystemLine,
+  upsertAgentSummary,
   type ThreadModelStreamRuntime,
 } from "../store.feedMapping";
 import type { StoreGet, StoreSet } from "../store.helpers";
@@ -113,12 +114,6 @@ function sortAgentSummaries(agents: ThreadAgentSummary[]): ThreadAgentSummary[] 
     if (Number.isFinite(updatedDiff) && updatedDiff !== 0) return updatedDiff;
     return left.title.localeCompare(right.title);
   });
-}
-
-function upsertAgentSummary(agents: ThreadAgentSummary[], nextAgent: ThreadAgentSummary): ThreadAgentSummary[] {
-  const nextAgents = agents.filter((agent) => agent.agentId !== nextAgent.agentId);
-  nextAgents.push(nextAgent);
-  return sortAgentSummaries(nextAgents);
 }
 
 function occurrenceItemId(baseId: string, occurrence: number): string {

@@ -277,4 +277,89 @@ describe("SessionSnapshotProjector", () => {
     const reasoning = snapshot.feed.filter((item) => item.kind === "reasoning");
     expect(reasoning.map((item) => item.text)).toEqual(["First check.", "Second check."]);
   });
+
+  test("ignores older agent summaries from agent_wait_result when a newer status already exists", () => {
+    const projector = new SessionSnapshotProjector(makeSnapshot());
+
+    projector.applyEvent(
+      {
+        type: "agent_status",
+        sessionId: "session-1",
+        agent: {
+          agentId: "agent-1",
+          parentSessionId: "session-1",
+          role: "worker",
+          mode: "collaborative",
+          depth: 1,
+          title: "Agent one",
+          provider: "openai",
+          effectiveModel: "gpt-5.4",
+          createdAt: "2026-03-20T00:00:00.000Z",
+          updatedAt: "2026-03-20T00:00:03.000Z",
+          lifecycleState: "active",
+          executionState: "completed",
+          busy: false,
+          lastMessagePreview: "done",
+        },
+      },
+      "2026-03-20T00:00:03.000Z",
+    );
+
+    projector.applyEvent(
+      {
+        type: "agent_wait_result",
+        sessionId: "session-1",
+        agentIds: ["agent-1", "agent-2"],
+        timedOut: false,
+        mode: "any",
+        agents: [
+          {
+            agentId: "agent-1",
+            parentSessionId: "session-1",
+            role: "worker",
+            mode: "collaborative",
+            depth: 1,
+            title: "Agent one",
+            provider: "openai",
+            effectiveModel: "gpt-5.4",
+            createdAt: "2026-03-20T00:00:00.000Z",
+            updatedAt: "2026-03-20T00:00:02.000Z",
+            lifecycleState: "active",
+            executionState: "running",
+            busy: true,
+          },
+          {
+            agentId: "agent-2",
+            parentSessionId: "session-1",
+            role: "worker",
+            mode: "collaborative",
+            depth: 1,
+            title: "Agent two",
+            provider: "openai",
+            effectiveModel: "gpt-5.4",
+            createdAt: "2026-03-20T00:00:00.000Z",
+            updatedAt: "2026-03-20T00:00:04.000Z",
+            lifecycleState: "active",
+            executionState: "completed",
+            busy: false,
+            lastMessagePreview: "done",
+          },
+        ],
+        readyAgentIds: ["agent-2"],
+      },
+      "2026-03-20T00:00:04.000Z",
+    );
+
+    const snapshot = projector.getSnapshot();
+    expect(snapshot.agents).toHaveLength(2);
+    expect(snapshot.agents.find((agent) => agent.agentId === "agent-1")).toMatchObject({
+      executionState: "completed",
+      updatedAt: "2026-03-20T00:00:03.000Z",
+      busy: false,
+    });
+    expect(snapshot.agents.find((agent) => agent.agentId === "agent-2")).toMatchObject({
+      executionState: "completed",
+      updatedAt: "2026-03-20T00:00:04.000Z",
+    });
+  });
 });

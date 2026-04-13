@@ -692,6 +692,97 @@ describe("desktop transcript feed mapping", () => {
     expect(reasoning[0]?.text).toBe("raw reasoning");
   });
 
+  test("keeps newer agent_status data when a later agent_wait_result carries an older sibling snapshot", () => {
+    const transcript: TranscriptEvent[] = [
+      {
+        ts: "2024-01-01T00:00:01.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "agent_status",
+          sessionId: "thread-session",
+          agent: {
+            agentId: "agent-1",
+            parentSessionId: "thread-session",
+            role: "research",
+            mode: "collaborative",
+            depth: 1,
+            effectiveModel: "gpt-5.4",
+            title: "Review notes",
+            provider: "codex-cli",
+            createdAt: "2024-01-01T00:00:00.000Z",
+            updatedAt: "2024-01-01T00:00:03.000Z",
+            lifecycleState: "active",
+            executionState: "completed",
+            busy: false,
+            lastMessagePreview: "Done.",
+          },
+        },
+      },
+      {
+        ts: "2024-01-01T00:00:02.000Z",
+        threadId: "thread-1",
+        direction: "server",
+        payload: {
+          type: "agent_wait_result",
+          sessionId: "thread-session",
+          agentIds: ["agent-1", "agent-2"],
+          timedOut: false,
+          mode: "any",
+          agents: [
+            {
+              agentId: "agent-1",
+              parentSessionId: "thread-session",
+              role: "research",
+              mode: "collaborative",
+              depth: 1,
+              effectiveModel: "gpt-5.4",
+              title: "Review notes",
+              provider: "codex-cli",
+              createdAt: "2024-01-01T00:00:00.000Z",
+              updatedAt: "2024-01-01T00:00:02.000Z",
+              lifecycleState: "active",
+              executionState: "running",
+              busy: true,
+            },
+            {
+              agentId: "agent-2",
+              parentSessionId: "thread-session",
+              role: "worker",
+              mode: "collaborative",
+              depth: 1,
+              effectiveModel: "gpt-5.4",
+              title: "Worker",
+              provider: "codex-cli",
+              createdAt: "2024-01-01T00:00:00.000Z",
+              updatedAt: "2024-01-01T00:00:04.000Z",
+              lifecycleState: "active",
+              executionState: "completed",
+              busy: false,
+              lastMessagePreview: "finished",
+            },
+          ],
+          readyAgentIds: ["agent-2"],
+        },
+      },
+    ];
+
+    const agents = extractAgentStateFromTranscript(transcript);
+
+    expect(agents).toHaveLength(2);
+    expect(agents.find((agent) => agent.agentId === "agent-1")).toMatchObject({
+      executionState: "completed",
+      updatedAt: "2024-01-01T00:00:03.000Z",
+      busy: false,
+      lastMessagePreview: "Done.",
+    });
+    expect(agents.find((agent) => agent.agentId === "agent-2")).toMatchObject({
+      executionState: "completed",
+      updatedAt: "2024-01-01T00:00:04.000Z",
+      lastMessagePreview: "finished",
+    });
+  });
+
   test("keeps separate assistant text streams within one turn", () => {
     const transcript: TranscriptEvent[] = [
       {
