@@ -44,6 +44,7 @@
 - For child-agent persistence, do not snapshot `executionState` from seeded `sessionInfo` alone; derive it from live runtime state (`running`, turn outcome, closed status) or restarted agents can come back as stale `pending_init`.
 - When rehydrating persisted child sessions, carry terminal failure state back into runtime fields like `currentTurnOutcome`; otherwise `agent_wait` and other republish paths can silently flip failed children to `completed` after restart.
 - Before doing multi-commit feature work in this repo, confirm the active branch is based on current `main`; if it is not, rebase or restart from current `main` before building the stack.
+- When the user says `main` has moved while a feature branch is in flight, stop and rebase onto the updated `origin/main` before doing more branch work or reporting the branch ready.
 - For settings that can be explicitly set, explicitly disabled, or inherited, never overload `undefined` for both “no-op” and “inherit”; add a dedicated clear/inherit path end-to-end so reset-to-default actions delete persisted overrides instead of pinning the current built-in value.
 - When the user narrows a protocol or compatibility requirement, apply that exact direction to the fix; do not keep broader backward-compat or provider-scope assumptions alive in the implementation.
 - When a user turns a review finding into an explicit product direction, implement the requested contract rather than the literal review recommendation; update the affected tests and tool descriptions to match that new source of truth.
