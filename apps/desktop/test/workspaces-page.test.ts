@@ -319,6 +319,37 @@ describe("desktop workspaces page", () => {
     expect(html).toContain("gemini-3-flash-preview");
   });
 
+  test("surfaces legacy Gemini-local search overrides in the shared Search card", () => {
+    const html = renderToStaticMarkup(
+      createElement(SearchSettingsCard, {
+        workspace: {
+          id: "ws-legacy",
+          providerOptions: {
+            "codex-cli": {
+              webSearchBackend: "native",
+              webSearchFallbackBackend: "parallel",
+            },
+            google: {
+              nativeWebSearch: false,
+            },
+          },
+        },
+        providerStatusByName: {
+          google: {
+            savedApiKeyMasks: {
+              parallel_api_key: "para...1234",
+            },
+          },
+        },
+        updateWorkspaceDefaults: async () => {},
+      }),
+    );
+
+    expect(html).toContain("Google models still use local Parallel search from an older workspace override.");
+    expect(html).toContain("Choose Native above to restore provider-native search for both providers.");
+    expect(html).toContain("These settings still apply to ChatGPT Subscription while Google models remain on the legacy local-search override above.");
+  });
+
   test("renders workspace controls for user profile context", () => {
     const html = renderToStaticMarkup(
       createElement(WorkspaceUserProfileCard, {

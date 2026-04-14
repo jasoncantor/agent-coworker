@@ -254,7 +254,7 @@ describe("display citation markers", () => {
     ]));
   });
 
-  test("keeps tool-derived citations on only the latest assistant message in a contiguous assistant stretch", () => {
+  test("preserves url lookups for earlier cited assistant blocks in a contiguous stretch", () => {
     const feed = [
       { id: "user-1", kind: "message", role: "user" as const },
       {
@@ -274,13 +274,17 @@ describe("display citation markers", () => {
           filePath: "/tmp/search-results.txt",
         },
       },
-      { id: "assistant-1", kind: "message", role: "assistant" as const },
+      { id: "assistant-1", kind: "message", role: "assistant" as const, text: "First block[1†L1-L3]" },
       { id: "reasoning-1", kind: "reasoning" as const },
-      { id: "assistant-2", kind: "message", role: "assistant" as const },
-      { id: "assistant-3", kind: "message", role: "assistant" as const },
+      { id: "assistant-2", kind: "message", role: "assistant" as const, text: "Bridge block without citations" },
+      { id: "assistant-3", kind: "message", role: "assistant" as const, text: "Second block[2†L1-L3]" },
     ];
 
     expect(buildCitationUrlsByMessageId(feed)).toEqual(new Map([
+      ["assistant-1", new Map([
+        [1, "https://example.com/one"],
+        [2, "https://example.com/two"],
+      ])],
       ["assistant-3", new Map([
         [1, "https://example.com/one"],
         [2, "https://example.com/two"],
@@ -293,6 +297,7 @@ describe("display citation markers", () => {
       ]],
     ]));
     expect(buildCitationOverflowFilePathsByMessageId(feed)).toEqual(new Map([
+      ["assistant-1", "/tmp/search-results.txt"],
       ["assistant-3", "/tmp/search-results.txt"],
     ]));
   });

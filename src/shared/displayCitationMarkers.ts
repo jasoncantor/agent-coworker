@@ -16,6 +16,7 @@ type CitationFeedItem = {
   kind?: string;
   type?: string;
   role?: string;
+  text?: string;
   name?: string;
   result?: unknown;
   annotations?: unknown;
@@ -23,6 +24,10 @@ type CitationFeedItem = {
 
 function breaksContiguousAssistantStretch(itemKind: string): boolean {
   return itemKind !== "message" && itemKind !== "reasoning";
+}
+
+function assistantMessageNeedsToolCitationContext(item: CitationFeedItem): boolean {
+  return typeof item.text !== "string" || item.text.includes("†");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1140,35 +1145,32 @@ export function extractCitationOverflowFilePathFromWebSearchResult(result: unkno
 export function buildCitationOverflowFilePathsByMessageId<T extends CitationFeedItem>(feed: readonly T[]): Map<string, string> {
   const overflowFilePathByMessageId = new Map<string, string>();
   let currentOverflowFilePath: string | null = null;
-  let latestAssistantId: string | null = null;
 
   for (const item of feed) {
     const itemKind = item.kind ?? item.type ?? "";
 
     if (itemKind === "message" && item.role === "user") {
       currentOverflowFilePath = null;
-      latestAssistantId = null;
       continue;
     }
 
     if (itemKind === "tool" && item.name === "webSearch") {
       currentOverflowFilePath = extractCitationOverflowFilePathFromWebSearchResult(item.result);
-      latestAssistantId = null;
       continue;
     }
 
     if (breaksContiguousAssistantStretch(itemKind)) {
       currentOverflowFilePath = null;
-      latestAssistantId = null;
       continue;
     }
 
-    if (itemKind === "message" && item.role === "assistant" && currentOverflowFilePath) {
-      if (latestAssistantId) {
-        overflowFilePathByMessageId.delete(latestAssistantId);
-      }
+    if (
+      itemKind === "message"
+      && item.role === "assistant"
+      && currentOverflowFilePath
+      && assistantMessageNeedsToolCitationContext(item)
+    ) {
       overflowFilePathByMessageId.set(item.id, currentOverflowFilePath);
-      latestAssistantId = item.id;
     }
   }
 
@@ -1178,61 +1180,47 @@ export function buildCitationOverflowFilePathsByMessageId<T extends CitationFeed
 export function buildCitationUrlsByMessageId<T extends CitationFeedItem>(feed: readonly T[]): Map<string, Map<number, string>> {
   const citationUrlsByMessageId = new Map<string, Map<number, string>>();
   let currentCitationUrls = new Map<number, string>();
-  let latestAssistantId: string | null = null;
 
   for (const item of feed) {
     const itemKind = item.kind ?? item.type ?? "";
 
     if (itemKind === "message" && item.role === "user") {
       currentCitationUrls = new Map();
-      latestAssistantId = null;
       continue;
     }
 
     if (itemKind === "tool" && item.name === "webSearch") {
       const nextCitationUrls = extractCitationUrlsFromWebSearchResult(item.result);
       currentCitationUrls = nextCitationUrls;
-      latestAssistantId = null;
       continue;
     }
 
     if (itemKind === "tool" && item.name === "nativeWebSearch") {
       const nextCitationUrls = extractCitationUrlsFromNativeWebSearchResult(item.result);
       currentCitationUrls = nextCitationUrls;
-      latestAssistantId = null;
       continue;
     }
 
     if (itemKind === "tool" && item.name === "nativeUrlContext") {
       const nextCitationUrls = extractCitationUrlsFromNativeUrlContextResult(item.result);
       currentCitationUrls = nextCitationUrls;
-      latestAssistantId = null;
       continue;
     }
 
     if (breaksContiguousAssistantStretch(itemKind)) {
       currentCitationUrls = new Map();
-      latestAssistantId = null;
       continue;
     }
 
     if (itemKind === "message" && item.role === "assistant") {
       const annotationCitationUrls = extractCitationUrlsFromAnnotations(item.annotations);
       if (annotationCitationUrls.size > 0) {
-        if (latestAssistantId) {
-          citationUrlsByMessageId.delete(latestAssistantId);
-        }
         citationUrlsByMessageId.set(item.id, annotationCitationUrls);
         currentCitationUrls = annotationCitationUrls;
-        latestAssistantId = item.id;
         continue;
       }
-      if (currentCitationUrls.size > 0) {
-        if (latestAssistantId) {
-          citationUrlsByMessageId.delete(latestAssistantId);
-        }
+      if (currentCitationUrls.size > 0 && assistantMessageNeedsToolCitationContext(item)) {
         citationUrlsByMessageId.set(item.id, new Map(currentCitationUrls));
-        latestAssistantId = item.id;
       }
     }
   }

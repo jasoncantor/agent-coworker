@@ -6,6 +6,7 @@ import { defaultModelForProvider } from "@cowork/providers/catalog";
 
 import {
   getGoogleReasoningEffortValuesForModel,
+  getWorkspaceGoogleNativeWebSearchEnabled,
   getWorkspaceGoogleReasoningEffort,
   getWorkspaceLocalWebSearchProvider,
   getWorkspaceReasoningEffort,
@@ -518,13 +519,19 @@ export function SearchSettingsCard({
 }: SearchSettingsCardProps) {
   const [codexNativeAdvancedOpen, setCodexNativeAdvancedOpen] = useState(false);
   const webSearchBackend = getWorkspaceWebSearchBackend(workspace.providerOptions);
+  const googleUsesNativeWebSearch = getWorkspaceGoogleNativeWebSearchEnabled(workspace.providerOptions, true);
   const localFallbackProvider = getWorkspaceLocalWebSearchProvider(workspace.providerOptions);
   const codexUsesNativeWebSearch = webSearchBackend === "native";
+  const effectiveSearchProvider = codexUsesNativeWebSearch && !googleUsesNativeWebSearch
+    ? localFallbackProvider
+    : webSearchBackend;
+  const searchProviderUsesNative = effectiveSearchProvider === "native";
+  const hasLegacyGeminiSearchOverride = codexUsesNativeWebSearch && !googleUsesNativeWebSearch;
   const codexWebSearchMode = getWorkspaceWebSearchMode(workspace.providerOptions);
   const codexWebSearchContextSize = getWorkspaceWebSearchContextSize(workspace.providerOptions);
   const codexWebSearchAllowedDomains = getWorkspaceWebSearchAllowedDomains(workspace.providerOptions);
   const codexWebSearchLocation = getWorkspaceWebSearchLocation(workspace.providerOptions);
-  const selectedLocalProvider = codexUsesNativeWebSearch ? localFallbackProvider : webSearchBackend;
+  const selectedLocalProvider = searchProviderUsesNative ? localFallbackProvider : effectiveSearchProvider;
   const selectedLocalProviderMethodId = selectedLocalProvider === "parallel" ? "parallel_api_key" : "exa_api_key";
   const selectedLocalProviderMask = providerStatusByName.google?.savedApiKeyMasks?.[selectedLocalProviderMethodId];
   const selectedLocalProviderConnected =
@@ -568,13 +575,15 @@ export function SearchSettingsCard({
               <div className="space-y-1">
                 <div className="text-sm font-medium text-foreground">Search provider</div>
                 <div className="text-xs text-muted-foreground">
-                  {codexUsesNativeWebSearch
+                  {hasLegacyGeminiSearchOverride
+                    ? `Google models still use local ${formatWebSearchBackendLabel(selectedLocalProvider)} search from an older workspace override. Changing Search provider here will sync Google and ChatGPT settings.`
+                    : searchProviderUsesNative
                     ? "Use provider-native search when the active model supports it."
-                    : `Use the local webSearch tool backed by ${formatWebSearchBackendLabel(webSearchBackend)}.`}
+                    : `Use the local webSearch tool backed by ${formatWebSearchBackendLabel(effectiveSearchProvider)}.`}
                 </div>
               </div>
               <div className="w-full max-w-52">
-                <Select value={webSearchBackend} onValueChange={(value) => applySearchProvider(value as WebSearchBackendValue)}>
+                <Select value={effectiveSearchProvider} onValueChange={(value) => applySearchProvider(value as WebSearchBackendValue)}>
                   <SelectTrigger aria-label="Workspace search provider" className={MODEL_CARD_SELECT_CLASS} size="sm">
                     <SelectValue />
                   </SelectTrigger>
@@ -589,7 +598,7 @@ export function SearchSettingsCard({
               </div>
             </div>
 
-            {codexUsesNativeWebSearch ? (
+            {searchProviderUsesNative ? (
               <div className="grid gap-3 rounded-lg border border-border/60 bg-background/35 p-3">
                 <div className={MODEL_CARD_FIELD_CLASS}>
                   <div className="text-[13px] font-medium text-foreground">
@@ -619,7 +628,9 @@ export function SearchSettingsCard({
               </div>
             ) : (
               <div className="rounded-lg border border-border/60 bg-background/35 p-3 text-xs text-muted-foreground">
-                Native-search fallback settings appear here when search provider is set to Native.
+                {hasLegacyGeminiSearchOverride
+                  ? `Google models currently use local ${LOCAL_WEB_SEARCH_PROVIDER_LABELS[selectedLocalProvider]} search because this workspace still has a Gemini-specific override. Choose Native above to restore provider-native search for both providers.`
+                  : `${LOCAL_WEB_SEARCH_PROVIDER_LABELS[selectedLocalProvider]} is the active local search tool for this workspace.`}
               </div>
             )}
           </div>
@@ -631,7 +642,9 @@ export function SearchSettingsCard({
               <div className="space-y-1">
                 <div className="text-sm font-medium text-foreground">Codex native advanced options</div>
                 <div className="text-xs text-muted-foreground">
-                  These settings apply when ChatGPT Subscription uses provider-native web search.
+                  {hasLegacyGeminiSearchOverride
+                    ? "These settings still apply to ChatGPT Subscription while Google models remain on the legacy local-search override above."
+                    : "These settings apply when ChatGPT Subscription uses provider-native web search."}
                 </div>
               </div>
               <CollapsibleTrigger asChild>
