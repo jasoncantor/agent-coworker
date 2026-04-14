@@ -1,7 +1,7 @@
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 
-import { AlertTriangleIcon, LoaderCircleIcon, MessageSquareIcon, MicIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
+import { AlertTriangleIcon, LoaderCircleIcon, MessageSquareIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import coworkIconSvg from "../../build/icon.icon/Assets/svgviewer-output.svg";
 
 import {
@@ -1184,15 +1184,6 @@ export function ChatView() {
                   ) : null}
                 </PromptInputTools>
                 <div className={cn("flex shrink-0 items-center gap-2", busy ? "opacity-100" : "opacity-80")}>
-                  <button
-                    type="button"
-                    disabled
-                    aria-label="Voice input unavailable"
-                    title="Voice input unavailable"
-                    className="hidden size-9 items-center justify-center rounded-full text-muted-foreground/70 sm:inline-flex"
-                  >
-                    <MicIcon className="size-4" />
-                  </button>
                   <PromptInputSubmit
                     mode={composerSubmitState.mode}
                     status={composerSubmitState.status}
