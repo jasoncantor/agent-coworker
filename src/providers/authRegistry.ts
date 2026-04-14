@@ -47,6 +47,7 @@ const PROVIDER_AUTH_METHODS: Record<ProviderName, ProviderAuthMethod[]> = {
   google: [
     { id: "api_key", type: "api", label: "API key" },
     { id: "exa_api_key", type: "api", label: "Exa API key (web search)" },
+    { id: "parallel_api_key", type: "api", label: "Parallel API key (web search)" },
   ],
   openai: [{ id: "api_key", type: "api", label: "API key" }],
   anthropic: [{ id: "api_key", type: "api", label: "API key" }],
@@ -125,10 +126,15 @@ export async function setProviderApiKey(opts: {
     return { ok: false, provider: opts.provider, message: "API key is required." };
   }
 
-  if (opts.provider === "google" && method.id === "exa_api_key") {
+  if (
+    opts.provider === "google"
+    && (method.id === "exa_api_key" || method.id === "parallel_api_key")
+  ) {
     try {
+      const toolName = method.id === "parallel_api_key" ? "parallel" : "exa";
+      const providerLabel = method.id === "parallel_api_key" ? "Parallel" : "Exa";
       const saved = await writeToolApiKey({
-        name: "exa",
+        name: toolName,
         apiKey,
         paths,
       });
@@ -137,7 +143,7 @@ export async function setProviderApiKey(opts: {
         provider: opts.provider,
         mode: "api_key",
         storageFile: saved.storageFile,
-        message: "Exa API key saved for Google webSearch.",
+        message: `${providerLabel} API key saved for web search.`,
         maskedApiKey: saved.maskedApiKey,
       };
     } catch (error) {

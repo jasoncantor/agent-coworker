@@ -145,6 +145,26 @@ describe("getProviderStatuses", () => {
     expect(google?.savedApiKeyMasks?.exa_api_key).toBe("exa-...5678");
   });
 
+  test("includes masked Parallel key in google status", async () => {
+    const home = await makeTmpHome();
+    const paths = getAiCoworkerPaths({ homedir: home });
+    await writeConnectionStore(paths, {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      services: {},
+      toolApiKeys: {
+        parallel: "parallel-secret-5678",
+      },
+    });
+
+    const statuses = await getProviderStatuses({ paths });
+    const google = statuses.find((s) => s.provider === "google");
+    expect(google).toBeDefined();
+    expect(google?.authorized).toBe(false);
+    expect(google?.mode).toBe("missing");
+    expect(google?.savedApiKeyMasks?.parallel_api_key).toBe("para...5678");
+  });
+
   test("codex-cli: verified via Codex usage endpoint and exposes usage snapshots", async () => {
     const home = await makeTmpHome();
     const paths = getAiCoworkerPaths({ homedir: home });
