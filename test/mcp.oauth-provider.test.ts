@@ -23,7 +23,7 @@ describe("mcp oauth provider", () => {
   let tokenServer: Server;
   let tokenServerUrl: string;
   let tokenServerResource: string;
-  let lastTokenRequest: { body: URLSearchParams } | undefined;
+  let lastTokenRequest: { authorization: string | null; body: URLSearchParams } | undefined;
   let registrationCount = 0;
   let lastRegistrationRequest: Record<string, unknown> | undefined;
 
@@ -73,7 +73,10 @@ describe("mcp oauth provider", () => {
         let rawBody = "";
         req.on("data", (chunk: Buffer) => { rawBody += chunk.toString(); });
         req.on("end", () => {
-          lastTokenRequest = { body: new URLSearchParams(rawBody) };
+          lastTokenRequest = {
+            authorization: req.headers.authorization ?? null,
+            body: new URLSearchParams(rawBody),
+          };
           res.setHeader("content-type", "application/json");
           res.end(JSON.stringify({
             access_token: "real-access-token",
@@ -295,11 +298,13 @@ describe("mcp oauth provider", () => {
         storedClientInfo: {
           clientId: "registered-client-123",
           clientSecret: "secret-456",
+          tokenEndpointAuthMethod: "none",
           updatedAt: new Date().toISOString(),
         },
       });
 
       expect(lastTokenRequest).toBeDefined();
+      expect(lastTokenRequest!.authorization).toBeNull();
       expect(lastTokenRequest!.body.get("client_id")).toBe("registered-client-123");
     });
 

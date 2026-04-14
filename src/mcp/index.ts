@@ -12,6 +12,7 @@ import type { AgentConfig, MCPServerConfig } from "../types";
 import { VERSION } from "../version";
 import {
   completeMCPServerOAuth,
+  mcpTokenEndpointAuthMethods,
   resolveMCPServerAuthState,
   setMCPServerOAuthClientInformation,
   type MCPAuthMode,
@@ -72,6 +73,7 @@ const oauthProviderTokensSchema = z.object({
 const oauthClientInformationSchema = z.object({
   client_id: nonEmptyTrimmedStringSchema,
   client_secret: nonEmptyTrimmedStringSchema.optional(),
+  token_endpoint_auth_method: z.enum(mcpTokenEndpointAuthMethods).optional(),
   redirect_uris: z.array(nonEmptyTrimmedStringSchema).min(1).optional(),
 }).passthrough();
 const retryCountSchema = z.number().finite().transform((value) => Math.max(0, Math.floor(value)));
@@ -263,6 +265,9 @@ function createRuntimeOAuthProvider(opts: {
         ...(latestClientInfo.clientSecret
           ? { client_secret: latestClientInfo.clientSecret }
           : {}),
+        ...(latestClientInfo.tokenEndpointAuthMethod
+          ? { token_endpoint_auth_method: latestClientInfo.tokenEndpointAuthMethod }
+          : {}),
         ...(latestClientInfo.redirectUris?.length
           ? { redirect_uris: [...latestClientInfo.redirectUris] }
           : {}),
@@ -277,6 +282,9 @@ function createRuntimeOAuthProvider(opts: {
       latestClientInfo = {
         clientId,
         ...(clientSecret ? { clientSecret } : {}),
+        ...(parsedInfo.data.token_endpoint_auth_method
+          ? { tokenEndpointAuthMethod: parsedInfo.data.token_endpoint_auth_method }
+          : {}),
         ...(parsedInfo.data.redirect_uris?.length
           ? { redirectUris: [...parsedInfo.data.redirect_uris] }
           : {}),
@@ -289,6 +297,9 @@ function createRuntimeOAuthProvider(opts: {
           clientInformation: {
             clientId,
             ...(clientSecret ? { clientSecret } : {}),
+            ...(parsedInfo.data.token_endpoint_auth_method
+              ? { tokenEndpointAuthMethod: parsedInfo.data.token_endpoint_auth_method }
+              : {}),
             ...(parsedInfo.data.redirect_uris?.length
               ? { redirectUris: [...parsedInfo.data.redirect_uris] }
               : {}),

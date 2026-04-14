@@ -146,6 +146,9 @@ export async function setMCPServerOAuthClientInformation(opts: {
           ...(opts.clientInformation.clientSecret
             ? { clientSecret: opts.clientInformation.clientSecret }
             : {}),
+          ...(opts.clientInformation.tokenEndpointAuthMethod
+            ? { tokenEndpointAuthMethod: opts.clientInformation.tokenEndpointAuthMethod }
+            : {}),
           ...(opts.clientInformation.redirectUris?.length
             ? { redirectUris: [...opts.clientInformation.redirectUris] }
             : {}),

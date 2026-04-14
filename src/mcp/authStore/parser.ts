@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { mcpTokenEndpointAuthMethods } from "./types";
 import type { MCPServerCredentialsDocument } from "./types";
 
 const nonEmptyStringSchema = z.string().trim().min(1);
@@ -29,6 +30,7 @@ const oauthTokensSchema = z.object({
 const oauthClientInfoSchema = z.object({
   clientId: nonEmptyStringSchema,
   clientSecret: nonEmptyStringSchema.optional(),
+  tokenEndpointAuthMethod: z.enum(mcpTokenEndpointAuthMethods).optional(),
   redirectUris: z.array(nonEmptyStringSchema).min(1).optional(),
   updatedAt: isoTimestampSchema,
 });

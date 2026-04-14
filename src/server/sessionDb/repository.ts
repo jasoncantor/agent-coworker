@@ -10,6 +10,7 @@ import type {
 } from "../sessionDb";
 import type { PersistedSessionSnapshot, PersistedSessionSummary } from "../sessionStore";
 import type { ModelMessage } from "../../types";
+import { isProviderName } from "../../types";
 import { sessionSnapshotSchema, type SessionSnapshot } from "../../shared/sessionSnapshot";
 import { mapPersistedSessionRecordRow, mapPersistedSessionSubagentSummaryRow, mapPersistedSessionSummaryRow } from "./mappers";
 import { sameWorkspacePath } from "../../utils/workspacePath";
@@ -23,6 +24,11 @@ import {
 
 const messagesJsonSchema = z.array(z.unknown());
 const modelStreamRawFormatSchema = z.enum(["openai-responses-v1", "google-interactions-v1"]);
+
+function hasCompatiblePersistedProvider(row: Record<string, unknown>): boolean {
+  const provider = row.provider;
+  return typeof provider !== "string" || isProviderName(provider);
+}
 
 export class SessionDbRepository {
   private readonly db: Database;
@@ -81,12 +87,15 @@ export class SessionDbRepository {
       ? rows.filter((row) => sameWorkspacePath(String(row.working_directory ?? ""), opts!.workingDirectory!))
       : rows;
 
-    return mapped.map((row) => {
+    return mapped.flatMap((row) => {
+      if (!hasCompatiblePersistedProvider(row)) {
+        return [];
+      }
       if (!filterWorkspace) {
-        return mapPersistedSessionSummaryRow(row);
+        return [mapPersistedSessionSummaryRow(row)];
       }
       const { working_directory: _wd, ...summaryRow } = row;
-      return mapPersistedSessionSummaryRow(summaryRow);
+      return [mapPersistedSessionSummaryRow(summaryRow)];
     });
   }
 
@@ -129,7 +138,7 @@ export class SessionDbRepository {
       )
       .all(parentSessionId) as Array<Record<string, unknown>>;
 
-    return rows.map(mapPersistedSessionSubagentSummaryRow);
+    return rows.flatMap((row) => (hasCompatiblePersistedProvider(row) ? [mapPersistedSessionSubagentSummaryRow(row)] : []));
   }
 
   deleteSession(sessionId: string): void {
@@ -213,7 +222,7 @@ export class SessionDbRepository {
       )
       .get(sessionId) as Record<string, unknown> | null;
 
-    if (!row) return null;
+    if (!row || !hasCompatiblePersistedProvider(row)) return null;
     return mapPersistedSessionRecordRow(row);
   }
 

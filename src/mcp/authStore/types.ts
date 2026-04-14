@@ -2,6 +2,12 @@ import type { MCPServerAuthConfig } from "../../types";
 
 export type MCPAuthMode = "none" | "missing" | "api_key" | "oauth" | "oauth_pending" | "error";
 export type MCPAuthScope = "workspace" | "user";
+export const mcpTokenEndpointAuthMethods = [
+  "client_secret_basic",
+  "client_secret_post",
+  "none",
+] as const;
+export type MCPTokenEndpointAuthMethod = typeof mcpTokenEndpointAuthMethods[number];
 
 export interface MCPServerOAuthPending {
   challengeId: string;
@@ -29,6 +35,7 @@ export interface MCPServerOAuthTokens {
 export interface MCPServerOAuthClientInfo {
   clientId: string;
   clientSecret?: string;
+  tokenEndpointAuthMethod?: MCPTokenEndpointAuthMethod;
   redirectUris?: string[];
   updatedAt: string;
 }

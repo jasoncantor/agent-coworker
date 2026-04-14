@@ -396,6 +396,7 @@ describe("mcp auth store", () => {
         clientInformation: {
           clientId: "registered-client",
           clientSecret: "registered-secret",
+          tokenEndpointAuthMethod: "none",
           redirectUris: [
             "http://127.0.0.1:1455/oauth/callback",
             "http://127.0.0.1:2455/oauth/callback",
@@ -407,6 +408,7 @@ describe("mcp auth store", () => {
       expect(files.workspace.doc.servers["oauth-server"]?.oauth?.clientInformation).toMatchObject({
         clientId: "registered-client",
         clientSecret: "registered-secret",
+        tokenEndpointAuthMethod: "none",
         redirectUris: [
           "http://127.0.0.1:1455/oauth/callback",
           "http://127.0.0.1:2455/oauth/callback",

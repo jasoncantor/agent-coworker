@@ -864,3 +864,75 @@
 - `src/mcp/authStore/types.ts`, `src/mcp/authStore/parser.ts`, `src/mcp/authStore/editor.ts`, and `src/mcp/index.ts` now persist MCP OAuth client redirect URIs so runtime auth/client state can make the correct reuse decision.
 - `test/mcp.oauth-provider.test.ts` now covers auto-discovered resource indicators, redirect-aware client re-registration, and safe reuse when redirect URIs still match.
 - Verification passed with `bun test test/mcp.oauth-provider.test.ts`, `bun run typecheck`, a live Quartr stale-client smoke check via `bun -e '...authorizeMCPServerOAuth(...)...'`, and `bun test`.
+
+## Dependency Refresh
+
+- [x] Record the baseline outdated state and keep the scope limited to conservative in-range dependency updates.
+- [x] Refresh root and desktop dependencies, then inspect the resulting manifest and lockfile changes.
+- [x] Run `bun run typecheck` and the required Bun test lanes; fix any regressions before closing.
+- [x] Document the exact dependency deltas, verification commands, and any intentionally deferred updates.
+
+## Dependency Refresh Review
+
+- Baseline:
+  - Root `bun outdated` shows safe in-range updates for `@google/genai`, `@modelcontextprotocol/sdk`, `@opentelemetry/api`, `react`, `turndown`, `@types/node`, `bun-types`, and `puppeteer-core`, with major/latest-only jumps for packages like `@langfuse/otel`, `@mariozechner/pi-ai`, `jsdom`, and `typescript`.
+  - `apps/desktop` `bun outdated` shows safe in-range updates for HeroUI, MCP grab packages, Tailwind/Vite patches, Electron 41.2, React 19.2.5, and related type/runtime packages; `@vitejs/plugin-react`, `lucide-react`, `vite`, and `typescript` also have newer major versions outside the current semver ranges.
+  - `apps/mobile` is pinned to Expo SDK 54 exact versions, so current `bun outdated` reports Expo 55 / newer React Native as latest-only. Treat that as a separate SDK migration, not part of this dependency refresh.
+- Applied dependency refresh:
+  - Root `package.json` / `bun.lock` now track `@google/genai` `^1.50.0`, `@modelcontextprotocol/sdk` `^1.29.0`, `@opentelemetry/api` `^1.9.1`, `react` `^19.2.5`, `turndown` `^7.2.4`, `@types/node` `^25.6.0`, `bun-types` `^1.3.12`, and `puppeteer-core` `^24.40.0`.
+  - `apps/desktop/package.json` / `apps/desktop/bun.lock` now track `@heroui/{react,styles}` `^3.0.2`, `@react-grab/mcp` and `react-grab` `^0.1.32`, `@tailwindcss/vite` and `tailwindcss` `^4.2.2`, `@types/node` `^25.6.0`, `electron` `^41.2.0`, `electron-builder` `^26.9.0`, `react` / `react-dom` `^19.2.5`, and `vite` `^7.3.2`.
+- Post-update regression and fix:
+  - The MCP SDK 1.29 update changed token-endpoint auth selection during OAuth code exchange. Our stored MCP OAuth client metadata only persisted `clientId`, `clientSecret`, and redirect URIs, so dynamically registered public clients lost `token_endpoint_auth_method` and could be replayed with the wrong token auth style.
+  - `src/mcp/authStore/types.ts`, `src/mcp/authStore/parser.ts`, `src/mcp/authStore/editor.ts`, `src/mcp/authStore.ts`, `src/mcp/oauthProvider.ts`, and `src/mcp/index.ts` now persist and replay `tokenEndpointAuthMethod` alongside stored MCP OAuth client info.
+  - `test/mcp.oauth-provider.test.ts` now asserts that stored public-client metadata keeps `client_id` in the token request body without sending Basic auth, and `test/mcp.auth-store.test.ts` covers persistence of the stored token-endpoint auth mode.
+- Verification passed with:
+  - `bun run typecheck`
+  - `bun test test/mcp.oauth-provider.test.ts test/mcp.auth-store.test.ts`
+  - `bun test`
+- Deferred on purpose:
+  - Latest-only majors such as `@langfuse/otel` 5.x, `@mariozechner/pi-ai` 0.67.x, `jsdom` 29.x, `typescript` 6.x, `@vitejs/plugin-react` 6.x, `lucide-react` 1.x, and the Expo 55 / React Native 0.85 mobile stack were left alone because they are migration-scoped changes, not routine dependency refreshes.
+
+## Dependency Refresh Follow-up: pi-ai
+
+- [x] Widened `@mariozechner/pi-ai` from `^0.55.4` to `^0.67.1` and refreshed the root lockfile.
+- [x] Re-ran repo typecheck plus focused PI runtime coverage, then confirmed the full suite still passes with no PI regressions.
+- [x] Verification passed with:
+  - `bun run typecheck`
+  - `bun test test/runtime.pi-runtime.test.ts test/runtime.pi-message-bridge.test.ts test/runtime.selection.test.ts test/agent.test.ts`
+  - `bun test`
+
+## Dependency Refresh Follow-up: desktop Vite/Electron
+
+- [x] Verified the compatibility boundary first:
+  - `vite` latest is `8.0.8`.
+  - `@vitejs/plugin-react` latest is `6.0.1` and peers with Vite 8.
+  - Stable `electron-vite@5.0.0` only peers with Vite `^5 || ^6 || ^7`, so Vite 8 requires `electron-vite@6.0.0-beta.1`.
+  - `electron@41.2.0` is already the current latest stable release, so no Electron version bump was needed.
+  - HeroUI is already current at `3.0.2`; its published peers require React 19 and Tailwind 4, not a specific Vite major.
+- [x] Upgraded the desktop app to the newest verified Vite-compatible stack:
+  - `vite` `^8.0.8`
+  - `@vitejs/plugin-react` `^6.0.1`
+  - `electron-vite` `^6.0.0-beta.1`
+  - left `electron` at `^41.2.0`
+- [x] Verification passed with:
+  - `bun run typecheck`
+  - `bun run build:desktop-resources`
+  - `cd apps/desktop && bun run electron-vite -- build`
+  - `bun test`
+
+## Persisted Session Provider Compatibility
+
+- [x] Reproduce the backup-read failure far enough to identify the persisted-session loader as the break point, not the JSON-RPC transport.
+- [x] Make the session persistence repository skip rows whose `provider` value is unknown to the current build instead of letting one incompatible row abort the whole read.
+- [x] Add regression coverage for incompatible root and child session rows, then rerun persistence, backup/control, typecheck, and full-suite verification.
+
+## Persisted Session Provider Compatibility Review
+
+- The backup error path was caused by a persisted session row whose `provider` string was unsupported by the build reading `sessions.db`. The old loader let `mapPersistedSessionRecordRow(...)` throw, which aborted workspace backup reads even though the backup service only needed best-effort session metadata.
+- `src/server/sessionDb/repository.ts` now treats persisted rows with unknown provider ids as incompatible and skips them in `listSessions(...)` / `listAgentSessions(...)`, while `getSessionRecord(...)` returns `null` for those rows instead of throwing. Compatible rows still go through the existing strict mappers unchanged, so malformed known-provider rows still surface as real errors.
+- `test/session-db.test.ts` now mutates persisted root and child rows to a fake future provider id and asserts that compatible sessions still load while the incompatible rows are ignored.
+- Verification passed with:
+  - `bun test test/session-db.test.ts test/session-db-mappers.test.ts`
+  - `bun run typecheck`
+  - `bun test test/workspace-backups.test.ts test/session-backup.test.ts test/session-backup-delta.test.ts test/server.jsonrpc.control.test.ts`
+  - `bun test`

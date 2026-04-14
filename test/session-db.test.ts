@@ -180,6 +180,134 @@ describe("sessionDb", () => {
     }
   });
 
+  test("skips persisted rows with providers unsupported by the current build", async () => {
+    const paths = await makeTmpCoworkHome();
+    const db = await SessionDb.create({ paths });
+    try {
+      const now = new Date().toISOString();
+      await db.persistSessionMutation({
+        sessionId: "root-valid",
+        eventType: "session.created",
+        snapshot: {
+          sessionKind: "root",
+          parentSessionId: null,
+          role: null,
+          title: "Valid Root",
+          titleSource: "default",
+          titleModel: null,
+          provider: "openai",
+          model: "gpt-5.2",
+          workingDirectory: "/tmp/project",
+          enableMcp: false,
+          createdAt: now,
+          updatedAt: now,
+          status: "active",
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello" }],
+          providerState: null,
+          todos: [],
+          harnessContext: null,
+          costTracker: null,
+        },
+      });
+      await db.persistSessionMutation({
+        sessionId: "root-legacy",
+        eventType: "session.created",
+        snapshot: {
+          sessionKind: "root",
+          parentSessionId: null,
+          role: null,
+          title: "Legacy Root",
+          titleSource: "default",
+          titleModel: null,
+          provider: "google",
+          model: "gemini-3-flash-preview",
+          workingDirectory: "/tmp/project",
+          enableMcp: false,
+          createdAt: now,
+          updatedAt: now,
+          status: "active",
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "legacy" }],
+          providerState: null,
+          todos: [],
+          harnessContext: null,
+          costTracker: null,
+        },
+      });
+      await db.persistSessionMutation({
+        sessionId: "child-valid",
+        eventType: "session.created",
+        snapshot: {
+          sessionKind: "agent",
+          parentSessionId: "root-valid",
+          role: "worker",
+          title: "Valid Child",
+          titleSource: "default",
+          titleModel: null,
+          provider: "openai",
+          model: "gpt-5.2",
+          workingDirectory: "/tmp/project",
+          enableMcp: false,
+          createdAt: now,
+          updatedAt: now,
+          status: "active",
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+          systemPrompt: "system",
+          messages: [{ role: "assistant", content: "valid child" }],
+          providerState: null,
+          todos: [],
+          harnessContext: null,
+          costTracker: null,
+        },
+      });
+      await db.persistSessionMutation({
+        sessionId: "child-legacy",
+        eventType: "session.created",
+        snapshot: {
+          sessionKind: "agent",
+          parentSessionId: "root-valid",
+          role: "worker",
+          title: "Legacy Child",
+          titleSource: "default",
+          titleModel: null,
+          provider: "google",
+          model: "gemini-3-flash-preview",
+          workingDirectory: "/tmp/project",
+          enableMcp: false,
+          createdAt: now,
+          updatedAt: now,
+          status: "active",
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+          systemPrompt: "system",
+          messages: [{ role: "assistant", content: "legacy child" }],
+          providerState: null,
+          todos: [],
+          harnessContext: null,
+          costTracker: null,
+        },
+      });
+
+      (db as any).db
+        .query("UPDATE sessions SET provider = ? WHERE session_id IN (?, ?)")
+        .run("future-local", "root-legacy", "child-legacy");
+
+      expect(db.listSessions().map((session) => session.sessionId).sort()).toEqual(["root-valid"]);
+      expect(db.getSessionRecord("root-valid")?.provider).toBe("openai");
+      expect(db.getSessionRecord("root-legacy")).toBeNull();
+      expect(db.listAgentSessions("root-valid").map((agent) => agent.agentId).sort()).toEqual(["child-valid"]);
+      expect(db.getSessionRecord("child-legacy")).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+
   test("persists raw model stream chunks alongside session state", async () => {
     const paths = await makeTmpCoworkHome();
     const db = await SessionDb.create({ paths });

@@ -16,7 +16,13 @@ import type {
 import { z } from "zod";
 
 import type { MCPRegistryServer } from "./configRegistry";
-import type { MCPServerOAuthClientInfo, MCPServerOAuthPending, MCPServerOAuthTokens } from "./authStore";
+import {
+  mcpTokenEndpointAuthMethods,
+  type MCPServerOAuthClientInfo,
+  type MCPServerOAuthPending,
+  type MCPServerOAuthTokens,
+  type MCPTokenEndpointAuthMethod,
+} from "./authStore";
 import { nowIso } from "../utils/typeGuards";
 import { openExternalUrl, type UrlOpener } from "../utils/browser";
 
@@ -72,6 +78,12 @@ function isHttpLikeServer(
   server: MCPRegistryServer,
 ): server is MCPRegistryServer & { transport: Extract<MCPRegistryServer["transport"], { type: "http" | "sse" }> } {
   return server.transport.type === "http" || server.transport.type === "sse";
+}
+
+function normalizeTokenEndpointAuthMethod(value: unknown): MCPTokenEndpointAuthMethod | undefined {
+  return typeof value === "string" && mcpTokenEndpointAuthMethods.includes(value as MCPTokenEndpointAuthMethod)
+    ? value as MCPTokenEndpointAuthMethod
+    : undefined;
 }
 
 function closeCapture(capture: CallbackCapture, opts: { keepEntry?: boolean } = {}): void {
@@ -244,6 +256,9 @@ async function ensureClientInformation(opts: {
       ...(opts.storedClientInfo.clientSecret
         ? { client_secret: opts.storedClientInfo.clientSecret }
         : {}),
+      ...(opts.storedClientInfo.tokenEndpointAuthMethod
+        ? { token_endpoint_auth_method: opts.storedClientInfo.tokenEndpointAuthMethod }
+        : {}),
     };
     return { clientInfo: info };
   }
@@ -266,6 +281,9 @@ async function ensureClientInformation(opts: {
       const clientInfo: MCPServerOAuthClientInfo = {
         clientId: registered.client_id,
         ...(registered.client_secret ? { clientSecret: registered.client_secret } : {}),
+        ...(normalizeTokenEndpointAuthMethod(registered.token_endpoint_auth_method)
+          ? { tokenEndpointAuthMethod: normalizeTokenEndpointAuthMethod(registered.token_endpoint_auth_method) }
+          : {}),
         ...(registered.redirect_uris?.length ? { redirectUris: [...registered.redirect_uris] } : {}),
         updatedAt: nowIso(),
       };
@@ -419,6 +437,9 @@ export async function exchangeMCPServerOAuthCode(opts: {
         client_id: opts.storedClientInfo.clientId,
         ...(opts.storedClientInfo.clientSecret
           ? { client_secret: opts.storedClientInfo.clientSecret }
+          : {}),
+        ...(opts.storedClientInfo.tokenEndpointAuthMethod
+          ? { token_endpoint_auth_method: opts.storedClientInfo.tokenEndpointAuthMethod }
           : {}),
       }
     : { client_id: FALLBACK_CLIENT_ID };

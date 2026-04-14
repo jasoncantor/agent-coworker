@@ -2,6 +2,7 @@ export type {
   MCPAuthFileState,
   MCPAuthMode,
   MCPAuthScope,
+  MCPTokenEndpointAuthMethod,
   MCPResolvedServerAuth,
   MCPServerCredentialRecord,
   MCPServerCredentialsDocument,
@@ -9,6 +10,8 @@ export type {
   MCPServerOAuthPending,
   MCPServerOAuthTokens,
 } from "./authStore/types";
+
+export { mcpTokenEndpointAuthMethods } from "./authStore/types";
 
 export { readMCPAuthFiles } from "./authStore/store";
 
