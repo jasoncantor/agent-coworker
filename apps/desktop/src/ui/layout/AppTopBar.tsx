@@ -32,10 +32,9 @@ interface AppTopBarProps {
   onSelectManagementWorkspace?: (workspaceId: string | null) => void;
 }
 
-const WIN32_LEFT_CORNER_PADDING = 8;
-const WIN32_LEFT_CORNER_BUTTON_SIZE = 28;
-const WIN32_LEFT_CORNER_BUTTON_GAP = 4;
-const WIN32_COLLAPSED_LEFT_RAIL_WIDTH = (WIN32_LEFT_CORNER_PADDING * 2) + (WIN32_LEFT_CORNER_BUTTON_SIZE * 2) + WIN32_LEFT_CORNER_BUTTON_GAP;
+// Keep the collapsed Windows corner rail aligned with the long-standing title offset
+// so the thread shell clears the left controls and existing layout tests.
+const WIN32_COLLAPSED_LEFT_RAIL_WIDTH = 96;
 const WIN32_CAPTION_BUTTON_RESERVE = 136;
 const WIN32_RIGHT_TOOLBAR_GAP = 6;
 

@@ -7,6 +7,10 @@ import {
   buildJsonRpcTypeScriptArtifact,
 } from "../src/server/jsonrpc/codegen";
 
+function normalizeLineEndings(value: string): string {
+  return value.replace(/\r\n/g, "\n");
+}
+
 describe("JSON-RPC schema codegen", () => {
   test("generated artifacts are up to date", async () => {
     const root = process.cwd();
@@ -15,8 +19,8 @@ describe("JSON-RPC schema codegen", () => {
       fs.readFile(path.join(root, "docs/generated/websocket-jsonrpc.d.ts"), "utf-8"),
     ]);
 
-    expect(jsonSchemaFile).toBe(buildJsonRpcJsonSchemaArtifact());
-    expect(tsFile).toBe(buildJsonRpcTypeScriptArtifact());
+    expect(normalizeLineEndings(jsonSchemaFile)).toBe(buildJsonRpcJsonSchemaArtifact());
+    expect(normalizeLineEndings(tsFile)).toBe(buildJsonRpcTypeScriptArtifact());
   });
 
   test("generated artifacts include cowork control methods", async () => {

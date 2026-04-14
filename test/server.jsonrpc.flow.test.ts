@@ -799,10 +799,16 @@ describe("server JSON-RPC flows", () => {
 
       expect(capturedMessages.at(-1)?.content).toEqual([
         { type: "text", text: "first caption" },
-        { type: "text", text: `[System: The user uploaded a file which has been saved to ${tmpDir}/User Uploads/one.png]` },
+        {
+          type: "text",
+          text: `[System: The user uploaded a file which has been saved to ${path.join(tmpDir, "User Uploads", "one.png")}]`,
+        },
         { type: "image", data: "b25l", mimeType: "image/png" },
         { type: "text", text: "second caption" },
-        { type: "text", text: `[System: The user uploaded a file which has been saved to ${tmpDir}/User Uploads/two.png]` },
+        {
+          type: "text",
+          text: `[System: The user uploaded a file which has been saved to ${path.join(tmpDir, "User Uploads", "two.png")}]`,
+        },
         { type: "image", data: "dHdv", mimeType: "image/png" },
       ]);
 

@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +6,7 @@ import path from "node:path";
 import type { ServerEvent } from "../src/server/protocol";
 import type { AgentConfig } from "../src/types";
 import type { MCPRegistryServer } from "../src/mcp/configRegistry";
+import { McpAuthFlow } from "../src/server/session/mcp/McpAuthFlow";
 
 const mockAuthorizeMcpServerOAuth = mock(async () => {
   throw new Error("mockAuthorizeMcpServerOAuth not configured");
@@ -14,14 +15,6 @@ const mockConsumeCapturedOAuthCode = mock(async () => undefined as string | unde
 const mockExchangeMcpServerOAuthCode = mock(async () => {
   throw new Error("mockExchangeMcpServerOAuthCode not configured");
 });
-
-mock.module("../src/mcp/oauthProvider", () => ({
-  authorizeMCPServerOAuth: mockAuthorizeMcpServerOAuth,
-  consumeCapturedOAuthCode: mockConsumeCapturedOAuthCode,
-  exchangeMCPServerOAuthCode: mockExchangeMcpServerOAuthCode,
-}));
-
-const { McpAuthFlow } = await import("../src/server/session/mcp/McpAuthFlow");
 
 function makeConfig(workspaceRoot: string, userHome: string, builtInConfigDir: string): AgentConfig {
   return {
@@ -87,6 +80,11 @@ function createHarness(config: AgentConfig, server: MCPRegistryServer) {
     async () => {
       emitMcpServersCalls += 1;
     },
+    {
+      authorizeMCPServerOAuth: mockAuthorizeMcpServerOAuth,
+      consumeCapturedOAuthCode: mockConsumeCapturedOAuthCode,
+      exchangeMCPServerOAuthCode: mockExchangeMcpServerOAuthCode,
+    },
   );
   return {
     flow,
@@ -101,11 +99,6 @@ describe("McpAuthFlow", () => {
     mockConsumeCapturedOAuthCode.mockReset();
     mockExchangeMcpServerOAuthCode.mockReset();
   });
-
-  afterAll(() => {
-    mock.restore();
-  });
-
   test("auto OAuth completes from the captured callback and writes the user auth file", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-auth-flow-workspace-"));
     const home = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-auth-flow-home-"));

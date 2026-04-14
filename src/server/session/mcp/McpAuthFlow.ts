@@ -14,6 +14,12 @@ import { McpServerResolver } from "./McpServerResolver";
 
 const AUTO_OAUTH_POLL_INTERVAL_MS = 250;
 
+type McpAuthFlowDeps = {
+  authorizeMCPServerOAuth: typeof authorizeMCPServerOAuth;
+  consumeCapturedOAuthCode: typeof consumeCapturedOAuthCode;
+  exchangeMCPServerOAuthCode: typeof exchangeMCPServerOAuthCode;
+};
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal?.aborted) {
@@ -47,6 +53,11 @@ export class McpAuthFlow {
     private readonly context: SessionContext,
     private readonly resolver: McpServerResolver,
     private readonly emitMcpServers: () => Promise<void>,
+    private readonly deps: McpAuthFlowDeps = {
+      authorizeMCPServerOAuth,
+      consumeCapturedOAuthCode,
+      exchangeMCPServerOAuthCode,
+    },
   ) {}
 
   async authorize(nameRaw: string) {
@@ -74,7 +85,7 @@ export class McpAuthFlow {
         server,
       });
 
-      const result = await authorizeMCPServerOAuth(server, storedClientState.clientInformation);
+      const result = await this.deps.authorizeMCPServerOAuth(server, storedClientState.clientInformation);
       if (result.clientInformation) {
         await setMCPServerOAuthClientInformation({
           config: this.context.state.config,
@@ -151,7 +162,7 @@ export class McpAuthFlow {
 
       let code = providedCode;
       if (!code) {
-        code = await consumeCapturedOAuthCode(pending.challengeId);
+        code = await this.deps.consumeCapturedOAuthCode(pending.challengeId);
       }
       if (!code) {
         this.context.emit({
@@ -231,7 +242,7 @@ export class McpAuthFlow {
         return;
       }
 
-      const code = await consumeCapturedOAuthCode(pending.challengeId);
+      const code = await this.deps.consumeCapturedOAuthCode(pending.challengeId);
       if (!code) {
         await sleep(AUTO_OAUTH_POLL_INTERVAL_MS, signal);
         continue;
@@ -274,7 +285,7 @@ export class McpAuthFlow {
       config: this.context.state.config,
       server,
     });
-    const exchange = await exchangeMCPServerOAuthCode({
+    const exchange = await this.deps.exchangeMCPServerOAuthCode({
       server,
       code,
       pending,
