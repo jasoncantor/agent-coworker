@@ -192,7 +192,7 @@ export function PromptModal() {
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {modal.prompt.dangerous ? "Dangerous" : "Command"}
                   </div>
-                  <code className="block max-h-[50vh] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border/70 bg-muted/45 px-2.5 py-2 text-xs">
+                  <code className="block whitespace-pre-wrap break-words rounded-md border border-border/70 bg-muted/45 px-2.5 py-2 text-xs">
                     {modal.prompt.command}
                   </code>
                   <div className="text-xs text-muted-foreground">Risk: {modal.prompt.reasonCode}</div>
