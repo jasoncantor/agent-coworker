@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 0.1.44 - 2026-04-15
+
+### Added
+
+- **Amazon Bedrock** (#74) — First-class Bedrock provider on the existing PI runtime path: structured auth methods (AWS default profile, named profile, explicit keys, API key), saved credentials without mutating process-wide AWS env, dynamic catalog/discovery with streaming-capable models only, desktop settings forms, and cache-first status polling so passive refreshes avoid repeated live discovery. Bedrock stays out of first-run onboarding until onboarding can handle structured auth; LM Studio and other provider refreshes no longer trigger unrelated Bedrock discovery.
+
+- **Configurable search providers** — Choose Exa or Parallel for local `webSearch` and for HTML enrichment in `webFetch` (provider options), with `PARALLEL_API_KEY` / `EXA_API_KEY` resolution.
+
+- **Parallel extract-backed `webFetch`** — Optional Parallel-based extract path for web fetch enrichment alongside Exa.
+
+- **Bounded Workspace Map** (#76) — Depth- and size-limited directory name tree (no file contents) injected into system and subagent prompts after project instructions; skips noisy dirs (e.g. `node_modules`), sanitizes labels for markdown safety, and hardens syscalls (readdir + typed roots, no symlink directory escape).
+
+- **Hierarchical `AGENTS.md`** (#77) — Walk from git root toward workspace root, prefer `AGENTS.override.md` per directory, cap rendered section at 32 KiB UTF-8, load into system and sub-agent prompts with fixes for nested loading and truncation order.
+
+- **Active workspace context** — Workspace context included in turn prompts, with follow-up fixes for paths, git root detection, tool names, and macOS handling.
+
+### Changed
+
+- **Desktop tooling** — Upgraded the Electron app to Vite 8 and current Electron-related dev dependencies.
+
+- **Prompt cleanup** (#78) — Reduced static prompt overhead by trimming cowork/workspace internals and deferring exact path details to runtime workspace context; aligned upload guidance with runtime behavior.
+
+- **License** — Expanded `LICENSE` and wired `package.json` to `SEE LICENSE IN LICENSE`; README license section updated accordingly.
+
+### Fixed
+
+- **Gemini search / citations** — Preserved citation context across blocks, fixed search defaults, backfilled citation task metadata, and preserved overflow citation mappings across assistant message chunks.
+
+- **Bedrock follow-ups** (#74) — Narrowed live discovery to Bedrock-specific flows, aligned ChatView provider display names with shared helpers, fixed derived catalog entries when backing models are non-streaming, and added regression coverage for profile wiring in discovery config.
+
+### Docs
+
+- README, `docs/architecture.md`, `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `GEMINI.md`, and `docs/custom-tools.md` — Aligned with current providers, JSON-RPC protocol, CLI commands, web search (Exa/Parallel), repository layout, and development commands.
+
+## 0.1.43 - 2026-04-14
+
+### Changed
+
+- **Release / packaging** — Desktop release workflow updates and package manifest test adjustments for the 0.1.43 line.
+
 ## 0.1.42 - 2026-04-13
 
 ### Added
