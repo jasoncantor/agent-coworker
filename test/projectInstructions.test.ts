@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  __internal,
   directoriesFromGitRootToWorkspace,
   loadProjectAgentsFiles,
   loadProjectInstructionsSection,
@@ -88,6 +89,18 @@ describe("loadProjectAgentsFiles and section", () => {
     expect(section).toContain("truncated");
   });
 
+  test("enforces UTF-8 byte cap for non-ASCII content without replacement characters", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "agents-cap-unicode-"));
+    await fs.mkdir(path.join(tmp, ".git"), { recursive: true });
+    const huge = "界".repeat(PROJECT_INSTRUCTIONS_MAX_BYTES);
+    await fs.writeFile(path.join(tmp, "AGENTS.md"), huge, "utf-8");
+
+    const section = await loadProjectInstructionsSection(tmp);
+    expect(Buffer.byteLength(section, "utf8")).toBeLessThanOrEqual(PROJECT_INSTRUCTIONS_MAX_BYTES);
+    expect(section).toContain("truncated");
+    expect(section).not.toContain("\uFFFD");
+  });
+
   test("preserves the most specific workspace AGENTS content under the byte cap", async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "agents-cap-specific-"));
     await fs.mkdir(path.join(tmp, ".git"), { recursive: true });
@@ -151,5 +164,11 @@ describe("loadProjectAgentsFiles and section", () => {
 
     const section = await loadProjectInstructionsSection(workspaceRoot, io as any);
     expect(section).toContain("READABLE FALLBACK");
+  });
+});
+
+describe("projectInstructions internals", () => {
+  test("truncateUtf8Bytes keeps complete UTF-8 code points at an exact byte boundary", () => {
+    expect(__internal.truncateUtf8Bytes("hello世界", 8)).toBe("hello世");
   });
 });

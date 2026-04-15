@@ -69,6 +69,18 @@ function displayPathForDirectory(gitRoot: string, dir: string): string {
   return rel.split(path.sep).join("/");
 }
 
+function utf8PrefixWithinByteLimit(buf: Buffer, maxBytes: number): string {
+  if (maxBytes <= 0) {
+    return "";
+  }
+
+  let end = Math.min(maxBytes, buf.length);
+  while (end > 0 && end < buf.length && (buf[end]! & 0xc0) === 0x80) {
+    end -= 1;
+  }
+  return buf.subarray(0, end).toString("utf8");
+}
+
 function truncateUtf8Bytes(value: string, maxBytes: number): string {
   const buf = Buffer.from(value, "utf8");
   if (buf.length <= maxBytes) {
@@ -78,17 +90,18 @@ function truncateUtf8Bytes(value: string, maxBytes: number): string {
   const suffixBytes = Buffer.byteLength(suffix, "utf8");
   let allowed = maxBytes - suffixBytes;
   if (allowed <= 0) {
-    return Buffer.from(value, "utf8").subarray(0, maxBytes).toString("utf8");
+    return utf8PrefixWithinByteLimit(buf, maxBytes);
   }
-  let end = allowed;
-  while (end > 0 && (buf[end - 1]! & 0xc0) === 0x80) {
-    end -= 1;
-  }
-  if (end === 0) {
+  const truncated = utf8PrefixWithinByteLimit(buf, allowed);
+  if (!truncated) {
     return suffix.trimStart();
   }
-  return `${buf.subarray(0, end).toString("utf8")}${suffix}`;
+  return `${truncated}${suffix}`;
 }
+
+export const __internal = {
+  truncateUtf8Bytes,
+};
 
 export type LoadedAgentsFile = {
   directory: string;
