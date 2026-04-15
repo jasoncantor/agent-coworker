@@ -159,7 +159,11 @@ export function PromptModal() {
     }}>
       {modal ? (
         <DialogContent
-          className={modal.kind === "ask" ? "w-[min(96vw,50rem)] max-h-[88vh] gap-0 overflow-hidden p-0" : undefined}
+          className={
+            modal.kind === "ask"
+              ? "w-[min(96vw,50rem)] max-h-[88vh] gap-0 overflow-hidden p-0"
+              : "flex max-h-[88vh] flex-col gap-0 overflow-hidden p-0"
+          }
           onEscapeKeyDown={isAsk ? () => {
             // Let the onOpenChange handler deal with it so a response is sent.
           } : undefined}
@@ -176,24 +180,26 @@ export function PromptModal() {
             />
           ) : (
             <>
-              <DialogHeader>
+              <DialogHeader className="shrink-0 border-b border-border/60 px-5 py-4">
                 <DialogTitle>Command approval</DialogTitle>
                 <DialogDescription>
                   Review this command before allowing the agent to execute it.
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="space-y-2 rounded-lg border border-border/70 bg-muted/35 p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {modal.prompt.dangerous ? "Dangerous" : "Command"}
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                <div className="space-y-2 rounded-lg border border-border/70 bg-muted/35 p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {modal.prompt.dangerous ? "Dangerous" : "Command"}
+                  </div>
+                  <code className="block max-h-[50vh] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border/70 bg-muted/45 px-2.5 py-2 text-xs">
+                    {modal.prompt.command}
+                  </code>
+                  <div className="text-xs text-muted-foreground">Risk: {modal.prompt.reasonCode}</div>
                 </div>
-                <code className="block whitespace-pre-wrap break-words rounded-md border border-border/70 bg-muted/45 px-2.5 py-2 text-xs">
-                  {modal.prompt.command}
-                </code>
-                <div className="text-xs text-muted-foreground">Risk: {modal.prompt.reasonCode}</div>
               </div>
 
-              <DialogFooter>
+              <DialogFooter className="shrink-0 border-t border-border/60 px-5 py-3">
                 <Button
                   variant="outline"
                   type="button"
