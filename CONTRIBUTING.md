@@ -24,7 +24,7 @@ bun run start                   # Desktop app (default) -- starts server automat
 bun run cli                     # CLI REPL -- connects to server via WebSocket
 bun run serve                   # Standalone WebSocket server
 bun run desktop:dev             # Desktop development mode
-bun run dev                     # Watch mode (rebuilds on src/ changes)
+bun run dev                     # Watch mode (watches CLI entry src/index.ts)
 ```
 
 ## Architecture Overview
@@ -45,7 +45,7 @@ Key modules:
 | `src/agent.ts` | Core agent loop. `createRunTurn()` builds the effective turn prompt/tool set and delegates execution to the configured runtime. |
 | `src/server/` | WebSocket server, session management, protocol types, model streaming. |
 | `src/tools/` | Tool factories. Each tool is a file exporting a `create*Tool(ctx)` function. |
-| `src/providers/` | Provider registry (`google`, `openai`, `anthropic`, `codex-cli`). Each exports `defaultModel`, `keyCandidates`, `createModel()`. |
+| `src/providers/` | Provider registry (12 providers: `google`, `openai`, `anthropic`, `bedrock`, `together`, `fireworks`, `nvidia`, `lmstudio`, `baseten`, `opencode-go`, `opencode-zen`, `codex-cli`). |
 | `src/config.ts` | Config loading with three-tier merge and env var overrides. |
 | `src/mcp/` | MCP server config registry, OAuth provider, auth store. |
 | `src/skills/` | Skill discovery and trigger extraction. |
@@ -67,17 +67,25 @@ src/
   providers/            # AI provider definitions + auth registry
   mcp/                  # MCP server config, OAuth, auth store
   skills/               # Skill loading and trigger extraction
+  runtime/              # Runtime adapters (google-interactions, pi, openai-responses)
   cli/                  # CLI REPL + arg parsing
   client/               # WebSocket client (AgentSocket)
+  session/              # Session state utilities
+  shared/               # Shared modules
+  models/               # Model registry and metadata
+  plugins/              # Plugin system
+  store/                # Store utilities
+  auth/                 # Auth helpers
   harness/              # Evaluation harness
   observability/        # OpenTelemetry + Langfuse integration
   utils/                # Shared utilities
 apps/
   desktop/              # Electron desktop app
+  mobile/               # Expo mobile app (React Native)
 config/
   defaults.json         # Built-in default configuration
   mcp-servers.json      # System-level MCP server definitions
-skills/                 # Built-in skills (doc, pdf, slides, spreadsheet)
+skills/                 # Built-in skills (doc, pdf, slides, spreadsheet, frontend-skill, git-workflow)
 prompts/                # System prompts, sub-agent prompts, command templates
 scripts/                # Build helpers, doc checker, harness runner
 docs/                   # Architecture docs, protocol spec, harness docs

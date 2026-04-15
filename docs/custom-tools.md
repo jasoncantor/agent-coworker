@@ -11,7 +11,7 @@ Once a tool is created, it must be registered in the core toolbelt by adding it 
 ```typescript
 // src/tools/index.ts
 import { myCustomTool } from './myCustomTool';
-import type { ToolContext } from './types';
+import type { ToolContext } from './context';
 
 export function createTools(ctx: ToolContext) {
   return {
@@ -60,7 +60,7 @@ Here is a complete example of a custom tool demonstrating these concepts:
 ```typescript
 // src/tools/myCustomTool.ts
 import { z } from 'zod';
-import type { ToolContext } from './types';
+import type { ToolContext } from './context';
 import { defineTool } from './defineTool';
 
 export function myCustomTool(ctx: ToolContext) {

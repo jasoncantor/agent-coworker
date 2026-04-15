@@ -57,10 +57,13 @@ The server is the heart of the system. It handles:
 - **State Persistence**: SQLite-based session storage with backup/restore
 
 **Key Files:**
+
 - `startServer.ts` — Server initialization and WebSocket routing
-- `session/AgentSession.ts` — Per-session state, message history, and turn execution
-- `protocol.ts` — TypeScript types for `ClientMessage` and `ServerEvent` unions
-- `sessionBackup.ts` — Filesystem backup and checkpoint management
+- `session/AgentSession.ts` — Per-session orchestration facade over focused managers (`TurnExecutionManager`, `HistoryManager`, `InteractionManager`, `McpManager`, `PersistenceManager`, `ProviderAuthManager`, `ProviderCatalogManager`, `SessionAdminManager`, `SkillManager`, etc.)
+- `protocol.ts` — Legacy `ServerEvent` union types
+- `jsonrpc/` — JSON-RPC transport, schemas, routes, and event projectors
+- `sessionBackup/` — Filesystem backup and checkpoint management (multiple modules: `command.ts`, `snapshot.ts`, `tar.ts`, `delta.ts`, etc.)
+- `sessionDb/` — SQLite persistence (`repository.ts`, `migrations.ts`, `writeCoordinator.ts`, etc.)
 
 ### 2. Agent Loop (`src/agent.ts`)
 
@@ -73,6 +76,7 @@ User Message → System Prompt + History + Tools → AI Model → Tool Calls →
 **Key Function:** `createRunTurn()` — Factory that returns a `runTurn()` function with injectable dependencies (for testing).
 
 **Turn Lifecycle:**
+
 1. Build system prompt with skills, memory, and context
 2. Call the configured LLM runtime (`google-interactions` for Google, `pi` for Anthropic/OpenCode/local-compatible providers, `openai-responses` for OpenAI/Codex) with model, tools, and history
 3. Execute tool calls (with approval for risky operations)
@@ -80,6 +84,7 @@ User Message → System Prompt + History + Tools → AI Model → Tool Calls →
 5. Update message history
 
 The runtime boundary lives in `src/runtime/`:
+
 - `createRuntime()` selects `google-interactions`, `pi`, or `openai-responses`; providers are normalized back to their supported default runtime when stale saved values are encountered
 - `googleInteractionsRuntime` handles Gemini Interactions API turns, including server-side interaction continuation and Google-native stream/raw event handling
 - `piRuntime` handles Anthropic/OpenCode/local-compatible streaming/tool loops and shared tool execution utilities
@@ -89,28 +94,32 @@ The runtime boundary lives in `src/runtime/`:
 
 Built-in capabilities exposed to the agent:
 
-| Tool | Purpose | Approval Required |
-|------|---------|-------------------|
-| `bash` | Shell command execution | Conditional |
-| `read` | Read file contents | No |
-| `write` | Create/overwrite files | Yes (write path) |
-| `edit` | In-place text edits | Yes (write path) |
-| `glob` | Find files by pattern | No |
-| `grep` | Search file contents | No |
-| `webSearch` | Search the web | No |
-| `webFetch` | Fetch web content | No |
-| `ask` | Ask user questions | No |
-| `todoWrite` | Update progress list | No |
-| `spawnAgent` | Delegate to a child agent | No |
-| `skill` | Load skill instructions | No |
-| `memory` | Read/write persistent memory | No |
-| `notebookEdit` | Edit Jupyter notebook cells | Yes (write path) |
-| `usage` | Query session token/cost usage | No |
-| `exa` | Web search via Exa backend | No |
-| `persistentAgents` | Long-running background agents | No |
-| `api-keys` | Manage provider API keys | No |
+
+| Tool           | Purpose                        | Approval Required |
+| -------------- | ------------------------------ | ----------------- |
+| `bash`         | Shell command execution        | Conditional       |
+| `read`         | Read file contents             | No                |
+| `write`        | Create/overwrite files         | Yes (write path)  |
+| `edit`         | In-place text edits            | Yes (write path)  |
+| `glob`         | Find files by pattern          | No                |
+| `grep`         | Search file contents           | No                |
+| `webSearch`    | Search the web                 | No                |
+| `webFetch`     | Fetch web content              | No                |
+| `ask`          | Ask user questions             | No                |
+| `todoWrite`    | Update progress list           | No                |
+| `spawnAgent`   | Delegate to a child agent      | No                |
+| `skill`        | Load skill instructions        | No                |
+| `memory`       | Read/write persistent memory   | No                |
+| `notebookEdit` | Edit Jupyter notebook cells    | Yes (write path)  |
+| `usage`        | Query session token/cost usage | No                |
+
+
+When agent control is enabled, the following tools are also available: `listAgents`, `sendAgentInput`, `waitForAgent`, `inspectAgent`, `resumeAgent`, `closeAgent`.
+
+`webSearch` is backed by either Exa or Parallel depending on configured credentials (`EXA_API_KEY` / `PARALLEL_API_KEY`). Supporting modules like `exa.ts`, `parallel.ts`, and `api-keys.ts` are implementation helpers, not standalone tools.
 
 Each tool is a factory function accepting a `ToolContext` with access to:
+
 - `config` — Current agent configuration
 - `log()` — Emit log output
 - `askUser()` — Prompt user for input
@@ -119,19 +128,11 @@ Each tool is a factory function accepting a `ToolContext` with access to:
 
 ### 4. Providers (`src/providers/`)
 
-Model provider integrations with unified interface:
+There are 12 registered providers: `google`, `openai`, `anthropic`, `bedrock`, `together`, `fireworks`, `nvidia`, `lmstudio`, `baseten`, `opencode-go`, `opencode-zen`, and `codex-cli`.
 
-| Provider | Auth Methods | Default Model |
-|----------|--------------|---------------|
-| Google | API Key | `gemini-3-flash-preview` |
-| OpenAI | API Key | `gpt-5.2` |
-| Anthropic | API Key | `claude-sonnet-4-6` |
-| Codex CLI | OAuth, API Key | (uses OpenAI) |
+Each provider is registered in `src/providers/index.ts` and model metadata lives in per-provider config files under `config/models/<provider>/`.
 
-Each provider exports:
-- `defaultModel` — Model ID to use
-- `keyCandidates` — Environment variable names to check
-- `createModel()` — Provider model adapter (headers/auth metadata for runtime/tooling paths)
+Provider selection flows through config with env var override (`AGENT_PROVIDER`). The runtime adapter (`google-interactions`, `pi`, or `openai-responses` in `src/runtime/`) is determined by the provider.
 
 ### 5. MCP Integration (`src/mcp/`)
 
@@ -142,6 +143,7 @@ Model Context Protocol servers extend the agent with external tools:
 - **Lifecycle**: Dynamic connect/disconnect with health monitoring
 
 **Config Locations (priority order):**
+
 1. `.cowork/mcp-servers.json` (workspace)
 2. `~/.cowork/config/mcp-servers.json` (user)
 3. `config/mcp-servers.json` (built-in)
@@ -159,6 +161,7 @@ skills/
 ```
 
 Skills are discovered from layered directories:
+
 1. Project: `.agent/skills/`
 2. Global: `~/.cowork/skills/`
 3. User: `~/.agent/skills/`
@@ -173,6 +176,7 @@ OpenTelemetry + Langfuse integration for production monitoring:
 - **Health Status**: `disabled | ready | degraded`
 
 **Environment Variables:**
+
 - `LANGFUSE_PUBLIC_KEY`
 - `LANGFUSE_SECRET_KEY`
 - `LANGFUSE_BASE_URL`
@@ -192,21 +196,25 @@ Electron + React wrapper (primary client):
 
 Minimal readline-based interface:
 
-- Connects to server via WebSocket
+- Connects to server via JSON-RPC WebSocket
 - Supports `--yolo` mode to bypass approvals
-- Persistent prompt history in `~/.cowork/state/prompt-history.jsonl`
 
 ## Data Flow
 
 ### Message Flow
 
+JSON-RPC flow (`cowork.jsonrpc.v1` subprotocol):
+
 ```
-1. Client connects → server_hello (sessionId, config, capabilities)
-2. Client sends user_message → session becomes busy
-3. Agent processes → emits model_stream_chunk, tool calls, etc.
-4. Agent requests approval → approval event → client responds
-5. Turn completes → assistant_message → session becomes idle
+1. Client connects → WebSocket negotiation with cowork.jsonrpc.v1 subprotocol
+2. Client sends thread/start or thread/resume → session binds to thread
+3. Client sends turn/start with user message → turn begins
+4. Server streams notifications: turn/started, item/started, item/agentMessage/delta, item/completed, turn/completed
+5. If approval needed → server sends JSON-RPC request → client responds
+6. Turn completes → turn/completed notification
 ```
+
+Legacy event names (e.g. `server_hello`, `model_stream_chunk`, `assistant_message`) are defined in `src/server/protocol.ts` and projected to JSON-RPC notifications by `eventProjector.ts`.
 
 ### Session Persistence
 
@@ -217,6 +225,7 @@ Sessions are stored in SQLite (`~/.cowork/sessions.db`):
 - **session_events** table — Append-only event log
 
 Resume semantics:
+
 1. Try warm in-memory binding
 2. If missing, load from SQLite (cold rehydrate)
 3. If not found, create new session
@@ -284,15 +293,18 @@ Configuration merges across three tiers (each overrides the previous):
 
 Not all commands are auto-approved. Risk classification:
 
-| Risk Level | Examples | Behavior |
-|------------|----------|----------|
-| Safe | `ls`, `git status`, `npm test` | Auto-approved |
-| Review Required | `rm`, `git push`, `npm publish` | Requires approval |
-| Dangerous | `rm -rf /`, `git push --force` | Always requires approval |
+
+| Risk Level      | Examples                        | Behavior                 |
+| --------------- | ------------------------------- | ------------------------ |
+| Safe            | `ls`, `git status`, `npm test`  | Auto-approved            |
+| Review Required | `rm`, `git push`, `npm publish` | Requires approval        |
+| Dangerous       | `rm -rf /`, `git push --force`  | Always requires approval |
+
 
 ### Path Permissions
 
 Write operations are restricted to:
+
 - Working directory (default)
 - Output directory (if configured)
 - Explicitly allowed paths
@@ -314,7 +326,7 @@ Write operations are restricted to:
 ### Caching
 
 - Skills are cached after first load
-- Prompt history persisted across sessions
+- Session history persisted in SQLite across restarts
 - MCP tool definitions cached per server connection
 
 ### Concurrency
@@ -330,3 +342,4 @@ Write operations are restricted to:
 - [Harness Config Guide](harness/config.md) — Config precedence and harness/runtime flags
 - [Bundling & Integration Guide](bundling-guide.md) — How to build custom apps on top of the cowork server
 - [Custom Tools Guide](custom-tools.md) — Tool extension and customization reference
+

@@ -15,7 +15,7 @@ bun test test/agent      # Run tests matching a pattern (e.g. agent, tools, sess
 bun run start            # Run desktop app (starts server automatically)
 bun run cli              # Run CLI REPL
 bun run serve            # Run WebSocket server standalone
-bun run dev              # Watch mode (rebuilds on src/ changes)
+bun run dev              # Watch mode (watches CLI entry src/index.ts)
 ```
 
 There is no linter or formatter configured. TypeScript strict mode is the primary code quality check (`tsc --noEmit` via tsconfig).
@@ -95,7 +95,7 @@ Offload research, exploration, and parallel analysis to subagents
 For complex problems, throw more compute at it via subagents
 One tack per subagent for focused execution
 ### 3. Self-Improvement Loop
-After ANY correction from the user: update `tasks/lessons.md with the pattern
+After ANY correction from the user: update `tasks/lessons.md` with the pattern
 Write rules for yourself that prevent the same mistake
 Ruthlessly iterate on these lessons until mistake rate drops
 Review lessons at session start for relevant project
@@ -109,7 +109,7 @@ For non-trivial changes: pause and ask "is there a more elegant way?"
 If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
 Skip this for simple, obvious fixes don't over-engineer
 Challenge your own work before presenting it
-### 6. Autonomous Bug Fizing
+### 6. Autonomous Bug Fixing
 When given a bug report: just fix it. Don't ask for hand-holding Point at logs, errors, failing tests then resolve them
 Zero context switching required from the user
 Go fix failing CI tests without being told how
@@ -118,9 +118,9 @@ Go fix failing CI tests without being told how
 2. **Verify Plan**: Check in before starting implementation
 3. **Track Progress**: Mark items complete as you go
 4. **Explain Changes**: High-level summary at each step
-5. **Document Results**: Add review section to tasks/todo.md`
-6. **Capture Lessons**: Update `tasks/lessons.md after corrections
+5. **Document Results**: Add review section to `tasks/todo.md`
+6. **Capture Lessons**: Update `tasks/lessons.md` after corrections
 ## Core Principles
 **Simplicity First**: Make every change as simple as possible. Impact minimal code.
 **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
-**Minimat Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
+**Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.

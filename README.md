@@ -6,10 +6,6 @@ A local-first coding agent backend with CLI and desktop clients.
 
 If you want "an AI terminal app", you can use it that way. If you want "an agent backend with a documented control plane and multiple frontends", that is what this repo actually is.
 
-<p align="center">
-  <img src="apps/desktop/screenshot.png" alt="Cowork desktop screenshot" width="1100" />
-</p>
-
 ## Why this project exists
 
 Most coding agents collapse the runtime, UI, and provider glue into one product surface. That makes them hard to extend, hard to automate, and hard to trust once they start touching a real workspace.
@@ -30,7 +26,7 @@ Cowork takes the opposite approach:
 - Persistent session history in `~/.cowork/sessions.db`, with resume support across restarts.
 - Session backup and checkpoint APIs for restoring a workspace to its original or checkpointed state.
 - Layered skills and MCP configuration for project, user, global, and built-in capabilities.
-- Provider catalog, auth, and status flows for Google, OpenAI, Anthropic, and `codex-cli`.
+- Provider catalog, auth, and status flows for Google, OpenAI, Anthropic, Bedrock, Together, Fireworks, NVIDIA, LM Studio, Baseten, and `codex-cli`.
 - Harness and observability hooks for repeatable runs, traces, and artifact capture.
 
 ## Quickstart
@@ -51,10 +47,20 @@ Live AI turns require at least one configured provider. Starting the server, lau
 
 | Provider | Auth |
 | --- | --- |
-| Google | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| Google | `GOOGLE_GENERATIVE_AI_API_KEY` or `GOOGLE_API_KEY` |
 | OpenAI | `OPENAI_API_KEY` |
 | Anthropic | `ANTHROPIC_API_KEY` |
+| Bedrock | AWS default credentials, profile, or explicit keys (`AWS_REGION`, `AWS_PROFILE`, etc.) |
+| Together | `TOGETHER_API_KEY` |
+| Fireworks | `FIREWORKS_API_KEY` |
+| NVIDIA | `NVIDIA_API_KEY` |
+| Baseten | `BASETEN_API_KEY` |
+| LM Studio | `LM_STUDIO_API_KEY` (optional); configure base URL via `LM_STUDIO_BASE_URL` or config |
+| OpenCode Go | `OPENCODE_API_KEY` |
+| OpenCode Zen | `OPENCODE_ZEN_API_KEY` |
 | Codex CLI | Built-in OAuth or API key flow via Cowork |
+
+All providers also support saving API keys through the desktop UI or the CLI `/connect` flow, stored in `~/.cowork/auth/connections.json`.
 
 Examples:
 
@@ -104,7 +110,8 @@ Build a standalone Bun binary (`cowork-server`) that can be bundled into other a
 
 ```bash
 bun run build:server-binary
-./dist/cowork-server --host 0.0.0.0 --port 7337```
+./dist/cowork-server --host 0.0.0.0 --port 7337
+```
 
 On startup, `cowork-server` logs the bound WebSocket URL and, when using `--host 0.0.0.0`, prints reachable LAN IPv4 addresses for easy embedding/debugging.
 Windows ARM64 release builds are staged as runnable bundles instead of single compiled executables. Those bundles include `bun.exe`, a Bun-targeted server bundle, the launcher script, and the built-in `prompts/`, `config/`, and `docs/` assets.
@@ -115,13 +122,14 @@ Windows ARM64 release builds are staged as runnable bundles instead of single co
 
 The Electron app is the primary workstation client with:
 
-- workspace management
-- provider settings and auth
-- MCP settings and validation
-- chat transcript rendering
-- thread history
-- native menus, dialogs, notifications, and updater plumbing
-- Windows x64 and Windows ARM64 packaged releases
+- workspace management (per-workspace server processes)
+- provider settings, auth flows, and connection status
+- MCP server management and validation
+- chat transcript rendering with streaming markdown
+- thread history and resume
+- skills and plugin management
+- native menus, dialogs, notifications, and auto-updater
+- macOS, Windows x64, and Windows ARM64 packaged releases
 
 Run it in development with:
 
@@ -135,12 +143,17 @@ The CLI is a lightweight readline client for the same server. It supports slash 
 
 Useful commands include:
 
-- `/connect <provider>`
-- `/provider <name>`
-- `/model <id>`
-- `/sessions`
-- `/resume <sessionId>`
-- `/tools`
+- `/connect <provider>` — start a provider auth flow
+- `/provider <name>` — switch provider
+- `/model <id>` — switch model
+- `/new` — start a new session
+- `/resume <sessionId>` — resume a previous session
+- `/sessions` — list sessions
+- `/tools` — list available tools
+- `/cwd <path>` — change working directory
+- `/verbosity <level>` — set output verbosity
+- `/reasoning-effort <level>` — set reasoning effort (alias: `/effort`)
+- `/help` — show all commands
 
 ### Custom clients
 
@@ -175,7 +188,7 @@ A few architectural boundaries matter:
 - Business logic belongs in the server, not in the clients.
 - Sessions are durable and resumable.
 - Tools execute on the server in the workspace context.
-- Clients consume `ServerEvent`s and send `ClientMessage`s.
+- The primary wire protocol is JSON-RPC over WebSocket (`cowork.jsonrpc.v1` subprotocol). Clients send JSON-RPC requests and receive notifications for streaming events.
 
 If you want the exact wire contract, use [docs/websocket-protocol.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/websocket-protocol.md). If you want the broader component map, use [docs/architecture.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/architecture.md).
 
@@ -192,10 +205,11 @@ Cowork ships with server-side tools for:
 - workflow control: `ask`, `todoWrite`, `spawnAgent`
 - artifact editing: `notebookEdit`
 - contextual guidance: `skill`, `memory`
+- session diagnostics: `usage`
 
-Some sessions also expose persistent-agent control tools such as `spawnPersistentAgent`, `listPersistentAgents`, `sendAgentInput`, `waitForAgent`, and `closeAgent`.
+When agent control is enabled, sessions also expose persistent-agent tools: `listAgents`, `sendAgentInput`, `waitForAgent`, `inspectAgent`, `resumeAgent`, and `closeAgent`.
 
-`webSearch` supports Brave or Exa depending on configured credentials. `webFetch` is not just a raw fetch; it extracts readable web pages into markdown-friendly text, includes page links and image links when Exa returns them, and saves direct image/document downloads into `Downloads/` with a returned local file path.
+`webSearch` supports Exa or Parallel depending on configured credentials (`EXA_API_KEY` / `PARALLEL_API_KEY`). `webFetch` extracts readable web pages into markdown-friendly text, enriches results with page links and image links via the configured search provider, and saves direct image/document downloads into the workspace `Downloads/` directory with a returned local file path.
 
 ### Skills
 
@@ -206,17 +220,19 @@ Skills are instruction bundles rooted in `SKILL.md`. They are discovered from la
 3. `~/.agent/skills`
 4. built-in `skills/`
 
-Built-in curated skills currently cover document, PDF, slide, and spreadsheet workflows. See [docs/custom-tools.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/custom-tools.md) if you want to extend the system further.
+Built-in curated skills currently cover document, PDF, slide, spreadsheet, git workflow, and frontend development. See [docs/custom-tools.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/custom-tools.md) if you want to extend the system further.
 
 ### MCP
 
-Cowork supports Model Context Protocol servers with layered config and auth:
+Cowork supports Model Context Protocol servers with layered config and auth (workspace config wins over user over system):
 
-1. `.cowork/mcp-servers.json`
-2. `~/.cowork/config/mcp-servers.json`
-3. `config/mcp-servers.json`
+1. `.cowork/mcp-servers.json` (workspace)
+2. `~/.cowork/config/mcp-servers.json` (user)
+3. `config/mcp-servers.json` (built-in defaults)
 
-Supported flows include stdio and HTTP/SSE transports plus API-key and OAuth auth modes. See [docs/mcp-guide.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/mcp-guide.md).
+Legacy paths (`.agent/mcp-servers.json` at workspace and user level) are also loaded for backward compatibility.
+
+Supported flows include stdio and HTTP/SSE transports plus API-key and OAuth auth modes. Credentials are stored separately from configs in `.cowork/auth/` and `~/.cowork/auth/`. See [docs/mcp-guide.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/mcp-guide.md).
 
 ## Persistence and safety
 
@@ -240,42 +256,59 @@ For the full storage model, see [docs/session-storage-architecture.md](https://g
 Common commands:
 
 ```bash
-bun test
-bun run typecheck
-bun run docs:check
-bun run dev
-bun run desktop:dev
-bun run harness:run
+bun test                    # run all tests
+bun run typecheck           # typecheck root project + apps/desktop
+bun run docs:check          # verify doc consistency
+bun run dev                 # watch mode for CLI entry (src/index.ts)
+bun run desktop:dev         # run Electron desktop app in dev mode
+bun run harness:run         # run harness scenarios (report-only)
+bun run test:stable         # sequential per-file test runner for flake detection
 ```
 
 Notes:
 
-- `bun install` at the repo root also installs desktop dependencies.
-- `bun run typecheck` covers the root project and `apps/desktop`.
+- `bun install` at the repo root triggers a postinstall script that also installs `apps/desktop` and `apps/mobile` dependencies.
+- `bun run typecheck` covers both the root project and `apps/desktop`.
+- `bun run dev` watches `src/index.ts` (the CLI entry point), not the desktop app. Use `bun run desktop:dev` for the Electron app.
 - The test suite is deterministic and does not require provider credentials.
 
 ## Repository map
 
 | Path | Purpose |
 | --- | --- |
-| `src/server/` | WebSocket server, protocol, session orchestration, persistence, backup |
+| `src/agent.ts` | Core agent turn logic (`createRunTurn()` factory) |
+| `src/config.ts` | Three-tier config loading and deep merge |
+| `src/server/` | WebSocket server, JSON-RPC routes, session orchestration, persistence, backup |
+| `src/server/session/` | `AgentSession` facade and focused managers (`TurnExecutionManager`, `HistoryManager`, etc.) |
+| `src/server/jsonrpc/` | JSON-RPC transport, schemas, routes, event/journal projectors |
 | `src/cli/` | CLI REPL and command parsing |
 | `src/tools/` | Built-in server-side tools |
-| `src/providers/` | Provider catalog, auth, and model adapters |
+| `src/providers/` | Provider catalog, auth, and model adapters (12 providers) |
+| `src/runtime/` | Runtime adapters (`google-interactions`, `pi`, `openai-responses`) |
 | `src/mcp/` | MCP config, auth, and client lifecycle |
+| `src/skills/` | Skill discovery and trigger extraction |
+| `src/observability/` | OpenTelemetry + Langfuse integration |
 | `apps/desktop/` | Electron desktop app |
+| `apps/mobile/` | Expo mobile app (React Native) |
+| `config/` | Built-in defaults and per-provider model configs (`config/models/`) |
 | `skills/` | Bundled built-in skills |
+| `prompts/` | System prompts, sub-agent prompts, and model-specific prompt snippets |
+| `scripts/` | Build helpers, doc checker, harness runner, release utilities |
+| `test/` | All test files (`*.test.ts`) |
 | `docs/` | Protocol, architecture, storage, MCP, and harness docs |
 
 ## Docs
 
 | Document | What it covers |
 | --- | --- |
-| [docs/websocket-protocol.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/websocket-protocol.md) | Canonical WebSocket contract for custom clients |
+| [docs/websocket-protocol.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/websocket-protocol.md) | Canonical JSON-RPC WebSocket contract for custom clients |
 | [docs/architecture.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/architecture.md) | Component-level system overview |
 | [docs/mcp-guide.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/mcp-guide.md) | MCP setup, layering, and auth |
 | [docs/session-storage-architecture.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/session-storage-architecture.md) | SQLite session storage and resume behavior |
 | [docs/custom-tools.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/custom-tools.md) | Extending Cowork with custom tools |
+| [docs/bundling-guide.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/bundling-guide.md) | Building custom apps on top of the cowork server |
+| [docs/mobile-remote-access.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/mobile-remote-access.md) | Mobile remote access and relay security |
+| [docs/workspace-context.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/workspace-context.md) | Workspace context and project instructions |
 | [docs/harness/index.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/harness/index.md) | Harness docs index |
 | [docs/harness/config.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/harness/config.md) | Harness config precedence, env vars, and runtime flags |
 | [docs/harness/runbook.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/harness/runbook.md) | Running harness scenarios and collecting artifacts |

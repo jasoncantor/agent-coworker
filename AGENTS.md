@@ -4,16 +4,18 @@ agent-coworker is a coworker agent built on Bun + TypeScript (ESM) with a WebSoc
 
 When you have access to subagents or agent teams, feel free to use them. Subagents are good for delegating tasks for searching and performing specific actions. Be specific with your delegation, and feel free to use them liberally.  
 
-All logic for the application should be done in the harness itself, consider the desktop app just a UI layer. The only things that should be specific to that are things that are relavent, like UI layout or platform-specific behavior. All logic on how the agent works on the users system, saves files, etc should be done in the harness THEN exposed and connected to the UI layers via the websocket. 
+All logic for the application should be done in the harness itself, consider the desktop app just a UI layer. The only things that should be specific to that are things that are relevant, like UI layout or platform-specific behavior. All logic on how the agent works on the users system, saves files, etc should be done in the harness THEN exposed and connected to the UI layers via the websocket.
 
 ## Project Structure & Module Organization
 
 - `src/`: application code
 - `src/server/`: WebSocket server, protocol, and session state
 - `src/cli/`: CLI REPL and argument parsing
-- `src/providers/`: model/provider integrations (OpenAI/Google/Anthropic and `*-cli`)
+- `src/providers/`: model/provider integrations (Google, OpenAI, Anthropic, Bedrock, Together, Fireworks, NVIDIA, LM Studio, Baseten, and `codex-cli`)
 - `src/tools/`: built-in tools (`bash`, `read`, `write`, `webSearch`, etc.)
+- `src/runtime/`: runtime adapters (`google-interactions`, `pi`, `openai-responses`)
 - `apps/desktop/`: Electron desktop application
+- `apps/mobile/`: Expo mobile app (React Native)
 - `test/`: Bun tests (`*.test.ts`)
 - `config/`: built-in defaults and MCP server defaults
 - `prompts/`: system + sub-agent prompts
@@ -26,7 +28,7 @@ All logic for the application should be done in the harness itself, consider the
 - `bun run start`: run the desktop app (starts the server automatically).
 - `bun run cli`: run the plain CLI REPL.
 - `bun run serve`: run the server only.
-- `bun run dev`: watch mode for local iteration.
+- `bun run dev`: watch mode for CLI entry (`src/index.ts`).
 - `bun test`: run the full test suite.
 
 Example (CLI with initial workspace): `bun run cli -- --dir /path/to/project`. Desktop `bun run start` does not forward `--dir` (use in-app workspace selection).
@@ -102,8 +104,8 @@ For headless/cloud testing, prefer `bun run serve` and interact via WebSocket (s
 
 ### Testing
 
-- `bun test` runs the full suite (~1590 tests). All tests are deterministic and require no network or API keys.
-- Two tests are skipped by default (remote MCP integration tests requiring network).
+- `bun test` runs the full suite. All tests are deterministic and require no network or API keys. Test files live in `test/` (~156 files) and `apps/desktop/test/` (~66 files).
+- A small number of tests are skipped by default (remote MCP integration tests requiring network).
 - There is no configured linter or formatter. `bun run typecheck` is the code quality check; it runs the repo-root core typecheck plus `apps/desktop` (including `electron/*`).
 
 ### Desktop App
