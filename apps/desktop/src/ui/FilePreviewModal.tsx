@@ -1,6 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ComponentProps } from "react";
+import type { PluggableList } from "unified";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import mammoth from "mammoth";
-import { Streamdown } from "streamdown";
+import {
+  defaultRehypePlugins,
+  defaultRemarkPlugins,
+  Streamdown,
+} from "streamdown";
+import { cjk } from "@streamdown/cjk";
+import { code } from "@streamdown/code";
+import { math } from "@streamdown/math";
+import { mermaid } from "@streamdown/mermaid";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import * as XLSX from "xlsx";
 import { ExternalLinkIcon, FolderOpenIcon } from "lucide-react";
 
@@ -15,7 +27,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
-import { openPath, readFileForPreview, revealPath } from "../lib/desktopCommands";
+import {
+  confirmAction,
+  openExternalUrl,
+  openPath,
+  readFileForPreview,
+  revealPath,
+} from "../lib/desktopCommands";
+import {
+  decodeDesktopExternalHref,
+  decodeDesktopLocalFileHref,
+  remarkRewriteDesktopFileLinks,
+} from "../components/ai-elements/message";
+import { cn } from "../lib/utils";
 import { getExtensionLower, getFilePreviewKind, mimeForPreviewKind, type FilePreviewKind } from "../lib/filePreviewKind";
 
 function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
@@ -61,9 +85,217 @@ function basenamePath(p: string): string {
   return parts[parts.length - 1] ?? p;
 }
 
+function dirnamePath(p: string): string {
+  const normalized = p.replace(/\\/g, "/");
+  const lastSlash = normalized.lastIndexOf("/");
+  if (lastSlash <= 0) return normalized.startsWith("/") ? "/" : ".";
+  return normalized.slice(0, lastSlash);
+}
+
+function isAbsolutePath(p: string): boolean {
+  return /^\//.test(p) || /^[A-Za-z]:[\\/]/.test(p);
+}
+
+function resolveRelativePath(base: string, relative: string): string {
+  if (isAbsolutePath(relative)) return relative;
+  const dir = dirnamePath(base);
+  const parts = dir.split("/").filter(Boolean);
+  for (const segment of relative.split("/")) {
+    if (segment === "..") parts.pop();
+    else if (segment !== ".") parts.push(segment);
+  }
+  const joined = parts.join("/");
+  return dir.startsWith("/") ? "/" + joined : joined;
+}
+
+const previewStreamdownPlugins = { cjk, code, math, mermaid };
+
+const previewSanitizeSchema = {
+  ...defaultSchema,
+  protocols: {
+    ...defaultSchema.protocols,
+    href: [...(defaultSchema.protocols?.href ?? []), "tel", "cowork-file", "cowork-external"],
+  },
+};
+
+const previewRehypePlugins: PluggableList = [
+  defaultRehypePlugins.raw,
+  [rehypeSanitize, previewSanitizeSchema],
+  defaultRehypePlugins.harden,
+];
+
+type HastNode = {
+  type?: string;
+  tagName?: string;
+  url?: string;
+  value?: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+};
+
+function createRemarkResolveRelativeLinks(previewFilePath: string) {
+  return () => (tree: HastNode) => {
+    visitLinks(tree, (node) => {
+      const href = node.url ?? (node.properties?.href as string | undefined);
+      if (!href) return;
+
+      if (/^https?:|^mailto:|^tel:|^#|^cowork-file:|^cowork-external:/.test(href)) return;
+
+      let localPath: string | null = null;
+
+      if (href.startsWith("file:")) {
+        try {
+          const parsed = new URL(href);
+          const pathname = decodeURIComponent(parsed.pathname);
+          if (/^\/[a-zA-Z]:/.test(pathname)) localPath = pathname.slice(1).replace(/\//g, "\\");
+          else localPath = pathname;
+        } catch { /* not a valid URL, skip */ }
+      } else if (!isAbsolutePath(href)) {
+        const decodedHref = decodeURIComponent(href.split("#")[0]?.split("?")[0] ?? href);
+        localPath = resolveRelativePath(previewFilePath, decodedHref);
+      }
+
+      if (localPath) {
+        const encoded = `cowork-file://open?path=${encodeURIComponent(localPath)}`;
+        if (node.url !== undefined) node.url = encoded;
+        if (node.properties?.href !== undefined) node.properties.href = encoded;
+      }
+    });
+  };
+}
+
+function visitLinks(node: HastNode, fn: (n: HastNode) => void): void {
+  if (node.type === "link" || (node.type === "element" && node.tagName === "a")) {
+    fn(node);
+  }
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) visitLinks(child, fn);
+  }
+}
+
+function classifyExternalHref(rawHref: string): "browser" | "mail" | "app" | null {
+  try {
+    const parsed = new URL(rawHref);
+    switch (parsed.protocol) {
+      case "http:":
+      case "https:":
+        return "browser";
+      case "mailto:":
+        return "mail";
+      case "file:":
+      case "cowork-file:":
+      case "cowork-external:":
+      case "about:":
+      case "blob:":
+      case "data:":
+      case "javascript:":
+        return null;
+      default:
+        return "app";
+    }
+  } catch {
+    return null;
+  }
+}
+
+type PreviewLinkProps = ComponentProps<"a"> & {
+  node?: unknown;
+  onOpenLocalFile?: (path: string) => void;
+};
+
+function PreviewLink({
+  children,
+  className,
+  href,
+  node: _node,
+  onClick: _onClick,
+  rel: _rel,
+  target: _target,
+  onOpenLocalFile,
+  ...props
+}: PreviewLinkProps) {
+  const localPath = decodeDesktopLocalFileHref(href);
+  const forwardedExternalHref = decodeDesktopExternalHref(href);
+
+  if (localPath) {
+    return (
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className={cn("wrap-anywhere appearance-none bg-transparent p-0 text-left font-medium text-primary underline", className)}
+        data-streamdown="link"
+        onClick={() => onOpenLocalFile?.(localPath)}
+      >
+        {children}
+      </Button>
+    );
+  }
+
+  if (forwardedExternalHref) {
+    return (
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className={cn("wrap-anywhere appearance-none bg-transparent p-0 text-left font-medium text-primary underline", className)}
+        data-streamdown="link"
+        onClick={async () => {
+          const target = classifyExternalHref(forwardedExternalHref);
+          if (!target) return;
+          const confirmed = await confirmAction({
+            title: target === "browser" ? "Open external link?" : target === "mail" ? "Open mail link?" : "Open app link?",
+            message: target === "browser" ? "This will open the link in your default browser." : target === "mail" ? "This will open the link in your default mail app." : "This will open the link in another app.",
+            detail: forwardedExternalHref,
+            kind: "info",
+            confirmLabel: target === "browser" ? "Open link" : "Open",
+            cancelLabel: "Cancel",
+            defaultAction: "cancel",
+          });
+          if (confirmed) await openExternalUrl({ url: forwardedExternalHref });
+        }}
+      >
+        {children}
+      </Button>
+    );
+  }
+
+  const isExternal = href && classifyExternalHref(href) !== null;
+
+  return (
+    <a
+      className={cn("wrap-anywhere font-medium text-primary underline", className)}
+      data-streamdown="link"
+      href={href}
+      onClick={async (event) => {
+        if (!href || !isExternal) return;
+        event.preventDefault();
+        const target = classifyExternalHref(href);
+        if (!target) return;
+        const confirmed = await confirmAction({
+          title: target === "browser" ? "Open external link?" : target === "mail" ? "Open mail link?" : "Open app link?",
+          message: target === "browser" ? "This will open the link in your default browser." : target === "mail" ? "This will open the link in your default mail app." : "This will open the link in another app.",
+          detail: href,
+          kind: "info",
+          confirmLabel: target === "browser" ? "Open link" : "Open",
+          cancelLabel: "Cancel",
+          defaultAction: "cancel",
+        });
+        if (confirmed) await openExternalUrl({ url: href });
+      }}
+      rel="noreferrer"
+      target="_blank"
+      {...props}
+    >
+      {children}
+    </a>
+  );
+}
+
 export function FilePreviewModal() {
   const filePreview = useAppStore((s) => s.filePreview);
   const closeFilePreview = useAppStore((s) => s.closeFilePreview);
+  const openFilePreview = useAppStore((s) => s.openFilePreview);
 
   const path = filePreview?.path ?? null;
   const ext = path ? getExtensionLower(path) : "";
@@ -223,6 +455,37 @@ export function FilePreviewModal() {
     if (path) void revealPath({ path }).catch(() => {});
   };
 
+  const handleOpenLocalFile = useCallback((localPath: string) => {
+    const targetKind = getFilePreviewKind(localPath);
+    if (targetKind !== "unsupported" && targetKind !== "unknown") {
+      openFilePreview({ path: localPath });
+    } else {
+      void openPath({ path: localPath }).catch(() => {});
+    }
+  }, [openFilePreview]);
+
+  const openFilePreviewRef = useRef(openFilePreview);
+  openFilePreviewRef.current = openFilePreview;
+  const handleOpenLocalFileRef = useRef(handleOpenLocalFile);
+  handleOpenLocalFileRef.current = handleOpenLocalFile;
+
+  const mdRemarkPlugins = useMemo(() => {
+    if (!path) return [defaultRemarkPlugins.gfm, remarkRewriteDesktopFileLinks];
+    return [
+      defaultRemarkPlugins.gfm,
+      createRemarkResolveRelativeLinks(path),
+      remarkRewriteDesktopFileLinks,
+    ];
+  }, [path]);
+
+  const mdLinkComponent = useMemo(() => {
+    const Link = (props: ComponentProps<"a"> & { node?: unknown }) => (
+      <PreviewLink {...props} onOpenLocalFile={handleOpenLocalFileRef.current} />
+    );
+    Link.displayName = "PreviewLinkWrapper";
+    return Link;
+  }, []);
+
   const isOpen = path !== null;
 
   const showFallback =
@@ -285,7 +548,13 @@ export function FilePreviewModal() {
             </div>
           ) : (kind === "markdown" || kind === "text") && textContent !== null ? (
             kind === "markdown" ? (
-              <Streamdown className="max-w-none leading-7 [&>*:first-child]:mt-0 [&_a]:underline [&_code]:rounded-sm [&_code]:bg-muted/45 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border/80 [&_pre]:bg-muted/35 [&_pre]:p-3">
+              <Streamdown
+                className="max-w-none leading-7 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:underline [&_code]:rounded-sm [&_code]:bg-muted/45 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border/80 [&_pre]:bg-muted/35 [&_pre]:p-3"
+                components={{ a: mdLinkComponent }}
+                plugins={previewStreamdownPlugins}
+                remarkPlugins={mdRemarkPlugins}
+                rehypePlugins={previewRehypePlugins}
+              >
                 {textContent}
               </Streamdown>
             ) : (
