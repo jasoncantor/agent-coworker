@@ -35,11 +35,17 @@ function buildProjectInstructionsSection(config: AgentConfig): string {
   return ["## Project instructions", "", text].join("\n");
 }
 
-function appendWorkspaceContextBlocks(prompt: string, config: AgentConfig): string {
+function appendWorkspaceContextBlocks(
+  prompt: string,
+  config: AgentConfig,
+  opts?: { includeProjectInstructions?: boolean },
+): string {
   const blocks: string[] = [prompt];
-  const projectInstructions = buildProjectInstructionsSection(config);
-  if (projectInstructions) {
-    blocks.push(projectInstructions);
+  if (opts?.includeProjectInstructions) {
+    const projectInstructions = buildProjectInstructionsSection(config);
+    if (projectInstructions) {
+      blocks.push(projectInstructions);
+    }
   }
   blocks.push(buildWorkspaceMapSection(config));
   return blocks.join("\n\n");
@@ -621,7 +627,8 @@ export async function loadSystemPromptWithSkills(config: AgentConfig): Promise<S
   prompt = renderSpawnAgentSpecificPrompt(prompt, config);
   prompt = normalizeLegacySpawnAgentGuidance(prompt);
 
-  prompt = appendWorkspaceContextBlocks(prompt, config);
+  // Project instructions already render via {{userProfileInstructions}} in system templates; do not duplicate.
+  prompt = appendWorkspaceContextBlocks(prompt, config, { includeProjectInstructions: false });
 
   prompt += `\n\n${buildSkillPolicySection(vars.skillNames, vars.skillExamples, config)}`;
   prompt += `\n\n${buildShellExecutionPolicySection()}`;
@@ -698,5 +705,5 @@ export async function loadAgentPrompt(config: AgentConfig, role: AgentRole): Pro
     fs.readFile(rolePath, "utf-8"),
   ]);
   const combined = `${basePrompt.trimEnd()}\n\n${rolePrompt.trim()}\n`;
-  return appendWorkspaceContextBlocks(combined, config);
+  return appendWorkspaceContextBlocks(combined, config, { includeProjectInstructions: true });
 }

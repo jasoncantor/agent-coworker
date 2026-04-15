@@ -45,6 +45,19 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
 }
 
 describe("buildDirectoryTreeLines", () => {
+  test("does not recurse into symlinked directories", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ws-map-symlink-"));
+    const target = path.join(tmp, "target");
+    await fs.mkdir(target, { recursive: true });
+    await fs.writeFile(path.join(target, "secret.txt"), "x");
+    await fs.symlink(target, path.join(tmp, "link"), "dir");
+
+    const lines = buildDirectoryTreeLines(tmp, "root");
+    const joined = lines.join("\n");
+    expect(joined).toContain("link/");
+    expect(joined).not.toContain("secret.txt");
+  });
+
   test("prioritizes AGENTS.md and README before unrelated names", async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ws-map-sort-"));
     await fs.writeFile(path.join(tmp, "zebra.txt"), "x");
@@ -151,7 +164,7 @@ describe("prompt integration", () => {
     expect(subPrompt).toContain("## Workspace Map");
   });
 
-  test("injects project instructions before workspace map when set", async () => {
+  test("does not duplicate project instructions in main system prompt (template already has user profile)", async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ws-map-proj-"));
     const agentDir = path.join(tmp, ".agent");
     await fs.mkdir(agentDir, { recursive: true });
@@ -164,6 +177,24 @@ describe("prompt integration", () => {
     });
 
     const { prompt } = await loadSystemPromptWithSkills(config);
+    expect(prompt).not.toContain("## Project instructions");
+    expect(prompt).toContain("Use pnpm only.");
+    expect(prompt).toContain("## Workspace Map");
+  });
+
+  test("subagent prompt includes project instructions section when set (subagent templates omit user profile)", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ws-map-sub-proj-"));
+    const agentDir = path.join(tmp, ".agent");
+    await fs.mkdir(agentDir, { recursive: true });
+    await fs.mkdir(path.join(tmp, ".git"), { recursive: true });
+
+    const config = makeConfig({
+      workingDirectory: tmp,
+      projectAgentDir: agentDir,
+      userProfile: { instructions: "Use pnpm only." },
+    });
+
+    const prompt = await loadAgentPrompt(config, "explorer");
     const idxProject = prompt.indexOf("## Project instructions");
     const idxMap = prompt.indexOf("## Workspace Map");
     expect(idxProject).toBeGreaterThan(-1);

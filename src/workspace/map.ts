@@ -57,6 +57,7 @@ function isIgnoredDir(name: string): boolean {
   return WORKSPACE_MAP_IGNORED_DIRS.has(name);
 }
 
+/** `stat` follows symlinks — use only when the target type is needed. */
 function safeStatSync(absPath: string): fs.Stats | null {
   try {
     return fs.statSync(absPath);
@@ -65,29 +66,73 @@ function safeStatSync(absPath: string): fs.Stats | null {
   }
 }
 
+/** `lstat` does not follow symlinks — use for traversal decisions. */
+function safeLstatSync(absPath: string): fs.Stats | null {
+  try {
+    return fs.lstatSync(absPath);
+  } catch {
+    return null;
+  }
+}
+
+function displayAsDirectory(absPath: string, dirent: fs.Dirent): boolean {
+  if (dirent.isSymbolicLink()) {
+    const target = safeStatSync(absPath);
+    return target?.isDirectory() ?? false;
+  }
+  return dirent.isDirectory();
+}
+
+type ListedChild = { name: string; isDirectory: boolean; recurse: boolean };
+
 /**
  * Lists immediate children of `absDir`, filtered and sorted. At most `MAX_ENTRIES_PER_DIR` names.
+ * Uses `readdir` with file types to avoid a stat per entry. Does not recurse into symlinked
+ * directories (listed as a single name with a trailing `/` when the target is a directory).
  */
-function listFilteredChildren(absDir: string): Array<{ name: string; isDirectory: boolean }> {
-  let names: string[];
+function listFilteredChildren(absDir: string): ListedChild[] {
+  let dirents: fs.Dirent[];
   try {
-    names = fs.readdirSync(absDir);
+    dirents = fs.readdirSync(absDir, { withFileTypes: true });
   } catch {
     return [];
   }
 
-  const out: Array<{ name: string; isDirectory: boolean }> = [];
-  for (const name of names) {
+  const out: ListedChild[] = [];
+  for (const dirent of dirents) {
+    const name = dirent.name;
     if (name === "." || name === "..") continue;
+
     const abs = path.join(absDir, name);
-    const st = safeStatSync(abs);
-    if (!st) continue;
-    if (st.isDirectory() && isIgnoredDir(name)) continue;
-    out.push({ name, isDirectory: st.isDirectory() });
+
+    if (dirent.isSymbolicLink()) {
+      const displayDir = displayAsDirectory(abs, dirent);
+      if (displayDir && isIgnoredDir(name)) continue;
+      out.push({ name, isDirectory: displayDir, recurse: false });
+      continue;
+    }
+
+    if (dirent.isDirectory()) {
+      if (isIgnoredDir(name)) continue;
+      out.push({ name, isDirectory: true, recurse: true });
+      continue;
+    }
+
+    out.push({ name, isDirectory: false, recurse: false });
   }
 
   out.sort((left, right) => compareEntries(left.name, right.name));
   return out.slice(0, MAX_ENTRIES_PER_DIR);
+}
+
+function isListableDirectoryRoot(rootAbs: string): boolean {
+  const st = safeLstatSync(rootAbs);
+  if (!st) return false;
+  if (st.isSymbolicLink()) {
+    const target = safeStatSync(rootAbs);
+    return target?.isDirectory() ?? false;
+  }
+  return st.isDirectory();
 }
 
 /**
@@ -96,8 +141,7 @@ function listFilteredChildren(absDir: string): Array<{ name: string; isDirectory
  * two levels below the label line.
  */
 export function buildDirectoryTreeLines(rootAbs: string, displayRootLabel: string): string[] {
-  const st = safeStatSync(rootAbs);
-  if (!st?.isDirectory()) {
+  if (!isListableDirectoryRoot(rootAbs)) {
     return [`${displayRootLabel} (unavailable)`];
   }
 
@@ -108,10 +152,10 @@ export function buildDirectoryTreeLines(rootAbs: string, displayRootLabel: strin
   function walk(absDir: string, indent: string, treeDepth: number): void {
     if (treeDepth > MAX_DEPTH) return;
     const children = listFilteredChildren(absDir);
-    for (const { name, isDirectory } of children) {
+    for (const { name, isDirectory, recurse } of children) {
       const suffix = isDirectory ? "/" : "";
       lines.push(`${indent}${name}${suffix}`);
-      if (isDirectory && treeDepth < MAX_DEPTH) {
+      if (recurse && treeDepth < MAX_DEPTH) {
         walk(path.join(absDir, name), `${indent}  `, treeDepth + 1);
       }
     }
