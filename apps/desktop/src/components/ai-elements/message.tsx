@@ -21,8 +21,10 @@ import {
   normalizeDisplayCitationMarkers,
   type CitationSource,
 } from "../../../../../src/shared/displayCitationMarkers";
+import { useAppStore } from "../../app/store";
 import { Button } from "../ui/button";
 import { confirmAction, openExternalUrl, openPath } from "../../lib/desktopCommands";
+import { getFilePreviewKind } from "../../lib/filePreviewKind";
 import { cn } from "../../lib/utils";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
@@ -889,6 +891,11 @@ export function remarkRewriteDesktopFileLinks() {
 async function openDesktopMessageLink(href: string): Promise<void> {
   const localPath = decodeDesktopLocalFileHref(href);
   if (localPath) {
+    const kind = getFilePreviewKind(localPath);
+    if (kind !== "unsupported" && kind !== "unknown") {
+      useAppStore.getState().openFilePreview({ path: localPath });
+      return;
+    }
     await openPath({ path: localPath });
     return;
   }
