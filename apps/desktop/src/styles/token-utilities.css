@@ -18,6 +18,11 @@
   color: var(--text-primary);
 }
 
+.app-surface-opaque {
+  background: var(--surface-window);
+  color: var(--text-primary);
+}
+
 .app-surface-field {
   background: var(--surface-field);
   color: var(--text-primary);
