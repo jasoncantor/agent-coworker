@@ -1,4 +1,5 @@
-import type { HarnessContextState } from "../types";
+import type { AgentConfig, HarnessContextState } from "../types";
+import { renderActiveWorkspaceContextSection } from "../workspace/context";
 import { renderHarnessContextSection } from "./renderHarnessContextSection";
 
 const MCP_NAMESPACING_TOKEN = "`mcp__{serverName}__{toolName}`";
@@ -12,10 +13,16 @@ export function stripStaticMcpNamespacingGuidance(system: string): string {
 
 export function buildTurnSystemPrompt(
   system: string,
+  config: AgentConfig | null | undefined,
   mcpToolNames: string[],
   harnessContext?: HarnessContextState | null,
 ): string {
   const sections = [stripStaticMcpNamespacingGuidance(system)];
+
+  const workspaceSection = renderActiveWorkspaceContextSection(config);
+  if (workspaceSection) {
+    sections.push(workspaceSection);
+  }
 
   if (mcpToolNames.length > 0) {
     sections.push([

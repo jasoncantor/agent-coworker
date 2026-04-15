@@ -304,7 +304,7 @@ export function createRunTurn(overrides: RunTurnOverrides = {}) {
       ? filterToolsForRole(mergedTools, getAgentRoleDefinition(params.agentRole))
       : mergedTools;
     const mcpToolNames = Object.keys(tools).filter((name) => name.startsWith("mcp__")).sort();
-    const turnSystem = buildTurnSystemPrompt(system, mcpToolNames, params.harnessContext);
+    const turnSystem = buildTurnSystemPrompt(system, config, mcpToolNames, params.harnessContext);
     const turnProviderOptions = config.providerOptions;
     const googlePrepareStep =
       config.provider === "google" && Object.keys(tools).length > 0

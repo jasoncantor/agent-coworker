@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import path from "node:path";
 
 import type { AgentConfig, ProviderName } from "../src/types";
 import { DelegateRunner } from "../src/server/agents/DelegateRunner";
@@ -109,6 +110,7 @@ describe("DelegateRunner", () => {
   });
 
   test("injects harness context into delegated child system prompts", async () => {
+    const config = makeConfig();
     const runTurn = mock(async () => ({
       text: "ok",
       reasoningText: undefined as string | undefined,
@@ -124,7 +126,7 @@ describe("DelegateRunner", () => {
     });
 
     await runner.run({
-      config: makeConfig(),
+      config,
       role: "worker",
       message: "Run with explicit harness context",
       askUser: async () => "",
@@ -141,9 +143,16 @@ describe("DelegateRunner", () => {
 
     expect(runTurn).toHaveBeenCalledWith(
       expect.objectContaining({
+        system: expect.stringContaining("## Active Workspace Context"),
+      }),
+    );
+    expect(runTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
         system: expect.stringContaining("## Active Harness Context"),
       }),
     );
+    expect(runTurn.mock.calls[0]?.[0]?.system).toContain(`- Workspace root: ${path.dirname(config.projectAgentDir)}`);
+    expect(runTurn.mock.calls[0]?.[0]?.system).toContain(`- Execution working directory: ${config.workingDirectory}`);
     expect(runTurn.mock.calls[0]?.[0]?.system).toContain("- Run ID: run-delegate");
     expect(runTurn.mock.calls[0]?.[0]?.system).toContain("- Objective: Verify delegated prompt injection");
   });

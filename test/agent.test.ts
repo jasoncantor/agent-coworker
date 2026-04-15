@@ -1,4 +1,6 @@
 import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import type { AgentConfig } from "../src/types";
@@ -32,6 +34,22 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     configDirs: [],
     observabilityEnabled: false,
     ...overrides,
+  };
+}
+
+async function makeTempWorkspaceConfig(
+  overrides: Partial<AgentConfig> = {},
+): Promise<{ workspaceRoot: string; config: AgentConfig }> {
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "active-workspace-context-"));
+  return {
+    workspaceRoot,
+    config: makeConfig({
+      projectAgentDir: path.join(workspaceRoot, ".agent"),
+      workingDirectory: workspaceRoot,
+      outputDirectory: path.join(workspaceRoot, "output"),
+      uploadsDirectory: undefined,
+      ...overrides,
+    }),
   };
 }
 
@@ -130,13 +148,16 @@ describe("runTurn", () => {
   // System prompt
   // -------------------------------------------------------------------------
 
-  test("calls streamText with the correct system prompt", async () => {
+  test("includes the base and active workspace sections in the runtime system prompt", async () => {
     const params = makeParams({ system: "Custom system prompt" });
     await runTurn(params);
 
     expect(mockStreamText).toHaveBeenCalledTimes(1);
     const callArg = mockStreamText.mock.calls[0][0] as any;
-    expect(callArg.system).toBe("Custom system prompt");
+    expect(callArg.system).toContain("Custom system prompt");
+    expect(callArg.system).toContain("## Active Workspace Context");
+    expect(callArg.system).toContain(`- Workspace root: ${path.dirname(params.config.projectAgentDir)}`);
+    expect(callArg.system).toContain(`- Execution working directory: ${params.config.workingDirectory}`);
   });
 
   test("removes MCP namespacing guidance when MCP tools are not active", async () => {
@@ -169,6 +190,7 @@ describe("runTurn", () => {
   test("buildTurnSystemPrompt appends harness context when present", () => {
     const system = buildTurnSystemPrompt(
       "Base system prompt",
+      makeConfig(),
       [],
       {
         runId: "run-01",
@@ -182,11 +204,65 @@ describe("runTurn", () => {
     );
 
     expect(system).toContain("Base system prompt");
+    expect(system).toContain("## Active Workspace Context");
     expect(system).toContain("## Active Harness Context");
     expect(system).toContain("- Run ID: run-01");
     expect(system).toContain("### Acceptance Criteria");
     expect(system).toContain("1. Startup completes in under 800ms");
     expect(system).toContain("### Constraints");
+  });
+
+  test("buildTurnSystemPrompt includes workspace root, execution cwd, and git root", async () => {
+    const { workspaceRoot, config } = await makeTempWorkspaceConfig({
+      outputDirectory: path.join(os.tmpdir(), "workspace-output"),
+    });
+    await fs.mkdir(path.join(workspaceRoot, ".git"), { recursive: true });
+
+    const system = buildTurnSystemPrompt("Base system prompt", config, []);
+
+    expect(system).toContain("## Active Workspace Context");
+    expect(system).toContain(`- Workspace root: ${workspaceRoot}`);
+    expect(system).toContain(`- Execution working directory: ${workspaceRoot}`);
+    expect(system).toContain(`- Git root: ${workspaceRoot}`);
+    expect(system).toContain("- Working directory relation: same as workspace root");
+    expect(system).toContain(`- Uploads directory: ${path.resolve(workspaceRoot, "User Uploads")}`);
+    expect(system).toContain(`- Project config + workspace memory: ${path.join(workspaceRoot, ".agent")}`);
+  });
+
+  test("buildTurnSystemPrompt describes when the working directory is inside the workspace root", async () => {
+    const { workspaceRoot } = await makeTempWorkspaceConfig();
+    const insideDir = path.join(workspaceRoot, "packages", "cli");
+    await fs.mkdir(insideDir, { recursive: true });
+    const config = makeConfig({
+      projectAgentDir: path.join(workspaceRoot, ".agent"),
+      workingDirectory: insideDir,
+      uploadsDirectory: undefined,
+    });
+
+    const system = buildTurnSystemPrompt("Base system prompt", config, []);
+
+    expect(system).toContain(
+      `- Working directory relation: inside workspace root at ${path.join("packages", "cli")}`,
+    );
+    expect(system).toContain(`- Uploads directory: ${path.resolve(insideDir, "User Uploads")}`);
+  });
+
+  test("buildTurnSystemPrompt describes when the working directory is outside the workspace root", async () => {
+    const { workspaceRoot } = await makeTempWorkspaceConfig();
+    const outsideRoot = await fs.mkdtemp(path.join(os.tmpdir(), "active-workspace-context-outside-"));
+    const outsideDir = path.join(outsideRoot, "scratch");
+    await fs.mkdir(outsideDir, { recursive: true });
+    const config = makeConfig({
+      projectAgentDir: path.join(workspaceRoot, ".agent"),
+      workingDirectory: outsideDir,
+      uploadsDirectory: undefined,
+    });
+
+    const system = buildTurnSystemPrompt("Base system prompt", config, []);
+
+    expect(system).toContain("- Working directory relation: outside workspace root");
+    expect(system).toContain(`- Execution working directory: ${outsideDir}`);
+    expect(system).toContain(`- Uploads directory: ${path.resolve(outsideDir, "User Uploads")}`);
   });
 
   test("passes harness context into the runtime system prompt", async () => {
@@ -204,6 +280,8 @@ describe("runTurn", () => {
     await runTurn(params);
 
     const callArg = mockStreamText.mock.calls[0][0] as any;
+    expect(callArg.system).toContain("## Active Workspace Context");
+    expect(callArg.system).toContain(`- Workspace root: ${path.dirname(params.config.projectAgentDir)}`);
     expect(callArg.system).toContain("## Active Harness Context");
     expect(callArg.system).toContain("- Run ID: run-ctx");
     expect(callArg.system).toContain("- Objective: Verify runtime injection");
