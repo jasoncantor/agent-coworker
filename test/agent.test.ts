@@ -9,6 +9,7 @@ import { createRunTurn } from "../src/agent";
 import { buildTurnSystemPrompt } from "../src/harness/buildTurnSystemPrompt";
 import { __internal as observabilityRuntimeInternal } from "../src/observability/runtime";
 import { SessionCostTracker } from "../src/session/costTracker";
+import { deriveActiveWorkspaceContext } from "../src/workspace/context";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -227,6 +228,9 @@ describe("runTurn", () => {
     expect(system).toContain("- Working directory relation: same as workspace root");
     expect(system).toContain(`- Uploads directory: ${path.resolve(workspaceRoot, "User Uploads")}`);
     expect(system).toContain(`- Project config + workspace memory: ${path.join(workspaceRoot, ".agent")}`);
+    expect(system).toContain(
+      "- Path rule: `bash`, `read`, `write`, `glob`, and `grep` default to the execution working directory.",
+    );
   });
 
   test("buildTurnSystemPrompt describes when the working directory is inside the workspace root", async () => {
@@ -263,6 +267,18 @@ describe("runTurn", () => {
     expect(system).toContain("- Working directory relation: outside workspace root");
     expect(system).toContain(`- Execution working directory: ${outsideDir}`);
     expect(system).toContain(`- Uploads directory: ${path.resolve(outsideDir, "User Uploads")}`);
+  });
+
+  test("deriveActiveWorkspaceContext treats case-only macOS path changes as the same workspace", () => {
+    const config = makeConfig({
+      projectAgentDir: "/Users/max/Repo/.agent",
+      workingDirectory: "/users/max/repo",
+      uploadsDirectory: undefined,
+    });
+
+    const context = deriveActiveWorkspaceContext(config, "darwin");
+
+    expect(context.workingDirectoryRelation).toBe("same as workspace root");
   });
 
   test("passes harness context into the runtime system prompt", async () => {

@@ -240,3 +240,5 @@
 
 - Plan: confirm the shared overflow path, exempt `read` from spill-to-workspace truncation, and add regressions for direct tool execution plus provider-managed continuation.
 - For workspace-control JSON-RPC helpers in this repo, keep read-only control sessions ephemeral and non-persistent; routing them through the normal `AgentSession` persistence path silently bloats `.cowork/sessions.db`, and cross-platform rollback tests should inject deterministic copy failures instead of relying on POSIX-only permission tricks like `chmod 000`.
+- When adding prompt-side tool guidance in this repo, use the actual callable tool IDs (`bash`, `glob`, `grep`, etc.) instead of generic names like `shell` or `search`, or the first model turn can be steered into nonexistent tool calls.
+- For prompt-only workspace path helpers in this repo, account for macOS's default case-insensitive volumes separately from the stricter shared POSIX path helpers so same-tree paths that differ only by case are not mislabeled as outside the workspace.

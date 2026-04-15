@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { AgentConfig } from "../types";
-import { canonicalWorkspacePath, sameWorkspacePath } from "../utils/workspacePath";
+import { canonicalWorkspacePath } from "../utils/workspacePath";
 
 type ActiveWorkspaceContext = {
   workspaceRoot: string;
@@ -41,13 +41,14 @@ function deriveWorkingDirectoryRelation(
   executionCwd: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  if (sameWorkspacePath(workspaceRoot, executionCwd, platform)) {
+  const pathImpl = platform === "win32" ? path.win32 : path.posix;
+  const normalizedWorkspaceRoot = normalizeWorkspaceContextPath(workspaceRoot, platform);
+  const normalizedExecutionCwd = normalizeWorkspaceContextPath(executionCwd, platform);
+
+  if (normalizedWorkspaceRoot === normalizedExecutionCwd) {
     return "same as workspace root";
   }
 
-  const pathImpl = platform === "win32" ? path.win32 : path.posix;
-  const normalizedWorkspaceRoot = canonicalWorkspacePath(workspaceRoot, platform);
-  const normalizedExecutionCwd = canonicalWorkspacePath(executionCwd, platform);
   const normalizedRelative = pathImpl.relative(normalizedWorkspaceRoot, normalizedExecutionCwd);
 
   if (
@@ -56,17 +57,24 @@ function deriveWorkingDirectoryRelation(
     && !normalizedRelative.startsWith(`..${pathImpl.sep}`)
     && !pathImpl.isAbsolute(normalizedRelative)
   ) {
-    const displayRelative = pathImpl.relative(
-      pathImpl.resolve(workspaceRoot),
-      pathImpl.resolve(executionCwd),
-    );
-    return `inside workspace root at ${displayRelative}`;
+    return `inside workspace root at ${normalizedRelative}`;
   }
 
   return "outside workspace root";
 }
 
-export function deriveActiveWorkspaceContext(config: AgentConfig): ActiveWorkspaceContext {
+function normalizeWorkspaceContextPath(
+  dir: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const canonical = canonicalWorkspacePath(dir, platform);
+  return platform === "darwin" ? canonical.toLowerCase() : canonical;
+}
+
+export function deriveActiveWorkspaceContext(
+  config: AgentConfig,
+  platform: NodeJS.Platform = process.platform,
+): ActiveWorkspaceContext {
   const workspaceRoot = path.dirname(config.projectAgentDir);
   const executionCwd = config.workingDirectory;
 
@@ -74,7 +82,7 @@ export function deriveActiveWorkspaceContext(config: AgentConfig): ActiveWorkspa
     workspaceRoot,
     executionCwd,
     gitRoot: findGitRootSync(workspaceRoot),
-    workingDirectoryRelation: deriveWorkingDirectoryRelation(workspaceRoot, executionCwd),
+    workingDirectoryRelation: deriveWorkingDirectoryRelation(workspaceRoot, executionCwd, platform),
     outputDirectory: config.outputDirectory,
     effectiveUploadsDirectory: config.uploadsDirectory ?? path.resolve(config.workingDirectory, "User Uploads"),
     projectAgentDir: config.projectAgentDir,
@@ -107,7 +115,7 @@ export function renderActiveWorkspaceContextSection(
   lines.push(
     `- Uploads directory: ${context.effectiveUploadsDirectory}`,
     `- Project config + workspace memory: ${context.projectAgentDir}`,
-    "- Path rule: `shell`, `read`, `write`, and `search` default to the execution working directory.",
+    "- Path rule: `bash`, `read`, `write`, `glob`, and `grep` default to the execution working directory.",
     `- Path rule: project config and workspace memory live under ${context.projectAgentDir}.`,
   );
 
