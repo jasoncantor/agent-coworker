@@ -22,6 +22,22 @@ export const WORKSPACE_MAP_IGNORED_DIRS = new Set([
 const MAX_DEPTH = 2;
 const MAX_ENTRIES_PER_DIR = 20;
 const MAX_TOTAL_CHARS = 4000;
+const MAX_DISPLAY_LABEL_CHARS = 512;
+
+/**
+ * Escapes raw filesystem names for embedding in markdown (including inside ``` fences).
+ * Prevents newlines/backticks/control characters from breaking fences or injecting prompt text.
+ */
+export function sanitizeWorkspaceMapLabel(value: string): string {
+  let s = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  s = s.replace(/\u2028|\u2029/g, "?");
+  s = s.replace(/[\n\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "?");
+  s = s.replace(/`/g, "'");
+  if (s.length > MAX_DISPLAY_LABEL_CHARS) {
+    return `${s.slice(0, MAX_DISPLAY_LABEL_CHARS - 1)}…`;
+  }
+  return s;
+}
 
 /** Lower score sorts earlier (more important). */
 const PRIORITY_RULES: Array<{ test: (name: string) => boolean; score: number }> = [
@@ -142,19 +158,19 @@ function isListableDirectoryRoot(rootAbs: string): boolean {
  */
 export function buildDirectoryTreeLines(rootAbs: string, displayRootLabel: string): string[] {
   if (!isListableDirectoryRoot(rootAbs)) {
-    return [`${displayRootLabel} (unavailable)`];
+    return [`${sanitizeWorkspaceMapLabel(displayRootLabel)} (unavailable)`];
   }
 
   const lines: string[] = [];
   const normalizedLabel = displayRootLabel.endsWith(path.sep) ? displayRootLabel.slice(0, -1) : displayRootLabel;
-  lines.push(`${normalizedLabel}/`);
+  lines.push(`${sanitizeWorkspaceMapLabel(normalizedLabel)}/`);
 
   function walk(absDir: string, indent: string, treeDepth: number): void {
     if (treeDepth > MAX_DEPTH) return;
     const children = listFilteredChildren(absDir);
     for (const { name, isDirectory, recurse } of children) {
       const suffix = isDirectory ? "/" : "";
-      lines.push(`${indent}${name}${suffix}`);
+      lines.push(`${indent}${sanitizeWorkspaceMapLabel(name)}${suffix}`);
       if (recurse && treeDepth < MAX_DEPTH) {
         walk(path.join(absDir, name), `${indent}  `, treeDepth + 1);
       }
@@ -228,7 +244,9 @@ export function buildWorkspaceMapSection(config: AgentConfig, platform: NodeJS.P
     const { abs, heading } = roots[i]!;
     const label = path.basename(abs) || abs;
     const subheading =
-      roots.length === 1 ? "" : `### ${heading}\n\n\`${abs}\`\n\n`;
+      roots.length === 1
+        ? ""
+        : `### ${heading}\n\n\`${sanitizeWorkspaceMapLabel(abs)}\`\n\n`;
     const fenceOpen = "```\n";
     const fenceClose = "\n```";
     const overhead = subheading.length + fenceOpen.length + fenceClose.length;
