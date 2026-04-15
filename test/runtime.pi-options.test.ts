@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 
 import * as __internal from "../src/runtime/piRuntimeOptions";
+import { __internal as piRuntimeInternal } from "../src/runtime/piRuntime";
 import type { RuntimeRunTurnParams } from "../src/runtime/types";
 import type { AgentConfig, ModelMessage } from "../src/types";
 
@@ -343,5 +344,113 @@ describe("pi runtime provider option mapping", () => {
       { type: "string" },
       { type: "number" },
     ]);
+  });
+
+  test("keeps small Fireworks tool schemas intact when they fit the provider budget", () => {
+    const tools = {
+      readFile: {
+        description: "simple tool",
+        inputSchema: z.object({
+          filePath: z.string(),
+          limit: z.number().optional(),
+        }),
+      },
+    };
+
+    const fireworksTools = piRuntimeInternal.toolMapToPiTools(tools as any, "fireworks") as any[];
+    expect(fireworksTools[0]?.parameters).toMatchObject({
+      type: "object",
+      properties: {
+        filePath: { type: "string" },
+        limit: { type: "number" },
+      },
+      required: ["filePath"],
+    });
+    expect(fireworksTools[0]?.parameters.additionalProperties).toBe(false);
+  });
+
+  test("degrades oversized Fireworks tool schemas to a shallow object shape", () => {
+    const tools = {
+      giantTool: {
+        description: "tool with a very large enum schema",
+        inputSchema: {
+          type: "object",
+          properties: {
+            choice: {
+              type: "string",
+              enum: Array.from({ length: 160 }, (_, index) => `option-${index}-${"x".repeat(12)}`),
+            },
+          },
+          required: ["choice"],
+          additionalProperties: false,
+        },
+      },
+    };
+
+    const fireworksTools = piRuntimeInternal.toolMapToPiTools(tools as any, "fireworks") as any[];
+    expect(fireworksTools[0]?.parameters).toEqual({
+      type: "object",
+      properties: {
+        choice: {},
+      },
+      required: ["choice"],
+      additionalProperties: true,
+    });
+  });
+
+  test("degrades Fireworks tool schemas once the cumulative schema budget is exhausted", () => {
+    const sharedSchema = {
+      type: "object",
+      properties: {
+        choice: {
+          type: "string",
+          enum: Array.from({ length: 150 }, (_, index) => `option-${index}-${"x".repeat(12)}`),
+        },
+      },
+      required: ["choice"],
+      additionalProperties: false,
+    };
+    const tools = {
+      firstTool: { description: "first", inputSchema: sharedSchema },
+      secondTool: { description: "second", inputSchema: sharedSchema },
+      thirdTool: { description: "third", inputSchema: sharedSchema },
+      fourthTool: { description: "fourth", inputSchema: sharedSchema },
+    };
+
+    const fireworksTools = piRuntimeInternal.toolMapToPiTools(tools as any, "fireworks") as any[];
+    expect(fireworksTools[0]?.parameters.properties.choice.enum).toHaveLength(150);
+    expect(fireworksTools[1]?.parameters.properties.choice.enum).toHaveLength(150);
+    expect(fireworksTools[2]?.parameters.properties.choice.enum).toHaveLength(150);
+    expect(fireworksTools[3]?.parameters).toEqual({
+      type: "object",
+      properties: {
+        choice: {},
+      },
+      required: ["choice"],
+      additionalProperties: true,
+    });
+  });
+
+  test("keeps oversized tool schemas for non-Fireworks providers", () => {
+    const hugeEnum = Array.from({ length: 4000 }, (_, index) => `option-${index}`);
+    const tools = {
+      giantTool: {
+        description: "tool with a very large enum schema",
+        inputSchema: {
+          type: "object",
+          properties: {
+            choice: {
+              type: "string",
+              enum: hugeEnum,
+            },
+          },
+          required: ["choice"],
+          additionalProperties: false,
+        },
+      },
+    };
+
+    const openAiTools = piRuntimeInternal.toolMapToPiTools(tools as any, "openai") as any[];
+    expect(openAiTools[0]?.parameters.properties.choice.enum).toHaveLength(4000);
   });
 });

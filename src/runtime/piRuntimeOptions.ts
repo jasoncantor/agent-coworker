@@ -271,6 +271,13 @@ const FIREWORKS_UNSUPPORTED_SCHEMA_KEYS = new Set([
   "pattern",
 ]);
 
+const FIREWORKS_TOOL_SCHEMA_MAX_BYTES = 4096;
+const FIREWORKS_TOTAL_TOOL_SCHEMA_MAX_BYTES = 12288;
+
+type ToolSchemaBudgetState = {
+  totalBytes: number;
+};
+
 function normalizeSchemaArray(value: unknown): ToolJsonSchema[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -460,22 +467,85 @@ function sanitizeProviderToolJsonSchema(
   return sanitized;
 }
 
-export function toPiJsonSchema(inputSchema: unknown, provider?: ProviderName): Record<string, unknown> {
+export function toPiJsonSchema(
+  inputSchema: unknown,
+  provider?: ProviderName,
+  state?: ToolSchemaBudgetState,
+): Record<string, unknown> {
   if (isZodSchema(inputSchema)) {
     const schema = z.toJSONSchema(inputSchema);
     const normalized = normalizeToolJsonSchema(schema);
     const sanitized = sanitizeProviderToolJsonSchema(normalized, provider);
     const record = asRecord(sanitized);
     if (record) {
-      return record;
+      return applyProviderToolSchemaBudget(provider, record, state);
     }
   }
 
   const normalized = normalizeToolJsonSchema(inputSchema);
   const sanitized = sanitizeProviderToolJsonSchema(normalized, provider);
   const record = asRecord(sanitized);
-  if (record) return record;
+  if (record) return applyProviderToolSchemaBudget(provider, record, state);
   return { type: "object", properties: {}, additionalProperties: true };
+}
+
+function relaxedToolJsonSchema(): Record<string, unknown> {
+  return { type: "object", properties: {}, additionalProperties: true };
+}
+
+function estimateSchemaBytes(schema: Record<string, unknown>): number | undefined {
+  try {
+    return Buffer.byteLength(JSON.stringify(schema), "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function shapePreservingShallowObjectSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  if (schema.type !== "object") return relaxedToolJsonSchema();
+
+  const properties = asRecord(schema.properties);
+  if (!properties) return relaxedToolJsonSchema();
+
+  const shallowProperties = Object.fromEntries(
+    Object.keys(properties).map((key) => [key, {}]),
+  );
+  const required = Array.isArray(schema.required)
+    ? schema.required.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
+
+  return {
+    type: "object",
+    properties: shallowProperties,
+    ...(required && required.length > 0 ? { required } : {}),
+    additionalProperties: true,
+  };
+}
+
+export function applyProviderToolSchemaBudget(
+  provider: ProviderName | undefined,
+  schema: Record<string, unknown>,
+  state?: ToolSchemaBudgetState,
+): Record<string, unknown> {
+  if (provider !== "fireworks") return schema;
+
+  const schemaBytes = estimateSchemaBytes(schema);
+  const totalBytes = state?.totalBytes ?? 0;
+  if (
+    schemaBytes !== undefined &&
+    schemaBytes <= FIREWORKS_TOOL_SCHEMA_MAX_BYTES &&
+    totalBytes + schemaBytes <= FIREWORKS_TOTAL_TOOL_SCHEMA_MAX_BYTES
+  ) {
+    if (state) state.totalBytes += schemaBytes;
+    return schema;
+  }
+
+  const fallback = shapePreservingShallowObjectSchema(schema);
+  const fallbackBytes = estimateSchemaBytes(fallback);
+  if (state && fallbackBytes !== undefined) {
+    state.totalBytes += fallbackBytes;
+  }
+  return fallback;
 }
 
 export function toolCallFromPartial(event: any): {

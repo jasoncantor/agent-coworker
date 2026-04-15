@@ -875,6 +875,92 @@ describe("pi runtime regressions", () => {
     });
   });
 
+  test("Fireworks runtime sends budgeted tool schemas to piStreamImpl", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-fireworks-tools-"));
+    const streamCalls: Array<Record<string, unknown>> = [];
+    const runtime = createPiRuntime({
+      piStreamImpl: ((model: unknown, input: Record<string, unknown>) => {
+        streamCalls.push({
+          model,
+          tools: input.tools,
+        });
+        return {
+          async *[Symbol.asyncIterator]() {
+            return;
+          },
+          async result() {
+            return {
+              role: "assistant",
+              content: [{ type: "text", text: "done" }],
+              usage: { input: 1, output: 1, totalTokens: 2 },
+              stopReason: "stop",
+            };
+          },
+        };
+      }) as any,
+    });
+    const config = makeConfig(homeDir, {
+      provider: "fireworks",
+      model: "accounts/fireworks/models/glm-5",
+      preferredChildModel: "accounts/fireworks/models/glm-5",
+    });
+
+    await runtime.runTurn(makeParams(config, {
+      tools: {
+        readFile: {
+          description: "simple tool",
+          inputSchema: z.object({
+            filePath: z.string(),
+            limit: z.number().optional(),
+          }),
+          execute: async () => "unused",
+        },
+        giantTool: {
+          description: "tool with a very large enum schema",
+          inputSchema: {
+            type: "object",
+            properties: {
+              choice: {
+                type: "string",
+                enum: Array.from({ length: 160 }, (_, index) => `option-${index}-${"x".repeat(12)}`),
+              },
+            },
+            required: ["choice"],
+            additionalProperties: false,
+          },
+          execute: async () => "unused",
+        },
+      },
+    }));
+
+    const sentTools = streamCalls[0]?.tools as Array<Record<string, any>>;
+    expect(sentTools).toHaveLength(2);
+    expect(sentTools[0]).toMatchObject({
+      name: "readFile",
+      parameters: {
+        type: "object",
+        properties: {
+          filePath: { type: "string" },
+          limit: { type: "number" },
+        },
+        required: ["filePath"],
+      },
+    });
+    expect(sentTools[0]?.parameters.additionalProperties).toBe(false);
+    expect(sentTools[1]).toEqual({
+      name: "giantTool",
+      description: "tool with a very large enum schema",
+      parameters: {
+        type: "object",
+        properties: {
+          choice: {},
+        },
+        required: ["choice"],
+        additionalProperties: true,
+      },
+    });
+  });
+
   test("telemetry parsing keeps supported metadata and drops invalid values", () => {
     const parsed = piRuntimeInternal.parseTelemetrySettings({
       isEnabled: true,
