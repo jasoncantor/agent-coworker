@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import {
   AlertTriangleIcon,
@@ -35,6 +35,7 @@ import {
 import { confirmAction, revealPath } from "../../../lib/desktopCommands";
 import { cn } from "../../../lib/utils";
 import { workspaceBackupActionKey } from "../../../app/store.helpers/backupActionKey";
+import { useOptionalSettingsChrome } from "../SettingsChromeContext";
 
 type BackupPageProps = {
   workspace?: WorkspaceRecord | null;
@@ -575,23 +576,6 @@ export function BackupPage(props: BackupPageProps = {}) {
     requestSelectedDelta();
   }, [workspace?.id, runtime?.controlSessionId, activeTargetSessionId, selectedCheckpointId]);
 
-  if (!workspace) {
-    return (
-      <div className="space-y-5 px-6 py-6 max-[960px]:px-4 max-[960px]:py-4">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">Workspace Backups</h1>
-          <p className="text-sm text-muted-foreground">Manage backup history and restore points for your workspaces.</p>
-        </div>
-        <Card className="border-border/80 bg-card/85">
-          <CardContent className="p-8 text-center">
-            <ArchiveIcon className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
-            <p className="text-muted-foreground">Select a workspace first to manage its backup history.</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   const pendingActions = runtime?.workspaceBackupPendingActionKeys ?? {};
   const loading = runtime?.workspaceBackupsLoading ?? false;
   const error = runtime?.workspaceBackupsError ?? null;
@@ -607,7 +591,7 @@ export function BackupPage(props: BackupPageProps = {}) {
     && deltaPreview?.checkpointId === selectedCheckpointId
     ? deltaPreview
     : null;
-  const selectedThread = selectedEntry
+  const selectedThread = selectedEntry && workspace
     ? threads.find((thread) => (
         thread.workspaceId === workspace.id
           && threadRuntimeById[thread.id]?.sessionId === selectedEntry.targetSessionId
@@ -621,46 +605,75 @@ export function BackupPage(props: BackupPageProps = {}) {
   );
   const selectedBackupsEnabled = selectedThreadRuntime?.sessionConfig?.backupsEnabled ?? null;
 
+  const settingsChrome = useOptionalSettingsChrome();
+  const backupHeaderActions = useMemo(() => {
+    if (!workspace) return null;
+    return (
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <label className="flex max-w-full items-center gap-2 rounded-md border border-border/70 bg-background px-2.5 py-1.5 text-xs sm:text-sm">
+          <Checkbox
+            checked={selectedBackupsEnabled ?? false}
+            disabled={!canToggleSelectedEntry}
+            onCheckedChange={(checked) => {
+              if (!selectedEntry) return;
+              void setSessionBackupsEnabled?.(selectedEntry.targetSessionId, toBoolean(checked));
+            }}
+          />
+          <span className={canToggleSelectedEntry ? "text-foreground" : "text-muted-foreground"}>
+            Keep recovery snapshots for this session
+          </span>
+        </label>
+        {workspaceList.length > 1 && props.workspace === undefined && (
+          <Select value={workspace.id} onValueChange={(val) => { if (val !== workspace.id) void selectWorkspaceFromStore(val); }}>
+            <SelectTrigger className="h-9 w-[min(200px,100%)] border-border/70 bg-background text-sm">
+              <SelectValue placeholder="Select workspace" />
+            </SelectTrigger>
+            <SelectContent>
+              {workspaceList.map((ws) => (
+                <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+    );
+  }, [
+    workspace,
+    workspaceList.length,
+    props.workspace,
+    selectedBackupsEnabled,
+    canToggleSelectedEntry,
+    selectedEntry,
+    setSessionBackupsEnabled,
+    selectWorkspaceFromStore,
+  ]);
+
+  useEffect(() => {
+    if (!settingsChrome) return;
+    settingsChrome.setChrome(backupHeaderActions ? { headerActions: backupHeaderActions } : {});
+    return () => {
+      settingsChrome.setChrome(null);
+    };
+  }, [settingsChrome, backupHeaderActions]);
+
+  if (!workspace) {
+    return (
+      <div className="flex min-h-[220px] flex-col items-center justify-center px-4 py-10" data-backup-page="true">
+        <Card className="w-full max-w-md border-border/80 bg-card/85">
+          <CardContent className="p-8 text-center">
+            <ArchiveIcon className="mx-auto mb-4 h-12 w-12 text-muted-foreground/30" />
+            <p className="text-muted-foreground">Select a workspace first to manage its backup history.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div
-      className="flex h-full min-h-0 flex-col gap-5 px-6 pt-6 max-[960px]:gap-4 max-[960px]:px-4 max-[960px]:pt-4"
+      className="flex h-full min-h-0 flex-col gap-0"
       data-backup-page="true"
     >
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 shrink-0">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">Workspace Backups</h1>
-          <p className="text-sm text-muted-foreground">Manage backup history and restore points for your workspaces.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 rounded-lg border border-border/70 bg-background px-3 py-2 text-sm">
-            <Checkbox
-              checked={selectedBackupsEnabled ?? false}
-              disabled={!canToggleSelectedEntry}
-              onCheckedChange={(checked) => {
-                if (!selectedEntry) return;
-                void setSessionBackupsEnabled?.(selectedEntry.targetSessionId, toBoolean(checked));
-              }}
-            />
-            <span className={canToggleSelectedEntry ? "text-foreground" : "text-muted-foreground"}>
-              Keep recovery snapshots for this session
-            </span>
-          </label>
-          {workspaceList.length > 1 && props.workspace === undefined && (
-            <Select value={workspace.id} onValueChange={(val) => { if (val !== workspace.id) void selectWorkspaceFromStore(val); }}>
-              <SelectTrigger className="h-9 w-[200px] border-border/70 bg-background">
-                <SelectValue placeholder="Select workspace" />
-              </SelectTrigger>
-              <SelectContent>
-                {workspaceList.map((ws) => (
-                  <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-      </div>
-
       {error ? (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive flex items-center gap-2 shrink-0">
           <AlertTriangleIcon className="h-4 w-4" />
