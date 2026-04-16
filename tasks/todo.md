@@ -936,3 +936,40 @@
   - `bun run typecheck`
   - `bun test test/workspace-backups.test.ts test/session-backup.test.ts test/session-backup-delta.test.ts test/server.jsonrpc.control.test.ts`
   - `bun test`
+
+## In-App File Preview — Code Review Follow-Ups
+
+Initial review of branch `cursor/in-app-file-preview-d4eb` against `main`. Items below were addressed in this pass; remaining items are deferred and tracked here.
+
+### Done
+- [x] Sanitize docx (mammoth) and xlsx (SheetJS) HTML through DOMPurify before `dangerouslySetInnerHTML` to close XSS gap from crafted office files. (`apps/desktop/src/ui/FilePreviewModal.tsx`)
+- [x] Replace ad-hoc `cancelled` flag with an `AbortController` so a path-switch or unmount mid-read is observable everywhere (including blob-URL allocation) and we don't leak object URLs.
+- [x] Document the `looksMostlyText` 0.02 threshold in code so future maintainers don't change it blindly.
+- [x] Improve the truncation banner — explain that only a portion is shown and surface a one-click "Open full file" CTA instead of just text.
+- [x] Add a code comment to `.app-surface-opaque` in `apps/desktop/src/styles/token-utilities.css` explaining why it must use `--panel-bg` (solid) rather than `--surface-window` (translucent on Windows). This is the rule the last three opacity-fix commits oscillated on.
+- [x] Add `dompurify` as a direct dependency of the desktop app (was previously only transitive via mermaid).
+- [x] Add focused tests in `apps/desktop/test/read-file-for-preview.test.ts` for: schema validation (path/maxBytes bounds), workspace-root containment, symlink escapes, and the read+truncation byte contract.
+
+### Deferred — WebSocket-first refactor
+
+The biggest gap in the original feature is that `readFileForPreview` lives in `apps/desktop/electron/ipc/files.ts` as Electron-only IPC. Per `CLAUDE.md`, all new features must be built on the core/server and exposed via WebSocket so any UI (CLI, future web client, mobile relay) can consume them.
+
+- [ ] Add a JSON-RPC method (e.g. `workspace.readFileForPreview`) in `src/server/jsonrpc/routes/` that takes `{ path, maxBytes? }` and returns `{ base64, byteLength, truncated }`. Reuse the existing workspace-root containment helper used by other workspace file routes so the security model matches.
+- [ ] Register the route in `src/server/jsonrpc/routes/index.ts` and document it in `docs/websocket-protocol.md`.
+- [ ] Refactor the Electron handler in `apps/desktop/electron/ipc/files.ts` so it forwards to the new JSON-RPC route over the workspace WebSocket instead of reading from disk directly. The renderer-facing `desktopApi.readFileForPreview` should keep the same shape so `FilePreviewModal` doesn't change.
+- [ ] Add a server-side test for the new route (workspace containment, truncation, symlink escape).
+
+### Deferred — Component split
+
+`apps/desktop/src/ui/FilePreviewModal.tsx` is ~620 lines and dispatches all preview kinds inline. Extract per-kind renderers under `apps/desktop/src/ui/file-preview/`:
+
+- [ ] `FilePreviewPdf.tsx`, `FilePreviewImage.tsx`, `FilePreviewMarkdown.tsx`, `FilePreviewText.tsx`, `FilePreviewDocx.tsx`, `FilePreviewXlsx.tsx`, `FilePreviewFallback.tsx`.
+- [ ] Move the docx Word-page-layout className soup and the xlsx table styles into the corresponding subcomponents.
+- [ ] Move the load+sanitize pipeline for docx/xlsx into the subcomponents (or a small `useFilePreviewBytes` hook) so the parent only owns dispatch/header/footer.
+- [ ] Add a render test per subcomponent (loading, error, success). Mock `desktopApi.readFileForPreview` via `apps/desktop/test/helpers/mockDesktopCommands.ts`.
+
+### Deferred — Smaller follow-ups
+
+- [ ] Replace custom `basenamePath` / `dirnamePath` / `resolveRelativePath` / `isAbsolutePath` in `FilePreviewModal.tsx` with a small shared util that's tested for Windows backslash paths.
+- [ ] Replace the boilerplate `assert*Input` helpers in `apps/desktop/electron/preload.ts` with a single factory.
+- [ ] Decide whether docx pre-render should land in a worker — large `.docx` files block the renderer on `mammoth.convertToHtml`.
