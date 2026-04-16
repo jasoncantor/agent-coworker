@@ -72,7 +72,7 @@ export function createDesktopCommandsMock(
     getPlatform: async () => "linux",
     listDirectory: async () => [],
     readFile: async () => "",
-    readFileForPreview: async () => ({ base64: "", byteLength: 0, truncated: false }),
+    readFileForPreview: async () => ({ bytes: new Uint8Array(), byteLength: 0, truncated: false }),
     previewOSFile: async () => {},
     openPath: async () => {},
     openExternalUrl: async () => {},

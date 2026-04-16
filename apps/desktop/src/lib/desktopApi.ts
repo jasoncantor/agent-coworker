@@ -109,7 +109,7 @@ export type ReadFileForPreviewInput = {
 };
 
 export type ReadFileForPreviewOutput = {
-  base64: string;
+  bytes: Uint8Array;
   byteLength: number;
   truncated: boolean;
 };

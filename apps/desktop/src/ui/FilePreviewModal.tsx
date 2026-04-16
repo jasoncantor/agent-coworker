@@ -1,20 +1,9 @@
-import type { ComponentProps } from "react";
-import type { PluggableList } from "unified";
-
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import DOMPurify from "dompurify";
-import mammoth from "mammoth";
-import {
-  defaultRehypePlugins,
-  defaultRemarkPlugins,
-  Streamdown,
-} from "streamdown";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { defaultRemarkPlugins, Streamdown } from "streamdown";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
-import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import * as XLSX from "xlsx";
 import { ExternalLinkIcon, FolderOpenIcon } from "lucide-react";
 
 import { useAppStore } from "../app/store";
@@ -28,49 +17,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog";
+import { openPath, readFileForPreview, revealPath } from "../lib/desktopCommands";
 import {
-  confirmAction,
-  openExternalUrl,
-  openPath,
-  readFileForPreview,
-  revealPath,
-} from "../lib/desktopCommands";
-import {
-  decodeDesktopExternalHref,
-  decodeDesktopLocalFileHref,
+  DesktopMessageLink,
+  defaultDesktopRehypePlugins,
   remarkRewriteDesktopFileLinks,
 } from "../components/ai-elements/message";
 import { cn } from "../lib/utils";
 import { getExtensionLower, getFilePreviewKind, mimeForPreviewKind, type FilePreviewKind } from "../lib/filePreviewKind";
 
-function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
-  const ab = new ArrayBuffer(u8.byteLength);
-  new Uint8Array(ab).set(u8);
-  return ab;
-}
-
 const XLSX_MAX_ROWS = 200;
 const XLSX_MAX_COLS = 40;
-
-function base64ToUint8Array(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    out[i] = binary.charCodeAt(i);
-  }
-  return out;
-}
 
 function decodeUtf8(bytes: Uint8Array): string {
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
 
-// Heuristic for "is this byte stream probably text?" used to decide whether
-// to fall back to a plain-text preview for unknown extensions.
-// We sample up to 8KB and count control bytes other than tab/LF/CR. Real text
-// almost never contains them; binary formats are dense with them. The 2%
-// threshold tolerates the occasional stray byte (e.g. UTF-8 BOM, embedded
-// nulls in some logs) without misclassifying real binaries as text.
+// 2% threshold tolerates UTF-8 BOM / occasional stray control bytes in logs
+// without misclassifying real binaries as text.
 function looksMostlyText(bytes: Uint8Array): boolean {
   if (bytes.length === 0) return true;
   let suspicious = 0;
@@ -83,12 +47,8 @@ function looksMostlyText(bytes: Uint8Array): boolean {
   return suspicious / sample < 0.02;
 }
 
-// Sanitize HTML produced by mammoth (.docx) and XLSX (.xlsx). Both libraries
-// emit HTML derived from untrusted file contents; without sanitization a
-// crafted document could inject script via inline event handlers, javascript:
-// URLs, or <script> tags. DOMPurify strips all of those while preserving the
-// formatting and table structure we want to render.
-function sanitizePreviewHtml(rawHtml: string): string {
+async function sanitizePreviewHtml(rawHtml: string): Promise<string> {
+  const { default: DOMPurify } = await import("dompurify");
   return DOMPurify.sanitize(rawHtml, {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ["style", "script", "iframe", "object", "embed", "form", "input"],
@@ -125,20 +85,6 @@ function resolveRelativePath(base: string, relative: string): string {
 }
 
 const previewStreamdownPlugins = { cjk, code, math, mermaid };
-
-const previewSanitizeSchema = {
-  ...defaultSchema,
-  protocols: {
-    ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), "tel", "cowork-file", "cowork-external"],
-  },
-};
-
-const previewRehypePlugins: PluggableList = [
-  defaultRehypePlugins.raw,
-  [rehypeSanitize, previewSanitizeSchema],
-  defaultRehypePlugins.harden,
-];
 
 type HastNode = {
   type?: string;
@@ -189,132 +135,11 @@ function visitLinks(node: HastNode, fn: (n: HastNode) => void): void {
   }
 }
 
-function classifyExternalHref(rawHref: string): "browser" | "mail" | "app" | null {
-  try {
-    const parsed = new URL(rawHref);
-    switch (parsed.protocol) {
-      case "http:":
-      case "https:":
-        return "browser";
-      case "mailto:":
-        return "mail";
-      case "file:":
-      case "cowork-file:":
-      case "cowork-external:":
-      case "about:":
-      case "blob:":
-      case "data:":
-      case "javascript:":
-        return null;
-      default:
-        return "app";
-    }
-  } catch {
-    return null;
-  }
-}
-
-type PreviewLinkProps = ComponentProps<"a"> & {
-  node?: unknown;
-  onOpenLocalFile?: (path: string) => void;
-};
-
-function PreviewLink({
-  children,
-  className,
-  href,
-  node: _node,
-  onClick: _onClick,
-  rel: _rel,
-  target: _target,
-  onOpenLocalFile,
-  ...props
-}: PreviewLinkProps) {
-  const localPath = decodeDesktopLocalFileHref(href);
-  const forwardedExternalHref = decodeDesktopExternalHref(href);
-
-  if (localPath) {
-    return (
-      <Button
-        type="button"
-        variant="link"
-        size="sm"
-        className={cn("wrap-anywhere appearance-none bg-transparent p-0 text-left font-medium text-primary underline", className)}
-        data-streamdown="link"
-        onClick={() => onOpenLocalFile?.(localPath)}
-      >
-        {children}
-      </Button>
-    );
-  }
-
-  if (forwardedExternalHref) {
-    return (
-      <Button
-        type="button"
-        variant="link"
-        size="sm"
-        className={cn("wrap-anywhere appearance-none bg-transparent p-0 text-left font-medium text-primary underline", className)}
-        data-streamdown="link"
-        onClick={async () => {
-          const target = classifyExternalHref(forwardedExternalHref);
-          if (!target) return;
-          const confirmed = await confirmAction({
-            title: target === "browser" ? "Open external link?" : target === "mail" ? "Open mail link?" : "Open app link?",
-            message: target === "browser" ? "This will open the link in your default browser." : target === "mail" ? "This will open the link in your default mail app." : "This will open the link in another app.",
-            detail: forwardedExternalHref,
-            kind: "info",
-            confirmLabel: target === "browser" ? "Open link" : "Open",
-            cancelLabel: "Cancel",
-            defaultAction: "cancel",
-          });
-          if (confirmed) await openExternalUrl({ url: forwardedExternalHref });
-        }}
-      >
-        {children}
-      </Button>
-    );
-  }
-
-  const isExternal = href && classifyExternalHref(href) !== null;
-
-  return (
-    <a
-      className={cn("wrap-anywhere font-medium text-primary underline", className)}
-      data-streamdown="link"
-      href={href}
-      onClick={async (event) => {
-        if (!href || !isExternal) return;
-        event.preventDefault();
-        const target = classifyExternalHref(href);
-        if (!target) return;
-        const confirmed = await confirmAction({
-          title: target === "browser" ? "Open external link?" : target === "mail" ? "Open mail link?" : "Open app link?",
-          message: target === "browser" ? "This will open the link in your default browser." : target === "mail" ? "This will open the link in your default mail app." : "This will open the link in another app.",
-          detail: href,
-          kind: "info",
-          confirmLabel: target === "browser" ? "Open link" : "Open",
-          cancelLabel: "Cancel",
-          defaultAction: "cancel",
-        });
-        if (confirmed) await openExternalUrl({ url: href });
-      }}
-      rel="noreferrer"
-      target="_blank"
-      {...props}
-    >
-      {children}
-    </a>
-  );
-}
-
 export function FilePreviewModal() {
   const filePreview = useAppStore((s) => s.filePreview);
   const closeFilePreview = useAppStore((s) => s.closeFilePreview);
-  const openFilePreview = useAppStore((s) => s.openFilePreview);
 
   const path = filePreview?.path ?? null;
-  const ext = path ? getExtensionLower(path) : "";
   const kind = path ? getFilePreviewKind(path) : "unknown";
 
   const [loading, setLoading] = useState(false);
@@ -358,12 +183,12 @@ export function FilePreviewModal() {
         const result = await readFileForPreview({ path });
         if (controller.signal.aborted) return;
         setTruncated(result.truncated);
-        const bytes = base64ToUint8Array(result.base64);
+        const bytes = result.bytes;
         const previewKind = getFilePreviewKind(path);
 
         if (previewKind === "pdf" || previewKind === "image") {
-          const mime = mimeForPreviewKind(previewKind, ext);
-          const blob = new Blob([new Uint8Array(bytes)], { type: mime });
+          const mime = mimeForPreviewKind(previewKind, getExtensionLower(path));
+          const blob = new Blob([bytes as BlobPart], { type: mime });
           const url = URL.createObjectURL(blob);
           if (controller.signal.aborted) {
             URL.revokeObjectURL(url);
@@ -381,14 +206,24 @@ export function FilePreviewModal() {
         }
 
         if (previewKind === "docx") {
-          const htmlResult = await mammoth.convertToHtml({ arrayBuffer: toArrayBuffer(bytes) });
+          const { default: mammoth } = await import("mammoth");
           if (controller.signal.aborted) return;
-          setDocxHtml(sanitizePreviewHtml(htmlResult.value));
+          const arrayBuffer = bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength,
+          ) as ArrayBuffer;
+          const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
+          if (controller.signal.aborted) return;
+          const sanitized = await sanitizePreviewHtml(htmlResult.value);
+          if (controller.signal.aborted) return;
+          setDocxHtml(sanitized);
           setLoading(false);
           return;
         }
 
         if (previewKind === "xlsx") {
+          const XLSX = await import("xlsx");
+          if (controller.signal.aborted) return;
           const wb = XLSX.read(bytes, { type: "array" });
           const firstName = wb.SheetNames[0];
           if (!firstName) {
@@ -413,7 +248,9 @@ export function FilePreviewModal() {
                 range.e.r - range.s.r + 1 > XLSX_MAX_ROWS || range.e.c - range.s.c + 1 > XLSX_MAX_COLS
                   ? `<p class="text-xs text-muted-foreground mb-2">Showing up to ${XLSX_MAX_ROWS} rows and ${XLSX_MAX_COLS} columns.</p>`
                   : "";
-              setXlsxHtml(sanitizePreviewHtml(note + html));
+              const sanitized = await sanitizePreviewHtml(note + html);
+              if (controller.signal.aborted) return;
+              setXlsxHtml(sanitized);
             }
           }
           setLoading(false);
@@ -439,7 +276,7 @@ export function FilePreviewModal() {
     return () => {
       controller.abort();
     };
-  }, [path, ext, revokeBlob]);
+  }, [path, revokeBlob]);
 
   useEffect(() => {
     return () => {
@@ -475,20 +312,6 @@ export function FilePreviewModal() {
     if (path) void revealPath({ path }).catch(() => {});
   };
 
-  const handleOpenLocalFile = useCallback((localPath: string) => {
-    const targetKind = getFilePreviewKind(localPath);
-    if (targetKind !== "unsupported" && targetKind !== "unknown") {
-      openFilePreview({ path: localPath });
-    } else {
-      void openPath({ path: localPath }).catch(() => {});
-    }
-  }, [openFilePreview]);
-
-  const openFilePreviewRef = useRef(openFilePreview);
-  openFilePreviewRef.current = openFilePreview;
-  const handleOpenLocalFileRef = useRef(handleOpenLocalFile);
-  handleOpenLocalFileRef.current = handleOpenLocalFile;
-
   const mdRemarkPlugins = useMemo(() => {
     if (!path) return [defaultRemarkPlugins.gfm, remarkRewriteDesktopFileLinks];
     return [
@@ -497,14 +320,6 @@ export function FilePreviewModal() {
       remarkRewriteDesktopFileLinks,
     ];
   }, [path]);
-
-  const mdLinkComponent = useMemo(() => {
-    const Link = (props: ComponentProps<"a"> & { node?: unknown }) => (
-      <PreviewLink {...props} onOpenLocalFile={handleOpenLocalFileRef.current} />
-    );
-    Link.displayName = "PreviewLinkWrapper";
-    return Link;
-  }, []);
 
   const isOpen = path !== null;
 
@@ -572,17 +387,15 @@ export function FilePreviewModal() {
           ) : kind === "pdf" && blobUrl ? (
             <embed src={blobUrl} type="application/pdf" className="h-[min(72vh,720px)] w-full rounded-md border border-border/80" title={titleName} />
           ) : kind === "image" && blobUrl ? (
-            <div className="flex justify-center">
-              <img src={blobUrl} alt={titleName} className="max-h-[min(72vh,720px)] max-w-full object-contain" />
-            </div>
+            <img src={blobUrl} alt={titleName} className="mx-auto block max-h-[min(72vh,720px)] max-w-full object-contain" />
           ) : (kind === "markdown" || kind === "text") && textContent !== null ? (
             kind === "markdown" ? (
               <Streamdown
                 className="max-w-none leading-7 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:underline [&_code]:rounded-sm [&_code]:bg-muted/45 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border/80 [&_pre]:bg-muted/35 [&_pre]:p-3"
-                components={{ a: mdLinkComponent }}
+                components={{ a: DesktopMessageLink }}
                 plugins={previewStreamdownPlugins}
                 remarkPlugins={mdRemarkPlugins}
-                rehypePlugins={previewRehypePlugins}
+                rehypePlugins={defaultDesktopRehypePlugins}
               >
                 {textContent}
               </Streamdown>

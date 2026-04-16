@@ -81,7 +81,7 @@ const desktopSanitizeSchema: RehypeSanitizeOptions = {
     href: [...(defaultSchema.protocols?.href ?? []), "tel", "cowork-file", "cowork-external"],
   },
 };
-const defaultDesktopRehypePlugins: PluggableList = [
+export const defaultDesktopRehypePlugins: PluggableList = [
   defaultRehypePlugins.raw,
   [rehypeSanitize, desktopSanitizeSchema],
   defaultRehypePlugins.harden,
@@ -930,7 +930,7 @@ async function openDesktopMessageLink(href: string): Promise<void> {
   window.open(href, "_blank", "noopener,noreferrer");
 }
 
-function DesktopMessageLink({
+export function DesktopMessageLink({
   children,
   className,
   href,

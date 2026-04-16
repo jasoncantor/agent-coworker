@@ -34,6 +34,7 @@ import {
   resolveAllowedPath,
   resolveAllowedRevealPath,
 } from "../services/ipcSecurity";
+import { DEFAULT_PREVIEW_MAX_BYTES, readCappedFilePreview } from "../services/filePreviewRead";
 import type { DesktopIpcModuleContext } from "./types";
 
 export function registerFilesIpc(context: DesktopIpcModuleContext): void {
@@ -109,31 +110,11 @@ export function registerFilesIpc(context: DesktopIpcModuleContext): void {
     }
   });
 
-  const DEFAULT_PREVIEW_MAX_BYTES = 15 * 1024 * 1024;
-
   handleDesktopInvoke(DESKTOP_IPC_CHANNELS.readFileForPreview, async (_event, args: ReadFileForPreviewInput) => {
     const input = parseWithSchema(readFileForPreviewInputSchema, args, "readFileForPreview options");
     await workspaceRoots.ensureApprovedWorkspaceRoots();
     const safePath = resolveAllowedPath(workspaceRoots.getApprovedWorkspaceRoots(), input.path);
-    const maxBytes = input.maxBytes ?? DEFAULT_PREVIEW_MAX_BYTES;
-    const stat = await fs.stat(safePath);
-    if (!stat.isFile()) {
-      throw new Error("Path is not a file");
-    }
-    const toRead = Math.min(maxBytes, stat.size);
-    const fh = await fs.open(safePath, "r");
-    try {
-      const buffer = Buffer.alloc(toRead);
-      const { bytesRead } = await fh.read(buffer, 0, toRead, 0);
-      const slice = buffer.subarray(0, bytesRead);
-      return {
-        base64: slice.toString("base64"),
-        byteLength: bytesRead,
-        truncated: stat.size > bytesRead,
-      };
-    } finally {
-      await fh.close();
-    }
+    return await readCappedFilePreview(safePath, input.maxBytes ?? DEFAULT_PREVIEW_MAX_BYTES);
   });
 
   handleDesktopInvoke(DESKTOP_IPC_CHANNELS.previewOSFile, async (event, args: PreviewOSFileInput) => {

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { readCappedFilePreview } from "../electron/services/filePreviewRead";
 import { resolveAllowedPath } from "../electron/services/ipcSecurity";
 import { readFileForPreviewInputSchema } from "../src/lib/desktopSchemas";
 
@@ -100,27 +101,7 @@ describe("readFileForPreview path containment", () => {
   });
 });
 
-describe("readFileForPreview truncation behaviour", () => {
-  // Mirrors the byte-slice + truncation contract enforced by the IPC handler in
-  // electron/ipc/files.ts. If the handler logic changes, update both sides.
-  async function readWithCap(absPath: string, maxBytes: number) {
-    const stat = await fs.stat(absPath);
-    const toRead = Math.min(maxBytes, stat.size);
-    const fh = await fs.open(absPath, "r");
-    try {
-      const buffer = Buffer.alloc(toRead);
-      const { bytesRead } = await fh.read(buffer, 0, toRead, 0);
-      const slice = buffer.subarray(0, bytesRead);
-      return {
-        base64: slice.toString("base64"),
-        byteLength: bytesRead,
-        truncated: stat.size > bytesRead,
-      };
-    } finally {
-      await fh.close();
-    }
-  }
-
+describe("readCappedFilePreview", () => {
   test("returns truncated:true when the file is larger than maxBytes", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-preview-trunc-"));
     try {
@@ -128,10 +109,11 @@ describe("readFileForPreview truncation behaviour", () => {
       const contents = Buffer.alloc(2048, 0x41);
       await fs.writeFile(file, contents);
 
-      const result = await readWithCap(file, 512);
+      const result = await readCappedFilePreview(file, 512);
       expect(result.byteLength).toBe(512);
       expect(result.truncated).toBe(true);
-      expect(Buffer.from(result.base64, "base64").length).toBe(512);
+      expect(result.bytes.byteLength).toBe(512);
+      expect(result.bytes[0]).toBe(0x41);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -144,10 +126,19 @@ describe("readFileForPreview truncation behaviour", () => {
       const contents = Buffer.from("hello world", "utf8");
       await fs.writeFile(file, contents);
 
-      const result = await readWithCap(file, 1024);
+      const result = await readCappedFilePreview(file, 1024);
       expect(result.byteLength).toBe(contents.length);
       expect(result.truncated).toBe(false);
-      expect(Buffer.from(result.base64, "base64").toString("utf8")).toBe("hello world");
+      expect(Buffer.from(result.bytes).toString("utf8")).toBe("hello world");
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("throws when the target path is a directory", async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-preview-dir-"));
+    try {
+      await expect(readCappedFilePreview(tempRoot, 1024)).rejects.toThrow(/not a file/);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
