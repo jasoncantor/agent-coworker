@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import type { PluggableList } from "unified";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import DOMPurify from "dompurify";
 import mammoth from "mammoth";
 import {
   defaultRehypePlugins,
@@ -64,6 +65,12 @@ function decodeUtf8(bytes: Uint8Array): string {
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
 
+// Heuristic for "is this byte stream probably text?" used to decide whether
+// to fall back to a plain-text preview for unknown extensions.
+// We sample up to 8KB and count control bytes other than tab/LF/CR. Real text
+// almost never contains them; binary formats are dense with them. The 2%
+// threshold tolerates the occasional stray byte (e.g. UTF-8 BOM, embedded
+// nulls in some logs) without misclassifying real binaries as text.
 function looksMostlyText(bytes: Uint8Array): boolean {
   if (bytes.length === 0) return true;
   let suspicious = 0;
@@ -74,6 +81,19 @@ function looksMostlyText(bytes: Uint8Array): boolean {
     if (b < 32 || b === 127) suspicious++;
   }
   return suspicious / sample < 0.02;
+}
+
+// Sanitize HTML produced by mammoth (.docx) and XLSX (.xlsx). Both libraries
+// emit HTML derived from untrusted file contents; without sanitization a
+// crafted document could inject script via inline event handlers, javascript:
+// URLs, or <script> tags. DOMPurify strips all of those while preserving the
+// formatting and table structure we want to render.
+function sanitizePreviewHtml(rawHtml: string): string {
+  return DOMPurify.sanitize(rawHtml, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ["style", "script", "iframe", "object", "embed", "form", "input"],
+    FORBID_ATTR: ["style", "onerror", "onload", "onclick"],
+  });
 }
 
 function basenamePath(p: string): string {
@@ -324,7 +344,7 @@ export function FilePreviewModal() {
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
     setTruncated(false);
@@ -336,7 +356,7 @@ export function FilePreviewModal() {
     void (async () => {
       try {
         const result = await readFileForPreview({ path });
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         setTruncated(result.truncated);
         const bytes = base64ToUint8Array(result.base64);
         const previewKind = getFilePreviewKind(path);
@@ -345,6 +365,10 @@ export function FilePreviewModal() {
           const mime = mimeForPreviewKind(previewKind, ext);
           const blob = new Blob([new Uint8Array(bytes)], { type: mime });
           const url = URL.createObjectURL(blob);
+          if (controller.signal.aborted) {
+            URL.revokeObjectURL(url);
+            return;
+          }
           setBlobUrl(url);
           setLoading(false);
           return;
@@ -358,8 +382,8 @@ export function FilePreviewModal() {
 
         if (previewKind === "docx") {
           const htmlResult = await mammoth.convertToHtml({ arrayBuffer: toArrayBuffer(bytes) });
-          if (cancelled) return;
-          setDocxHtml(htmlResult.value);
+          if (controller.signal.aborted) return;
+          setDocxHtml(sanitizePreviewHtml(htmlResult.value));
           setLoading(false);
           return;
         }
@@ -389,7 +413,7 @@ export function FilePreviewModal() {
                 range.e.r - range.s.r + 1 > XLSX_MAX_ROWS || range.e.c - range.s.c + 1 > XLSX_MAX_COLS
                   ? `<p class="text-xs text-muted-foreground mb-2">Showing up to ${XLSX_MAX_ROWS} rows and ${XLSX_MAX_COLS} columns.</p>`
                   : "";
-              setXlsxHtml(note + html);
+              setXlsxHtml(sanitizePreviewHtml(note + html));
             }
           }
           setLoading(false);
@@ -406,14 +430,14 @@ export function FilePreviewModal() {
         }
         setLoading(false);
       } catch (e) {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         setError(e instanceof Error ? e.message : String(e));
         setLoading(false);
       }
     })();
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [path, ext, revokeBlob]);
 
@@ -525,8 +549,14 @@ export function FilePreviewModal() {
             </div>
           </div>
           {truncated ? (
-            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Preview truncated (file larger than the in-app limit). Open externally for the full file.
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              <span>
+                Preview truncated — only the first portion of this file is shown. Open the file externally for the full contents.
+              </span>
+              <Button type="button" size="sm" variant="outline" onClick={openExternal}>
+                <ExternalLinkIcon className="mr-1 size-3.5" />
+                Open full file
+              </Button>
             </div>
           ) : null}
         </DialogHeader>
