@@ -1,6 +1,7 @@
 import type { ToolContext } from "./context";
 import type { AgentConfig } from "../types";
 
+import { createA2uiTool } from "./a2ui";
 import { createAskTool } from "./ask";
 import { createBashTool } from "./bash";
 import { createEditTool } from "./edit";
@@ -56,7 +57,7 @@ type ListSessionToolNameOptions = {
 };
 
 export function listSessionToolNames(
-  config: Pick<AgentConfig, "provider" | "providerOptions" | "enableMemory">,
+  config: Pick<AgentConfig, "provider" | "providerOptions" | "enableMemory" | "enableA2ui">,
   opts: ListSessionToolNameOptions = {},
 ): string[] {
   const includeLegacyWebSearch =
@@ -78,6 +79,7 @@ export function listSessionToolNames(
     "notebookEdit",
     "skill",
     ...(config.enableMemory ?? true ? ["memory"] : []),
+    ...(config.enableA2ui === true ? ["a2ui"] : []),
     "usage",
     ...(opts.includeAgentControl
       ? ["spawnAgent", "listAgents", "sendAgentInput", "waitForAgent", "inspectAgent", "resumeAgent", "closeAgent"]
@@ -108,6 +110,7 @@ export function createTools(ctx: ToolContext): Record<string, any> {
     notebookEdit: createNotebookEditTool(ctx),
     skill: createSkillTool(ctx),
     ...(ctx.config.enableMemory ?? true ? { memory: createMemoryTool(ctx) } : {}),
+    ...(ctx.config.enableA2ui === true && ctx.applyA2uiEnvelope ? { a2ui: createA2uiTool(ctx) } : {}),
     usage: createUsageTool(ctx),
   };
 

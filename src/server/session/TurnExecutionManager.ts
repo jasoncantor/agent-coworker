@@ -409,6 +409,21 @@ export class TurnExecutionManager {
       metadataManager: SessionMetadataManager;
       backupController: SessionBackupController;
       flushPendingExternalSkillRefresh: () => Promise<void>;
+      /**
+       * Lazily yields the per-session A2UI surface manager. Returns a
+       * structured result per envelope. Present even when the A2UI feature
+       * flag is off; the tool layer gates access via `applyA2uiEnvelope`
+       * on `ToolContext`.
+       */
+      getA2uiSurfaceManager?: () => {
+        applyUnknown: (value: unknown) => {
+          ok: boolean;
+          surfaceId?: string;
+          change?: "created" | "updated" | "deleted" | "noop";
+          error?: string;
+          warning?: string;
+        };
+      };
     }
   ) { }
 
@@ -742,6 +757,12 @@ export class TurnExecutionManager {
         abortSignal: this.context.state.abortController!.signal,
         includeRawChunks,
         costTracker: this.context.state.costTracker ?? undefined,
+        ...(this.context.state.config.enableA2ui === true && this.deps.getA2uiSurfaceManager
+          ? {
+              applyA2uiEnvelope: (envelope: unknown) =>
+                this.deps.getA2uiSurfaceManager!().applyUnknown(envelope),
+            }
+          : {}),
         onSessionUsageBudgetUpdated: (snapshot) => {
           this.context.emit({
             type: "session_usage",
