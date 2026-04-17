@@ -302,4 +302,46 @@ describe("pi runtime provider option mapping", () => {
     expect(jsonSchema.properties.position.maxItems).toBe(2);
     expect(jsonSchema.properties.position.additionalItems).toBeUndefined();
   });
+
+  test("drops Fireworks-unsupported length and pattern constraints from tool schemas", () => {
+    const schema = z.object({
+      filePath: z.string().min(1),
+      content: z.string().max(2_000_000),
+    });
+
+    const jsonSchema = __internal.toPiJsonSchema(schema, "fireworks") as any;
+    expect(jsonSchema.properties.filePath.minLength).toBeUndefined();
+    expect(jsonSchema.properties.content.maxLength).toBeUndefined();
+
+    const patterned = __internal.toPiJsonSchema({
+      type: "object",
+      properties: {
+        color: {
+          type: "string",
+          pattern: "^#[0-9a-fA-F]{6}$",
+        },
+      },
+    }, "fireworks") as any;
+    expect(patterned.properties.color.pattern).toBeUndefined();
+  });
+
+  test("rewrites Fireworks oneOf schemas to anyOf", () => {
+    const jsonSchema = __internal.toPiJsonSchema({
+      type: "object",
+      properties: {
+        value: {
+          oneOf: [
+            { type: "string" },
+            { type: "number" },
+          ],
+        },
+      },
+    }, "fireworks") as any;
+
+    expect(jsonSchema.properties.value.oneOf).toBeUndefined();
+    expect(jsonSchema.properties.value.anyOf).toEqual([
+      { type: "string" },
+      { type: "number" },
+    ]);
+  });
 });

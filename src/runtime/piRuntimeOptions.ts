@@ -263,6 +263,14 @@ const SCHEMA_ARRAY_KEYS = new Set([
   "oneOf",
 ]);
 
+const FIREWORKS_UNSUPPORTED_SCHEMA_KEYS = new Set([
+  "maxItems",
+  "maxLength",
+  "minItems",
+  "minLength",
+  "pattern",
+]);
+
 function normalizeSchemaArray(value: unknown): ToolJsonSchema[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -368,18 +376,104 @@ function normalizeToolJsonSchema(schema: unknown): ToolJsonSchema | undefined {
   return normalized;
 }
 
-export function toPiJsonSchema(inputSchema: unknown): Record<string, unknown> {
+function sanitizeProviderSchemaArray(
+  value: unknown,
+  provider?: ProviderName,
+): ToolJsonSchema[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => sanitizeProviderToolJsonSchema(entry as ToolJsonSchema, provider))
+    .filter((entry): entry is ToolJsonSchema => entry !== undefined);
+}
+
+function sanitizeProviderToolJsonSchema(
+  schema: ToolJsonSchema | undefined,
+  provider?: ProviderName,
+): ToolJsonSchema | undefined {
+  if (provider !== "fireworks" || schema === undefined || typeof schema === "boolean") {
+    return schema;
+  }
+
+  const record = asRecord(schema);
+  if (!record) return schema;
+
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(record)) {
+    if (FIREWORKS_UNSUPPORTED_SCHEMA_KEYS.has(key)) continue;
+
+    if (key === "items") {
+      if (Array.isArray(value)) {
+        const collapsed = collapseTupleSchemas(sanitizeProviderSchemaArray(value, provider));
+        if (collapsed !== undefined) {
+          sanitized.items = collapsed;
+        }
+        continue;
+      }
+
+      const sanitizedValue = sanitizeProviderToolJsonSchema(value as ToolJsonSchema, provider);
+      if (sanitizedValue !== undefined) {
+        sanitized.items = sanitizedValue;
+      }
+      continue;
+    }
+
+    if (SCHEMA_MAP_KEYS.has(key)) {
+      const childRecord = asRecord(value);
+      if (!childRecord) continue;
+
+      const childSanitized: Record<string, unknown> = {};
+      for (const [childKey, childValue] of Object.entries(childRecord)) {
+        const sanitizedChildValue = sanitizeProviderToolJsonSchema(childValue as ToolJsonSchema, provider);
+        if (sanitizedChildValue !== undefined) {
+          childSanitized[childKey] = sanitizedChildValue;
+        }
+      }
+      sanitized[key] = childSanitized;
+      continue;
+    }
+
+    if (SCHEMA_SINGLE_KEYS.has(key)) {
+      const sanitizedValue = sanitizeProviderToolJsonSchema(value as ToolJsonSchema, provider);
+      if (sanitizedValue !== undefined) {
+        sanitized[key] = sanitizedValue;
+      }
+      continue;
+    }
+
+    if (SCHEMA_ARRAY_KEYS.has(key)) {
+      const targetKey = key === "oneOf" ? "anyOf" : key;
+      const sanitizedValue = sanitizeProviderSchemaArray(value, provider);
+      if (sanitizedValue.length > 0) {
+        if (targetKey === "anyOf" && Array.isArray(sanitized.anyOf)) {
+          sanitized.anyOf = [...(sanitized.anyOf as ToolJsonSchema[]), ...sanitizedValue];
+        } else {
+          sanitized[targetKey] = sanitizedValue;
+        }
+      }
+      continue;
+    }
+
+    sanitized[key] = value;
+  }
+
+  return sanitized;
+}
+
+export function toPiJsonSchema(inputSchema: unknown, provider?: ProviderName): Record<string, unknown> {
   if (isZodSchema(inputSchema)) {
     const schema = z.toJSONSchema(inputSchema);
     const normalized = normalizeToolJsonSchema(schema);
-    const record = asRecord(normalized);
+    const sanitized = sanitizeProviderToolJsonSchema(normalized, provider);
+    const record = asRecord(sanitized);
     if (record) {
       return record;
     }
   }
 
   const normalized = normalizeToolJsonSchema(inputSchema);
-  const record = asRecord(normalized);
+  const sanitized = sanitizeProviderToolJsonSchema(normalized, provider);
+  const record = asRecord(sanitized);
   if (record) return record;
   return { type: "object", properties: {}, additionalProperties: true };
 }
