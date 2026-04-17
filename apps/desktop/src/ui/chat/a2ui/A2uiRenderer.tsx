@@ -8,7 +8,9 @@ import {
   resolveDynamic,
   resolveDynamicBoolean,
   resolveDynamicString,
+  stringifyDynamic,
 } from "../../../../../../src/shared/a2ui/expressions";
+import { resolveDynamicWithFunctions } from "../../../../../../src/shared/a2ui/functions";
 import { isSupportedBasicComponentType } from "../../../../../../src/shared/a2ui/component";
 
 /**
@@ -61,7 +63,8 @@ function resolveText(
   if (!props) return "";
   for (const key of keys) {
     if (key in props) {
-      return resolveDynamicString(props[key], model);
+      const resolved = resolveDynamicWithFunctions(props[key], model);
+      return stringifyDynamic(resolved);
     }
   }
   return "";
@@ -74,7 +77,9 @@ function resolveBooleanProp(
   fallback = false,
 ): boolean {
   if (!props || !(key in props)) return fallback;
-  return resolveDynamicBoolean(props[key], model);
+  const resolved = resolveDynamicWithFunctions(props[key], model);
+  if (typeof resolved === "boolean") return resolved;
+  return resolveDynamicBoolean(resolved, model);
 }
 
 function resolveOptionalAlignmentClass(
@@ -385,7 +390,7 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
       const placeholder = resolveText(props, context.dataModel, "placeholder");
       const componentId = typeof component.id === "string" ? component.id : "";
       const canChange = context.interactive && Boolean(context.onAction) && componentId.length > 0;
-      const rawOptions = resolveDynamic(props?.options, context.dataModel);
+      const rawOptions = resolveDynamicWithFunctions(props?.options, context.dataModel);
       const options = Array.isArray(rawOptions)
         ? rawOptions.flatMap((entry): Array<{ label: string; value: string }> => {
             if (typeof entry === "string" || typeof entry === "number") {
@@ -441,9 +446,9 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
     }
 
     case "ProgressBar": {
-      const value = clampProgressValue(resolveDynamic(props?.value, context.dataModel));
+      const value = clampProgressValue(resolveDynamicWithFunctions(props?.value, context.dataModel));
       const max = (() => {
-        const raw = resolveDynamic(props?.max, context.dataModel);
+        const raw = resolveDynamicWithFunctions(props?.max, context.dataModel);
         return typeof raw === "number" && raw > 0 ? raw : 100;
       })();
       const label = resolveText(props, context.dataModel, "label");
@@ -486,8 +491,8 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
     }
 
     case "Table": {
-      const columnsRaw = resolveDynamic(props?.columns, context.dataModel);
-      const rowsRaw = resolveDynamic(props?.rows, context.dataModel);
+      const columnsRaw = resolveDynamicWithFunctions(props?.columns, context.dataModel);
+      const rowsRaw = resolveDynamicWithFunctions(props?.rows, context.dataModel);
       const columns = Array.isArray(columnsRaw)
         ? columnsRaw.flatMap((col): Array<{ key: string; label: string }> => {
             if (typeof col === "string") return [{ key: col, label: col }];

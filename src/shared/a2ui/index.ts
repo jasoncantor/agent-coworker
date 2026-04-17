@@ -40,5 +40,13 @@ export {
 } from "./expressions";
 export type { DataModel, DynamicLike } from "./expressions";
 
+export {
+  A2UI_FUNCTION_KEYS,
+  evaluateA2uiFunction,
+  isA2uiFunctionCall,
+  resolveDynamicWithFunctions,
+} from "./functions";
+export type { A2uiFunctionKey } from "./functions";
+
 export { applyEnvelope, createEmptySurfaces, toSerializable } from "./surface";
 export type { A2uiSurfacesById, A2uiSurfaceState, ApplyEnvelopeResult } from "./surface";
