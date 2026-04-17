@@ -32,6 +32,30 @@ export type A2uiApplyResult = {
   change?: ApplyEnvelopeResult["change"];
 };
 
+/**
+ * Validation outcome for a client-originated action (Phase 2).
+ */
+export type A2uiActionValidation =
+  | { ok: true; surfaceId: string; componentId: string; componentType: string }
+  | { ok: false; error: string; code: "unknown_surface" | "surface_deleted" | "unknown_component" };
+
+function findComponentType(root: unknown, componentId: string, depth = 0): string | null {
+  if (depth > 64) return null;
+  if (!root || typeof root !== "object") return null;
+  const record = root as Record<string, unknown>;
+  if (record.id === componentId && typeof record.type === "string") {
+    return record.type;
+  }
+  const children = record.children;
+  if (Array.isArray(children)) {
+    for (const child of children) {
+      const found = findComponentType(child, componentId, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export type A2uiSurfaceManagerDeps = {
   sessionId: string;
   emit: (evt: ServerEvent) => void;
@@ -131,6 +155,43 @@ export class A2uiSurfaceManager {
       return { ok: false, error: parsed.error };
     }
     return this.applyEnvelope(parsed.envelope);
+  }
+
+  /**
+   * Validate that `surfaceId` / `componentId` refers to a component currently
+   * rendered in a non-deleted surface. Used by the client→server action
+   * channel to reject stale or spoofed events.
+   */
+  validateAction(opts: { surfaceId: string; componentId: string }): A2uiActionValidation {
+    const surface = this.surfaces[opts.surfaceId];
+    if (!surface) {
+      return {
+        ok: false,
+        code: "unknown_surface",
+        error: `surface ${JSON.stringify(opts.surfaceId)} is not active`,
+      };
+    }
+    if (surface.deleted) {
+      return {
+        ok: false,
+        code: "surface_deleted",
+        error: `surface ${JSON.stringify(opts.surfaceId)} has been deleted`,
+      };
+    }
+    const componentType = findComponentType(surface.root, opts.componentId);
+    if (!componentType) {
+      return {
+        ok: false,
+        code: "unknown_component",
+        error: `component ${JSON.stringify(opts.componentId)} is not present in surface ${JSON.stringify(opts.surfaceId)}`,
+      };
+    }
+    return {
+      ok: true,
+      surfaceId: opts.surfaceId,
+      componentId: opts.componentId,
+      componentType,
+    };
   }
 
   private resolvedEvent(state: A2uiSurfaceState): ServerEvent {
