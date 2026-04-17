@@ -1,10 +1,11 @@
 import { memo, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 
-import { ChevronDownIcon, SparklesIcon, Trash2Icon } from "lucide-react";
+import { ChevronDownIcon, ExpandIcon, SparklesIcon, Trash2Icon } from "lucide-react";
 
 import { Card, CardContent } from "../../../components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../../components/ui/collapsible";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
 import { cn } from "../../../lib/utils";
 import { isBasicCatalogId } from "../../../../../../src/shared/a2ui/component";
 import { useAppStore } from "../../../app/store";
@@ -42,6 +43,7 @@ function buildThemeStyle(theme?: Record<string, unknown>): CSSProperties | undef
 
 export const A2uiSurfaceCard = memo(function A2uiSurfaceCard({ item }: A2uiSurfaceCardProps) {
   const [expanded, setExpanded] = useState(true);
+  const [poppedOut, setPoppedOut] = useState(false);
   const themeStyle = useMemo(() => buildThemeStyle(item.theme), [item.theme]);
 
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
@@ -81,44 +83,81 @@ export const A2uiSurfaceCard = memo(function A2uiSurfaceCard({ item }: A2uiSurfa
   }
 
   return (
-    <Card className="max-w-3xl overflow-hidden border-border/50 bg-background/60">
-      <Collapsible open={expanded} onOpenChange={setExpanded}>
-        <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className={cn(
-              "flex w-full items-center justify-between gap-2 border-b border-border/40 px-3 py-2 text-left transition-colors hover:bg-muted/20",
-              !expanded && "border-b-transparent",
-            )}
-          >
-            <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              <SparklesIcon className="size-3.5 text-primary" />
-              Generative UI
-              <code className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-foreground/70">
-                {item.surfaceId}
-              </code>
-              {unsupportedCatalog ? (
-                <span className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-warning">
-                  unknown catalog
+    <>
+      <Card className="max-w-3xl overflow-hidden border-border/50 bg-background/60">
+        <Collapsible open={expanded} onOpenChange={setExpanded}>
+          <div className="flex items-center gap-1 border-b border-border/40 pr-2">
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "flex flex-1 items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/20",
+                  !expanded && "border-b-transparent",
+                )}
+              >
+                <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  <SparklesIcon className="size-3.5 text-primary" />
+                  Generative UI
+                  <code className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-foreground/70">
+                    {item.surfaceId}
+                  </code>
+                  {unsupportedCatalog ? (
+                    <span className="rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-warning">
+                      unknown catalog
+                    </span>
+                  ) : null}
                 </span>
+                <ChevronDownIcon
+                  className={cn(
+                    "size-3.5 text-muted-foreground transition-transform",
+                    expanded ? "rotate-0" : "-rotate-90",
+                  )}
+                />
+              </button>
+            </CollapsibleTrigger>
+            <button
+              type="button"
+              title="Open in larger view"
+              aria-label="Open in larger view"
+              onClick={() => setPoppedOut(true)}
+              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
+            >
+              <ExpandIcon className="size-3.5" />
+            </button>
+          </div>
+          <CollapsibleContent>
+            <CardContent className="p-3" style={themeStyle}>
+              {unsupportedCatalog ? (
+                <div className="mb-3 rounded border border-warning/35 bg-warning/[0.08] p-2 text-xs text-warning">
+                  This surface uses an unsupported catalog. Rendering with best-effort basic primitives — some components may be skipped.
+                  <div className="mt-1 font-mono text-[10px] text-warning/80">
+                    {item.catalogId}
+                  </div>
+                </div>
               ) : null}
-            </span>
-            <ChevronDownIcon
-              className={cn(
-                "size-3.5 text-muted-foreground transition-transform",
-                expanded ? "rotate-0" : "-rotate-90",
-              )}
-            />
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <CardContent className="p-3" style={themeStyle}>
+              <A2uiRenderer
+                root={rootComponent}
+                dataModel={item.dataModel}
+                {...(onAction ? { onAction } : {})}
+              />
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+      <Dialog open={poppedOut} onOpenChange={setPoppedOut}>
+        <DialogContent showClose className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <SparklesIcon className="size-4 text-primary" />
+                Generative UI — {item.surfaceId}
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[70vh] overflow-y-auto" style={themeStyle}>
             {unsupportedCatalog ? (
               <div className="mb-3 rounded border border-warning/35 bg-warning/[0.08] p-2 text-xs text-warning">
-                This surface uses an unsupported catalog. Rendering with best-effort basic primitives — some components may be skipped.
-                <div className="mt-1 font-mono text-[10px] text-warning/80">
-                  {item.catalogId}
-                </div>
+                Unsupported catalog: <span className="font-mono text-[10px] text-warning/80">{item.catalogId}</span>
               </div>
             ) : null}
             <A2uiRenderer
@@ -126,9 +165,9 @@ export const A2uiSurfaceCard = memo(function A2uiSurfaceCard({ item }: A2uiSurfa
               dataModel={item.dataModel}
               {...(onAction ? { onAction } : {})}
             />
-          </CardContent>
-        </CollapsibleContent>
-      </Collapsible>
-    </Card>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 });
