@@ -19,8 +19,20 @@ rules.
   validates the action against the current surface, synthesizes a
   structured user/steer message, and hands it to the running turn (or
   starts a new one).
-- **Phase 3 (planned):** extended catalogs (tables, charts), per-workspace
-  theme persistence, and mobile parity.
+- **Phase 3 (shipped):**
+  - Extended basic-catalog components: `TextArea`, `Select`, `Link`,
+    `ProgressBar`, `Badge`, `Table`.
+  - Client-side v0.9 **Functions** subset: `if`, `not`, `eq`, `neq`, `and`,
+    `or`, `concat`, `length`, `join`, `map`, `coalesce`. The renderer
+    resolves prop values through these before stringifying.
+  - Desktop surfaces gain an "expand" button that opens the surface in a
+    larger Dialog for richer layouts without leaving the chat feed.
+  - **Mobile parity:** the Expo app's `SessionFeedItem`/`ProjectedItem`
+    schemas learned the new variant, the mobile `snapshotReducer` folds
+    `uiSurface` items into its feed, and the new React Native
+    `A2uiSurfaceCard` renders the basic catalog. Mobile is read-only for
+    this pass — interactive dispatch will follow when the mobile client
+    adopts `cowork/session/a2ui/action`.
 
 The feature is opt-in and **disabled by default**.
 
@@ -140,6 +152,11 @@ All tests are deterministic and part of the standard `bun test` run.
 
 ## Roadmap
 
-Phase 3 adds extended catalogs (tables, charts, agentic form validation
-through v0.9 `Functions`), a mobile renderer, and an open-in-sidebar mode
-for large surfaces.
+Future work (post-Phase 3):
+
+- Mobile client-to-server action dispatch (parity with desktop Phase 2).
+- Extended catalog: chart / plot primitives, date pickers, tabs.
+- Persist per-workspace theme overrides so surfaces can pick up the user's
+  preferred colors without the agent restating them.
+- Provider-driven `Function` support: let the server annotate envelopes
+  with pre-validated bindings for richer rendering.

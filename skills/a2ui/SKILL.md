@@ -67,14 +67,22 @@ The desktop renderer supports these component types out of the box:
 | `Divider` / `Spacer` | — |
 | `Card` | nested `children` |
 | `List` | `ordered: boolean`, nested `children` |
-| `Button` | `text` / `label` (phase 1: displayed but not interactive) |
-| `TextField` | `label`, `placeholder`, `value` (phase 1: read-only for the agent) |
-| `Checkbox` | `label`, `value` (phase 1: read-only for the agent) |
-| `Image` | `src` (must be http, https, or data URL), `alt` |
+| `Button` | `text` / `label` — click dispatches `eventType: "click"` |
+| `TextField` | `label`, `placeholder`, `value` — Enter submits, blur changes |
+| `TextArea` | `label`, `placeholder`, `value`, `rows` — blur changes |
+| `Checkbox` | `label`, `value` — toggle dispatches `change` with `{ value }` |
+| `Select` | `label`, `placeholder`, `options: [{ value, label }]`, `value` — change dispatches `change` with `{ value }` |
+| `Link` | `text`, `href` (http/https/data) — opens in a new tab |
+| `ProgressBar` | `value`, `max`, `label` |
+| `Badge` | `text`, `tone` (`default` / `success` / `warning` / `danger`) |
+| `Table` | `columns: [{ key, label }]`, `rows: [{ key: value }]` |
+| `Image` | `src` (http/https/data), `alt` |
 
 Unknown component types are shown as a diagnostic fallback. If you're
 streaming updates for a new component type, include a short `Paragraph`
 fallback nearby so the user still sees meaningful content.
+
+The mobile renderer supports the same catalog as a read-only preview for now.
 
 ## Dynamic bindings
 
@@ -88,6 +96,41 @@ Props may reference the data model:
 
 The renderer does **not** evaluate arbitrary expressions. Stick to plain
 JSON-pointer paths inside `${...}`.
+
+### Functions (v0.9)
+
+In addition to plain bindings, prop values may carry a single-key "function
+call" object. Supported helpers:
+
+| Helper | Shape | Purpose |
+|---|---|---|
+| `if` | `{ if: { cond, then, else } }` | branch based on truthiness |
+| `not` | `{ not: <value> }` | logical not |
+| `eq` / `neq` | `{ eq: [a, b] }` | deep equality |
+| `and` / `or` | `{ and: [a, b, …] }` | short-circuit combiners |
+| `concat` | `{ concat: [a, b, …] }` | join stringified values |
+| `length` | `{ length: <value> }` | length of array / string / object |
+| `join` | `{ join: { items, separator } }` | array → string |
+| `map` | `{ map: { from, as, template } }` | iterate; `${/${as}/field}` reads the current item |
+| `coalesce` | `{ coalesce: [a, b, …] }` | first non-null/empty |
+
+Example using `if` inside a `Text.text`:
+
+```json
+{
+  "id": "status",
+  "type": "Text",
+  "props": {
+    "text": {
+      "if": {
+        "cond": { "path": "/online" },
+        "then": { "concat": ["Online since ", { "path": "/since" }] },
+        "else": "Offline"
+      }
+    }
+  }
+}
+```
 
 ## Security rules
 
