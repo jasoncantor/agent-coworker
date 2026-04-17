@@ -336,19 +336,6 @@ export function FilePreviewModal() {
 
   const isOpen = path !== null;
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleWindowBlur = () => {
-      closeFilePreview();
-    };
-
-    window.addEventListener("blur", handleWindowBlur);
-    return () => {
-      window.removeEventListener("blur", handleWindowBlur);
-    };
-  }, [closeFilePreview, isOpen]);
-
   const showFallback =
     !loading &&
     !error &&
@@ -409,10 +396,18 @@ export function FilePreviewModal() {
           ) : null}
         </DialogHeader>
 
-        <div className={cn(
-          "min-h-0 flex-1 overflow-y-auto px-5 py-4",
-          kind === "docx" && docxHtml && "bg-white px-6 py-6",
-        )}>
+        <div
+          data-file-preview-content="true"
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto px-5 py-4",
+            kind === "docx" && docxHtml && "bg-white px-6 py-6",
+          )}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              closeFilePreview();
+            }
+          }}
+        >
           {loading ? (
             <div className="py-16 text-center text-sm text-muted-foreground">Loading preview…</div>
           ) : error ? (

@@ -162,7 +162,7 @@ describe("file preview modal", () => {
     }
   });
 
-  test.serial("closes the preview when the app window loses focus", async () => {
+  test.serial("closes the preview when clicking the empty gutter area", async () => {
     const harness = setupJsdom({ includeAnimationFrame: true });
 
     try {
@@ -185,10 +185,13 @@ describe("file preview modal", () => {
         await flushUi();
       });
 
-      expect(harness.dom.window.document.querySelector("[role='dialog']")).not.toBeNull();
+      const content = harness.dom.window.document.querySelector("[data-file-preview-content='true']");
+      if (!(content instanceof harness.dom.window.HTMLDivElement)) {
+        throw new Error("missing file preview content shell");
+      }
 
       await act(async () => {
-        harness.dom.window.dispatchEvent(new harness.dom.window.Event("blur"));
+        content.dispatchEvent(new harness.dom.window.MouseEvent("click", { bubbles: true }));
         await flushUi();
       });
 
