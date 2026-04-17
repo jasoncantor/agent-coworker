@@ -46,6 +46,24 @@ export const ContextSidebar = memo(function ContextSidebar() {
   const compactSectionScrollerClassName = "max-h-[10.5rem] overflow-y-auto overscroll-contain px-3 pb-2.5 pt-0.5";
   const compactMutedCopyClassName = "text-[11px] leading-5 text-muted-foreground/82";
 
+  const hasActivity =
+    (todos?.length ?? 0) > 0 ||
+    agents.length > 0 ||
+    threadRuntime?.sessionKind === "agent" ||
+    Boolean(selectedWorkspaceId);
+
+  if (!hasActivity) {
+    return (
+      <aside className="app-context-sidebar flex h-full w-full flex-col gap-1 overflow-hidden p-1.5">
+        <section className={compactSectionClassName} data-sidebar-panel="idle">
+          <div className={cn(compactSectionBodyClassName, compactMutedCopyClassName, "pt-2.5 opacity-75")}>
+            Tasks, subagents, and files show here once the thread has activity.
+          </div>
+        </section>
+      </aside>
+    );
+  }
+
   return (
     <aside className="app-context-sidebar flex h-full w-full flex-col gap-1 overflow-hidden p-1.5">
       <section className={compactSectionClassName} data-sidebar-panel="tasks">

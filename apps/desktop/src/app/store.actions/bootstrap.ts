@@ -257,7 +257,7 @@ const persistedUiSchema = z.object({
   sidebarWidth: normalizedUiWidthSchema(160, 440, 248).optional(),
   contextSidebarCollapsed: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()).optional(),
   contextSidebarWidth: normalizedUiWidthSchema(200, 600, 300).optional(),
-  messageBarHeight: normalizedUiWidthSchema(80, 500, 120).optional(),
+  messageBarHeight: normalizedUiWidthSchema(80, 500, 96).optional(),
 }).passthrough().transform((ui): CachedDesktopUiState => ({
   selectedWorkspaceId: ui.selectedWorkspaceId ?? null,
   selectedThreadId: ui.selectedThreadId ?? null,
@@ -270,7 +270,7 @@ const persistedUiSchema = z.object({
   sidebarWidth: ui.sidebarWidth ?? 248,
   contextSidebarCollapsed: ui.contextSidebarCollapsed ?? false,
   contextSidebarWidth: ui.contextSidebarWidth ?? 300,
-  messageBarHeight: ui.messageBarHeight ?? 120,
+  messageBarHeight: ui.messageBarHeight ?? 96,
 }));
 
 const persistedStateSchema = z.object({
@@ -362,7 +362,7 @@ function buildResolvedDesktopUiState(
     sidebarWidth: normalizedUi.sidebarWidth ?? 248,
     contextSidebarCollapsed: normalizedUi.contextSidebarCollapsed ?? false,
     contextSidebarWidth: normalizedUi.contextSidebarWidth ?? 300,
-    messageBarHeight: normalizedUi.messageBarHeight ?? 120,
+    messageBarHeight: normalizedUi.messageBarHeight ?? 96,
   };
 }
 
