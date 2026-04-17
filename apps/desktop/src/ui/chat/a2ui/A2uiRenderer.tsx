@@ -24,11 +24,19 @@ export type A2uiRenderableComponent = {
   [key: string]: unknown;
 };
 
+export type A2uiActionDispatcher = (opts: {
+  componentId: string;
+  eventType: string;
+  payload?: Record<string, unknown>;
+}) => void | Promise<void>;
+
 export type A2uiRendererProps = {
   root: A2uiRenderableComponent | null;
   dataModel: unknown;
-  /** Whether interactive controls should be rendered as disabled (phase 1 default). */
+  /** Whether interactive controls are wired up. Defaults to true when `onAction` is provided. */
   interactive?: boolean;
+  /** Dispatcher invoked when a Button / TextField / Checkbox emits an action. */
+  onAction?: A2uiActionDispatcher;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -113,6 +121,7 @@ function resolveImageSrc(rawValue: unknown, model: unknown): string | null {
 type RenderContext = {
   dataModel: unknown;
   interactive: boolean;
+  onAction?: A2uiActionDispatcher;
   depth: number;
   path: string;
 };
@@ -250,15 +259,23 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
 
     case "Button": {
       const text = resolveText(props, context.dataModel, "text", "label");
-      const tooltip = context.interactive
+      const componentId = typeof component.id === "string" ? component.id : "";
+      const canClick = context.interactive && Boolean(context.onAction) && componentId.length > 0;
+      const eventType = typeof props?.eventType === "string" ? props.eventType : "click";
+      const tooltip = canClick
         ? undefined
-        : "Button interactions are not yet delivered back to the agent.";
+        : "Interactions are not wired up for this surface.";
       return (
         <button
           type="button"
-          disabled
+          disabled={!canClick}
           title={tooltip}
-          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground opacity-75"
+          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground disabled:opacity-75"
+          onClick={(event) => {
+            event.preventDefault();
+            if (!canClick || !context.onAction) return;
+            void context.onAction({ componentId, eventType });
+          }}
         >
           {text || "Button"}
         </button>
@@ -269,7 +286,27 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
       const placeholder = resolveText(props, context.dataModel, "placeholder", "hint");
       const label = resolveText(props, context.dataModel, "label");
       const defaultValue = resolveText(props, context.dataModel, "value", "defaultValue", "initialValue");
-      return <ControlledTextField label={label} placeholder={placeholder} defaultValue={defaultValue} />;
+      const componentId = typeof component.id === "string" ? component.id : "";
+      const canSubmit = context.interactive && Boolean(context.onAction) && componentId.length > 0;
+      return (
+        <ControlledTextField
+          label={label}
+          placeholder={placeholder}
+          defaultValue={defaultValue}
+          {...(canSubmit
+            ? {
+                onSubmit: (value) => {
+                  if (!context.onAction) return;
+                  void context.onAction({ componentId, eventType: "submit", payload: { value } });
+                },
+                onBlurSubmit: (value) => {
+                  if (!context.onAction) return;
+                  void context.onAction({ componentId, eventType: "change", payload: { value } });
+                },
+              }
+            : {})}
+        />
+      );
     }
 
     case "Checkbox": {
@@ -277,7 +314,22 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
       const initialValue = resolveBooleanProp(props, context.dataModel, "value")
         || resolveBooleanProp(props, context.dataModel, "checked")
         || resolveBooleanProp(props, context.dataModel, "defaultChecked");
-      return <ControlledCheckbox label={label} initialValue={initialValue} />;
+      const componentId = typeof component.id === "string" ? component.id : "";
+      const canChange = context.interactive && Boolean(context.onAction) && componentId.length > 0;
+      return (
+        <ControlledCheckbox
+          label={label}
+          initialValue={initialValue}
+          {...(canChange
+            ? {
+                onChange: (value) => {
+                  if (!context.onAction) return;
+                  void context.onAction({ componentId, eventType: "change", payload: { value } });
+                },
+              }
+            : {})}
+        />
+      );
     }
 
     case "Image": {
@@ -311,10 +363,14 @@ function ControlledTextField({
   label,
   placeholder,
   defaultValue,
+  onSubmit,
+  onBlurSubmit,
 }: {
   label: string;
   placeholder: string;
   defaultValue: string;
+  onSubmit?: (value: string) => void;
+  onBlurSubmit?: (value: string) => void;
 }) {
   const [value, setValue] = useState(defaultValue);
   const inputId = `a2ui-textfield-${useSafeId()}`;
@@ -327,13 +383,32 @@ function ControlledTextField({
         value={value}
         placeholder={placeholder}
         onChange={(event) => setValue(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey && onSubmit) {
+            event.preventDefault();
+            onSubmit(value);
+          }
+        }}
+        onBlur={() => {
+          if (onBlurSubmit && value !== defaultValue) {
+            onBlurSubmit(value);
+          }
+        }}
         className="h-9 w-full rounded-md border border-border/60 bg-background/70 px-3 text-sm text-foreground shadow-none placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
       />
     </label>
   );
 }
 
-function ControlledCheckbox({ label, initialValue }: { label: string; initialValue: boolean }) {
+function ControlledCheckbox({
+  label,
+  initialValue,
+  onChange,
+}: {
+  label: string;
+  initialValue: boolean;
+  onChange?: (value: boolean) => void;
+}) {
   const [checked, setChecked] = useState(initialValue);
   const inputId = `a2ui-checkbox-${useSafeId()}`;
   return (
@@ -342,7 +417,11 @@ function ControlledCheckbox({ label, initialValue }: { label: string; initialVal
         id={inputId}
         type="checkbox"
         checked={checked}
-        onChange={(event) => setChecked(event.currentTarget.checked)}
+        onChange={(event) => {
+          const next = event.currentTarget.checked;
+          setChecked(next);
+          onChange?.(next);
+        }}
         className="size-4 rounded border border-border/60 bg-background"
       />
       {label ? <span>{label}</span> : null}
@@ -385,7 +464,7 @@ function childKey(child: A2uiRenderableComponent, index: number): string {
   return `__idx_${index}`;
 }
 
-export function A2uiRenderer({ root, dataModel, interactive = false }: A2uiRendererProps) {
+export function A2uiRenderer({ root, dataModel, interactive, onAction }: A2uiRendererProps) {
   if (!root) {
     return (
       <div className="rounded-md border border-dashed border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
@@ -396,7 +475,8 @@ export function A2uiRenderer({ root, dataModel, interactive = false }: A2uiRende
 
   const context: RenderContext = {
     dataModel,
-    interactive,
+    interactive: interactive ?? Boolean(onAction),
+    ...(onAction ? { onAction } : {}),
     depth: 0,
     path: typeof root.id === "string" ? root.id : "root",
   };

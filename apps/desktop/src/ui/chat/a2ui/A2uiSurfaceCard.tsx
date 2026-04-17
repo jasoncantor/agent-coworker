@@ -7,8 +7,9 @@ import { Card, CardContent } from "../../../components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../../components/ui/collapsible";
 import { cn } from "../../../lib/utils";
 import { isBasicCatalogId } from "../../../../../../src/shared/a2ui/component";
+import { useAppStore } from "../../../app/store";
 import type { FeedItem } from "../../../app/types";
-import { A2uiRenderer, type A2uiRenderableComponent } from "./A2uiRenderer";
+import { A2uiRenderer, type A2uiActionDispatcher, type A2uiRenderableComponent } from "./A2uiRenderer";
 
 type UiSurfaceFeedItem = Extract<FeedItem, { kind: "ui_surface" }>;
 
@@ -42,6 +43,23 @@ function buildThemeStyle(theme?: Record<string, unknown>): CSSProperties | undef
 export const A2uiSurfaceCard = memo(function A2uiSurfaceCard({ item }: A2uiSurfaceCardProps) {
   const [expanded, setExpanded] = useState(true);
   const themeStyle = useMemo(() => buildThemeStyle(item.theme), [item.theme]);
+
+  const selectedThreadId = useAppStore((s) => s.selectedThreadId);
+  const dispatchA2uiAction = useAppStore((s) => s.dispatchA2uiAction);
+
+  const onAction = useMemo<A2uiActionDispatcher | undefined>(() => {
+    if (!selectedThreadId || item.deleted) return undefined;
+    return async ({ componentId, eventType, payload }) => {
+      await dispatchA2uiAction({
+        threadId: selectedThreadId,
+        surfaceId: item.surfaceId,
+        componentId,
+        eventType,
+        ...(payload !== undefined ? { payload } : {}),
+      });
+    };
+  }, [dispatchA2uiAction, item.deleted, item.surfaceId, selectedThreadId]);
+
 
   const rootComponent = useMemo<A2uiRenderableComponent | null>(() => {
     const root = item.root;
@@ -103,7 +121,11 @@ export const A2uiSurfaceCard = memo(function A2uiSurfaceCard({ item }: A2uiSurfa
                 </div>
               </div>
             ) : null}
-            <A2uiRenderer root={rootComponent} dataModel={item.dataModel} interactive={false} />
+            <A2uiRenderer
+              root={rootComponent}
+              dataModel={item.dataModel}
+              {...(onAction ? { onAction } : {})}
+            />
           </CardContent>
         </CollapsibleContent>
       </Collapsible>
