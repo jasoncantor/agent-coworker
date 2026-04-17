@@ -3958,7 +3958,7 @@ When non-null, `context` contains all [HarnessContextPayload](#harnesscontextpay
 
 Resolved generative-UI surface state emitted when the agent calls the `a2ui` tool. Published after every envelope application and carries the post-reduction snapshot (not the raw envelope).
 
-This event is emitted only when the harness has A2UI enabled (`config/defaults.json`, `~/.agent/config.json`, or `.agent/config.json` contains `"enableA2ui": true`, or the environment has `AGENT_ENABLE_A2UI=true`). Clients can safely ignore the event when they do not implement an A2UI renderer.
+This event is emitted only when the harness has A2UI enabled. A2UI is on by default, but any config layer can disable it with `"enableA2ui": false`, and the environment can override it with `AGENT_ENABLE_A2UI=false`. Clients can safely ignore the event when they do not implement an A2UI renderer.
 
 ```json
 {

@@ -3633,6 +3633,36 @@ describe("createTools", () => {
     expect(Object.keys(tools).length).toBe(13);
   });
 
+  test("includes a2ui for non-google providers when enabled", async () => {
+    const dir = await tmpDir();
+    const tools = createTools(makeCtx(dir, {
+      config: makeConfig(dir, {
+        provider: "openai",
+        model: "gpt-5.2",
+        preferredChildModel: "gpt-5.2",
+        enableA2ui: true,
+      }),
+      applyA2uiEnvelope: () => ({ ok: true, surfaceId: "surface-1", change: "created" }),
+    }));
+
+    expect(tools).toHaveProperty("a2ui");
+  });
+
+  test("omits a2ui when explicitly disabled", async () => {
+    const dir = await tmpDir();
+    const tools = createTools(makeCtx(dir, {
+      config: makeConfig(dir, {
+        provider: "openai",
+        model: "gpt-5.2",
+        preferredChildModel: "gpt-5.2",
+        enableA2ui: false,
+      }),
+      applyA2uiEnvelope: () => ({ ok: true, surfaceId: "surface-1", change: "created" }),
+    }));
+
+    expect(tools).not.toHaveProperty("a2ui");
+  });
+
   test("listSessionToolNames includes root-session agent controls when requested", () => {
     const names = listSessionToolNames({
       provider: "google",

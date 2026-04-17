@@ -34,21 +34,22 @@ rules.
     this pass — interactive dispatch will follow when the mobile client
     adopts `cowork/session/a2ui/action`.
 
-The feature is opt-in and **disabled by default**.
+The feature is **enabled by default** and is exposed as a normal built-in
+tool, so it is not limited to Gemini or Google runtimes.
 
-## Enabling the feature
+## Configuring the feature
 
-Set `enableA2ui` to `true` in any config layer, or export
-`AGENT_ENABLE_A2UI=true`:
+To explicitly disable A2UI for a workspace or user, set `enableA2ui` to
+`false` in any config layer, or export `AGENT_ENABLE_A2UI=false`:
 
 ```json
 // ~/.agent/config.json  OR  .agent/config.json  OR  config/defaults.json
-{ "enableA2ui": true }
+{ "enableA2ui": false }
 ```
 
-Restart the harness (or reopen the workspace in the desktop app). When the
-flag is on, the `a2ui` tool is registered on the model's toolbelt and the
-desktop UI will render surfaces emitted by tool calls.
+Restart the harness (or reopen the workspace in the desktop app) after
+changing the flag. When enabled, the `a2ui` tool is registered on the
+model's toolbelt and supported clients render emitted surfaces inline.
 
 ## Architecture
 
@@ -134,8 +135,8 @@ The desktop app wires this up automatically for Button, TextField, and Checkbox.
    and each session may hold at most 16 active surfaces (the oldest
    non-deleted surface is evicted when that cap is exceeded). Envelopes
    over 128 KB are rejected at parse time.
-5. **Feature flag gate.** Without `enableA2ui`, the tool is not registered
-   and no A2UI events are emitted.
+5. **Config gate.** If a session explicitly disables `enableA2ui`, the tool
+   is not registered and no A2UI events are emitted.
 
 ## Testing
 

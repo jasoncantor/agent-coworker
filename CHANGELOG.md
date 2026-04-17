@@ -31,8 +31,9 @@ All notable changes to this project will be documented in this file.
     the feed.
   - Mobile (Expo) gains a read-only React Native renderer that keeps
     parity with the desktop basic catalog.
-  - Opt-in via `enableA2ui: true` in any config layer or the
-    `AGENT_ENABLE_A2UI` environment variable. Default is off.
+  - Enabled by default for all model providers that receive the standard
+    built-in toolbelt. You can still disable it per config layer with
+    `enableA2ui: false` or via `AGENT_ENABLE_A2UI=false`.
   - Bundled `skills/a2ui/SKILL.md` documents the envelope shape,
     supported components, Functions subset, and interaction contract for
     the agent. Full protocol reference in `docs/websocket-protocol.md`

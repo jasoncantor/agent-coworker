@@ -1,6 +1,6 @@
 ---
 name: "a2ui"
-description: "Use when you need to render generative UI surfaces — forms, cards, layouts, richer controls — back to the user inside the chat. Available only when the harness enables A2UI (config `enableA2ui: true`). Emit A2UI v0.9 envelopes through the `a2ui` tool."
+description: "Use when you need to render generative UI surfaces — forms, cards, layouts, richer controls — back to the user inside the chat. A2UI is enabled by default in the harness unless a session explicitly disables it with `enableA2ui: false`. Emit A2UI v0.9 envelopes through the `a2ui` tool."
 ---
 
 # A2UI Generative UI Skill

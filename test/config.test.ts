@@ -122,6 +122,19 @@ describe("loadConfig", () => {
     expect(cfg.model).toBe("gpt-5.4");
   });
 
+  test("enables A2UI by default", async () => {
+    const { cwd, home } = await makeTmpDirs();
+
+    const cfg = await loadConfig({
+      cwd,
+      homedir: home,
+      builtInDir: repoRoot(),
+      env: { AGENT_PROVIDER: "openai" },
+    });
+
+    expect(cfg.enableA2ui).toBe(true);
+  });
+
   test("built-in skills stay enabled by default and only disable on explicit opt-out", async () => {
     const { cwd, home } = await makeTmpDirs();
 
