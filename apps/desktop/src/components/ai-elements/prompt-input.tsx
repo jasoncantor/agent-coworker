@@ -6,7 +6,7 @@ import { ArrowUpIcon, FileTextIcon, LoaderCircleIcon, SquareIcon, XIcon } from "
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 
-export type PromptInputStatus = "ready" | "submitted" | "streaming" | "error";
+export type PromptInputStatus = "ready" | "pending" | "submitted" | "streaming" | "error";
 export type PromptInputMode = "send" | "steer-ready" | "steer-pending";
 
 export type PromptInputFileDropOptions = {
@@ -240,6 +240,26 @@ export function PromptInputSubmit({ className, disabled, mode = "send", onStop, 
         {...props}
       >
         <SquareIcon data-icon="stop" className="size-4" strokeWidth={2.25} />
+      </Button>
+    );
+  }
+
+  if (status === "pending") {
+    return (
+      <Button
+        type="button"
+        size="icon"
+        className={cn(
+          "size-10 rounded-full border border-primary/15 bg-primary text-primary-foreground shadow-none hover:bg-primary/85",
+          "disabled:border-primary/15 disabled:bg-primary disabled:text-primary-foreground disabled:opacity-100",
+          className,
+        )}
+        disabled
+        aria-label="Sending message"
+        title="Sending message"
+        {...props}
+      >
+        <LoaderCircleIcon data-icon="send" className="size-4 animate-spin" strokeWidth={2.25} />
       </Button>
     );
   }

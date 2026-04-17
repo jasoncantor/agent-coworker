@@ -1212,6 +1212,11 @@ describe("desktop JSON-RPC event mapping", () => {
       | { clientMessageId?: string }
       | undefined;
     expect(turnStartParams?.clientMessageId).toEqual(expect.any(String));
+    expect(useAppStore.getState().threadRuntimeById[threadId]?.pendingTurnStart).toMatchObject({
+      clientMessageId: turnStartParams?.clientMessageId,
+      text: "hello once",
+      status: "sending",
+    });
 
     socket.notify("turn/started", {
       threadId: sessionId,
@@ -1230,6 +1235,7 @@ describe("desktop JSON-RPC event mapping", () => {
     await flushAsyncWork();
 
     const runtime = useAppStore.getState().threadRuntimeById[threadId];
+    expect(runtime?.pendingTurnStart).toBeNull();
     const userMessages = runtime?.feed.filter((item) => item.kind === "message" && item.role === "user") ?? [];
     expect(userMessages).toHaveLength(1);
     expect(userMessages[0]).toMatchObject({

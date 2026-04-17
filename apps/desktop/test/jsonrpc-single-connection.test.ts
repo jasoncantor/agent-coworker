@@ -505,6 +505,7 @@ describe("desktop JSON-RPC single connection path", () => {
     await flushAsyncWork();
 
     const runtime = useAppStore.getState().threadRuntimeById["jsonrpc-thread-1"];
+    expect(runtime?.pendingTurnStart).toBeNull();
     expect(runtime?.feed.map((item) => item.kind)).toEqual(["message", "error"]);
     expect(runtime?.feed.at(-1)).toMatchObject({
       kind: "error",
@@ -514,6 +515,37 @@ describe("desktop JSON-RPC single connection path", () => {
     });
     expect(useAppStore.getState().composerText).toBe("");
     expect(jsonRpcRequests.map((entry) => entry.method)).toContain("turn/start");
+  });
+
+  test("tracks a pending turn start locally after an optimistic send", async () => {
+    seedActiveThreadState();
+
+    await useAppStore.getState().sendMessage("hello over jsonrpc");
+    await flushAsyncWork();
+
+    const runtime = useAppStore.getState().threadRuntimeById["jsonrpc-thread-1"];
+    expect(runtime?.pendingTurnStart).toMatchObject({
+      text: "hello over jsonrpc",
+      attachmentSignature: "",
+      status: "sending",
+    });
+  });
+
+  test("blocks duplicate plain sends while a turn start is still pending", async () => {
+    seedActiveThreadState();
+
+    const firstAccepted = await useAppStore.getState().sendMessage("hello over jsonrpc");
+    await flushAsyncWork();
+    const secondAccepted = await useAppStore.getState().sendMessage("Give the short version.");
+    await flushAsyncWork();
+
+    expect(firstAccepted).toBe(true);
+    expect(secondAccepted).toBe(false);
+    expect(jsonRpcRequests.filter((entry) => entry.method === "turn/start")).toHaveLength(1);
+    expect(useAppStore.getState().threadRuntimeById["jsonrpc-thread-1"]?.pendingTurnStart).toMatchObject({
+      text: "hello over jsonrpc",
+      status: "sending",
+    });
   });
 
   test("sends attachment-only turns without placeholder text in the JSON-RPC input", async () => {

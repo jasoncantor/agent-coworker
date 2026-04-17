@@ -313,6 +313,7 @@ export function defaultThreadRuntime(): ThreadRuntime {
     busy: false,
     busySince: null,
     activeTurnId: null,
+    pendingTurnStart: null,
     pendingSteer: null,
     feed: [],
     hydrating: false,

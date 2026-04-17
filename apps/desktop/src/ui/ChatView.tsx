@@ -13,7 +13,7 @@ import {
 import { useAppStore } from "../app/store";
 import { uploadJsonRpcWorkspaceFile } from "../app/store.helpers/jsonRpcSocket";
 import type { FileAttachmentInput } from "../app/store.helpers/jsonRpcSocket";
-import type { FeedItem, ThreadAgentSummary, ThreadPendingSteer, ThreadStatus } from "../app/types";
+import type { FeedItem, ThreadAgentSummary, ThreadPendingSteer, ThreadPendingTurnStart, ThreadStatus } from "../app/types";
 import {
   Conversation,
   ConversationContent,
@@ -200,13 +200,15 @@ export function getComposerSubmitState(opts: {
   composerText: string;
   hasPendingAttachments: boolean;
   pendingAttachmentSignature: string;
+  pendingTurnStart: ThreadPendingTurnStart | null;
   pendingSteer: ThreadPendingSteer | null;
   sessionId: string | null;
   threadStatus: ThreadStatus;
-}): { status: "ready" | "streaming"; disabled: boolean; mode: "send" | "steer-ready" | "steer-pending" } {
+}): { status: "ready" | "pending" | "streaming"; disabled: boolean; mode: "send" | "steer-ready" | "steer-pending" } {
   const composerText = opts.composerText.trim();
   const hasComposerText = composerText.length > 0;
   const hasPendingInput = hasComposerText || opts.hasPendingAttachments;
+  const startPending = opts.pendingTurnStart?.status === "sending";
   const steerPending = opts.busy
     && hasPendingInput
     && opts.pendingSteer?.status === "sending"
@@ -218,6 +220,14 @@ export function getComposerSubmitState(opts: {
     return {
       status: "streaming",
       disabled: opts.hasPromptModal || !opts.sessionId || opts.threadStatus !== "active",
+      mode: "send",
+    };
+  }
+
+  if (startPending) {
+    return {
+      status: "pending",
+      disabled: true,
       mode: "send",
     };
   }
@@ -234,6 +244,9 @@ export function getComposerSubmitState(opts: {
 }
 
 export function composerBusyHint(submitState: ReturnType<typeof getComposerSubmitState>): string | null {
+  if (submitState.status === "pending") {
+    return "Sending message. Waiting for the run to start.";
+  }
   if (submitState.status === "streaming") {
     return "Type to steer, or use stop to cancel.";
   }
@@ -938,10 +951,12 @@ export function ChatView() {
     [pendingAttachments, submittedAttachmentSignature],
   );
   const hasPendingAttachments = pendingAttachments.length > 0;
+  const pendingTurnStart = rt?.pendingTurnStart ?? null;
 
   const submitComposer = useCallback((busyPolicy: "reject" | "steer") => {
     if (!thread) return;
     if (preparingAttachments) return;
+    if (pendingTurnStart?.status === "sending") return;
     if (!composerText.trim() && pendingAttachments.length === 0) return;
 
     const targetThreadId = thread.id;
@@ -984,6 +999,7 @@ export function ChatView() {
     clearPendingAttachments,
     composerText,
     pendingAttachments,
+    pendingTurnStart?.status,
     preparingAttachments,
     resolvePendingAttachmentsForSend,
     sendMessage,
@@ -1037,6 +1053,7 @@ export function ChatView() {
     composerText,
     hasPendingAttachments,
     pendingAttachmentSignature,
+    pendingTurnStart,
     pendingSteer: rt?.pendingSteer ?? null,
     sessionId: rt?.sessionId ?? null,
     threadStatus: thread.status,
@@ -1048,6 +1065,8 @@ export function ChatView() {
       ? "Reconnect to continue..."
       : busy
         ? "Steer..."
+        : pendingTurnStart
+          ? "Sending..."
         : "Message...";
   const composerHint = composerBusyHint(composerSubmitState);
 
@@ -1091,11 +1110,10 @@ export function ChatView() {
                   description="Restoring messages and reconnecting the session."
                 />
               ) : (
-                <ConversationEmptyState
-                  icon={<MessageSquareIcon className="size-6" />}
-                  title="New thread"
-                  description="Send a message to start."
-                />
+                <div className="flex flex-col items-center gap-2 py-8 text-center">
+                  <MessageSquareIcon className="size-5 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Send a message to start.</p>
+                </div>
               )
             ) : (
               renderItems.map((item) =>

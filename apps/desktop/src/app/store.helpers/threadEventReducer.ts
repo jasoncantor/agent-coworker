@@ -540,7 +540,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
   function surfaceJsonRpcTurnSendFailure(
     set: StoreSet,
     threadId: string,
-    opts?: { clientMessageId?: string },
+    opts?: { clientMessageId?: string; pendingTurnStartClientMessageId?: string },
   ) {
     if (opts?.clientMessageId) {
       clearPendingThreadSteer(threadId, opts.clientMessageId);
@@ -553,6 +553,22 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
             [threadId]: {
               ...rt,
               pendingSteer: null,
+            },
+          },
+        };
+      });
+    }
+
+    if (opts?.pendingTurnStartClientMessageId) {
+      set((s) => {
+        const rt = s.threadRuntimeById[threadId];
+        if (!rt || rt.pendingTurnStart?.clientMessageId !== opts.pendingTurnStartClientMessageId) return {};
+        return {
+          threadRuntimeById: {
+            ...s.threadRuntimeById,
+            [threadId]: {
+              ...rt,
+              pendingTurnStart: null,
             },
           },
         };
@@ -862,7 +878,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
   ) {
     void startJsonRpcTurn(get, set, workspaceId, sessionId, text, clientMessageId, attachments)
       .catch(() => {
-        surfaceJsonRpcTurnSendFailure(set, threadId);
+        surfaceJsonRpcTurnSendFailure(set, threadId, { pendingTurnStartClientMessageId: clientMessageId });
       });
   }
 
@@ -905,6 +921,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
 
     const rt = get().threadRuntimeById[threadId];
     if (!rt?.sessionId) return false;
+    if (rt.pendingTurnStart?.status === "sending") return false;
 
     if (rt.busy) {
       if (busyPolicy === "queue") {
@@ -968,6 +985,25 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     const optimisticSeen = RUNTIME.optimisticUserMessageIds.get(threadId) ?? new Set<string>();
     optimisticSeen.add(clientMessageId);
     RUNTIME.optimisticUserMessageIds.set(threadId, optimisticSeen);
+
+    set((s) => {
+      const nextRt = s.threadRuntimeById[threadId];
+      if (!nextRt) return {};
+      return {
+        threadRuntimeById: {
+          ...s.threadRuntimeById,
+          [threadId]: {
+            ...nextRt,
+            pendingTurnStart: {
+              clientMessageId,
+              text: trimmed,
+              attachmentSignature,
+              status: "sending",
+            },
+          },
+        },
+      };
+    });
 
     pushFeedItem(set, threadId, {
       id: clientMessageId,
@@ -1304,6 +1340,7 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
               busy: evt.busy,
               busySince: evt.busy ? rt.busySince ?? deps.nowIso() : null,
               activeTurnId: evt.busy ? (evt.turnId ?? rt.activeTurnId) : null,
+              pendingTurnStart: null,
               pendingSteer: evt.busy ? rt.pendingSteer : null,
             },
           },
@@ -1588,6 +1625,20 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
           };
         });
       }
+      set((s) => {
+        const rt = s.threadRuntimeById[threadId];
+        if (!rt?.pendingTurnStart) return {};
+        if (cmid && rt.pendingTurnStart.clientMessageId !== cmid) return {};
+        return {
+          threadRuntimeById: {
+            ...s.threadRuntimeById,
+            [threadId]: {
+              ...rt,
+              pendingTurnStart: null,
+            },
+          },
+        };
+      });
       if (cmid) {
         const seen = RUNTIME.optimisticUserMessageIds.get(threadId);
         if (seen && seen.has(cmid)) return;
@@ -1616,6 +1667,19 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     }
 
     if (evt.type === "assistant_message") {
+      set((s) => {
+        const rt = s.threadRuntimeById[threadId];
+        if (!rt?.pendingTurnStart) return {};
+        return {
+          threadRuntimeById: {
+            ...s.threadRuntimeById,
+            [threadId]: {
+              ...rt,
+              pendingTurnStart: null,
+            },
+          },
+        };
+      });
       const existingFeed = get().threadRuntimeById[threadId]?.feed ?? [];
       if (shouldSkipAssistantMessageAfterStreamReplay(stream, evt.text, existingFeed)) return;
 
@@ -1685,6 +1749,19 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
     }
 
     if (evt.type === "reasoning") {
+      set((s) => {
+        const rt = s.threadRuntimeById[threadId];
+        if (!rt?.pendingTurnStart) return {};
+        return {
+          threadRuntimeById: {
+            ...s.threadRuntimeById,
+            [threadId]: {
+              ...rt,
+              pendingTurnStart: null,
+            },
+          },
+        };
+      });
       if (hasMatchingStreamedReasoningText(stream, evt.text)) {
         return;
       }

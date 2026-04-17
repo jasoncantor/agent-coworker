@@ -214,6 +214,7 @@ describe("desktop reasoning UI helpers", () => {
       composerText: "",
       hasPendingAttachments: false,
       pendingAttachmentSignature: "",
+      pendingTurnStart: null,
       pendingSteer: null,
       sessionId: "session-1",
       threadStatus: "active",
@@ -225,6 +226,7 @@ describe("desktop reasoning UI helpers", () => {
       composerText: "",
       hasPendingAttachments: false,
       pendingAttachmentSignature: "",
+      pendingTurnStart: null,
       pendingSteer: null,
       sessionId: null,
       threadStatus: "active",
@@ -236,6 +238,7 @@ describe("desktop reasoning UI helpers", () => {
       composerText: "tighten scope",
       hasPendingAttachments: false,
       pendingAttachmentSignature: "",
+      pendingTurnStart: null,
       pendingSteer: null,
       sessionId: "session-1",
       threadStatus: "active",
@@ -247,6 +250,7 @@ describe("desktop reasoning UI helpers", () => {
       composerText: "tighten scope",
       hasPendingAttachments: false,
       pendingAttachmentSignature: "",
+      pendingTurnStart: null,
       pendingSteer: {
         clientMessageId: "cmid-1",
         text: "tighten scope",
@@ -263,6 +267,7 @@ describe("desktop reasoning UI helpers", () => {
       composerText: "",
       hasPendingAttachments: false,
       pendingAttachmentSignature: "",
+      pendingTurnStart: null,
       pendingSteer: null,
       sessionId: "session-1",
       threadStatus: "active",
@@ -274,6 +279,7 @@ describe("desktop reasoning UI helpers", () => {
       composerText: "",
       hasPendingAttachments: true,
       pendingAttachmentSignature: "sig-1",
+      pendingTurnStart: null,
       pendingSteer: null,
       sessionId: "session-1",
       threadStatus: "active",
@@ -285,6 +291,7 @@ describe("desktop reasoning UI helpers", () => {
       composerText: "",
       hasPendingAttachments: true,
       pendingAttachmentSignature: "sig-1",
+      pendingTurnStart: null,
       pendingSteer: {
         clientMessageId: "cmid-2",
         text: "",
@@ -294,6 +301,40 @@ describe("desktop reasoning UI helpers", () => {
       sessionId: "session-1",
       threadStatus: "active",
     })).toEqual({ status: "ready", disabled: true, mode: "steer-pending" });
+
+    expect(getComposerSubmitState({
+      busy: false,
+      hasPromptModal: false,
+      composerText: "",
+      hasPendingAttachments: false,
+      pendingAttachmentSignature: "",
+      pendingTurnStart: {
+        clientMessageId: "cmid-3",
+        text: "hello",
+        attachmentSignature: "",
+        status: "sending",
+      },
+      pendingSteer: null,
+      sessionId: "session-1",
+      threadStatus: "active",
+    })).toEqual({ status: "pending", disabled: true, mode: "send" });
+
+    expect(getComposerSubmitState({
+      busy: false,
+      hasPromptModal: false,
+      composerText: "follow-up",
+      hasPendingAttachments: false,
+      pendingAttachmentSignature: "",
+      pendingTurnStart: {
+        clientMessageId: "cmid-4",
+        text: "hello",
+        attachmentSignature: "",
+        status: "sending",
+      },
+      pendingSteer: null,
+      sessionId: "session-1",
+      threadStatus: "active",
+    })).toEqual({ status: "pending", disabled: true, mode: "send" });
   });
 
   test("routes busy composer submits through steer mode", () => {
@@ -302,6 +343,7 @@ describe("desktop reasoning UI helpers", () => {
   });
 
   test("renders steer-specific composer helper copy", () => {
+    expect(composerBusyHint({ status: "pending", disabled: true, mode: "send" })).toBe("Sending message. Waiting for the run to start.");
     expect(composerBusyHint({ status: "streaming", disabled: false, mode: "send" })).toBe("Type to steer, or use stop to cancel.");
     expect(composerBusyHint({ status: "ready", disabled: false, mode: "steer-ready" })).toBe("Steer ready. Press Enter to inject it into the current run.");
     expect(composerBusyHint({ status: "ready", disabled: false, mode: "steer-pending" })).toBe("Steer sent. Waiting for the running turn to accept it.");

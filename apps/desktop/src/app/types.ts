@@ -108,6 +108,13 @@ export type ThreadPendingSteer = {
   status: "sending" | "accepted";
 };
 
+export type ThreadPendingTurnStart = {
+  clientMessageId: string;
+  text: string;
+  attachmentSignature?: string;
+  status: "sending";
+};
+
 export type PersistedProviderStatus = Extract<ServerEvent, { type: "provider_status" }>["providers"][number];
 
 export type PersistedProviderState = {
@@ -314,6 +321,7 @@ export type ThreadRuntime = {
   busy: boolean;
   busySince: string | null;
   activeTurnId: string | null;
+  pendingTurnStart?: ThreadPendingTurnStart | null;
   pendingSteer?: ThreadPendingSteer | null;
   feed: FeedItem[];
   hydrating?: boolean;
