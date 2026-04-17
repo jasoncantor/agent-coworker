@@ -13,8 +13,12 @@ rules.
   the desktop main chat view. Agents emit envelopes via a new `a2ui` tool;
   the harness folds them into a resolved surface and broadcasts events over
   the WebSocket protocol. The desktop app renders the v0.9 basic catalog.
-- **Phase 2 (planned):** round-trip interactions (Button clicks, TextField
-  submits) back to the agent via a new `ui/action` JSON-RPC method.
+- **Phase 2 (shipped):** round-trip interactions. Button clicks, TextField
+  submits (on Enter) / blur changes, and Checkbox toggles are dispatched
+  over the new `cowork/session/a2ui/action` JSON-RPC method. The harness
+  validates the action against the current surface, synthesizes a
+  structured user/steer message, and hands it to the running turn (or
+  starts a new one).
 - **Phase 3 (planned):** extended catalogs (tables, charts), per-workspace
   theme persistence, and mobile parity.
 
@@ -81,6 +85,27 @@ reused by any alternative UI (mobile, web, CLI) in the future.
 
 See [`docs/websocket-protocol.md#a2ui_surface`](./websocket-protocol.md#a2ui_surface) for the canonical event shape. On the JSON-RPC transport the harness also projects the event as a `uiSurface` ProjectedItem in the `item/started` / `item/completed` stream so thin clients don't need bespoke plumbing.
 
+## Client → server action shape (Phase 2)
+
+Clients dispatch a JSON-RPC request to `cowork/session/a2ui/action`:
+
+```json
+{
+  "method": "cowork/session/a2ui/action",
+  "params": {
+    "threadId": "...",
+    "surfaceId": "greeter",
+    "componentId": "buy",
+    "eventType": "click",
+    "payload": { "count": 1 }
+  }
+}
+```
+
+The harness validates the action against the live surface state, then either delivers it as a steer to the running turn or starts a new turn carrying the action as the user message. See `docs/websocket-protocol.md` for the full reference and delivery semantics.
+
+The desktop app wires this up automatically for Button, TextField, and Checkbox. The agent sees a structured user/steer message beginning with `[a2ui.action]` and can reply with another `a2ui` tool call to update the surface.
+
 ## Security contract
 
 1. **No HTML execution.** The renderer treats every string value as plain
@@ -114,14 +139,6 @@ See [`docs/websocket-protocol.md#a2ui_surface`](./websocket-protocol.md#a2ui_sur
 All tests are deterministic and part of the standard `bun test` run.
 
 ## Roadmap
-
-Phase 2 introduces:
-
-- A `ui/action` JSON-RPC method that clients call when a user interacts with
-  an A2UI `Button`, `TextField`, or `Checkbox`.
-- An "action observation" fed back to the agent as a structured steer so the
-  turn can respond.
-- Optimistic local data-model mutation paired with a server-side echo.
 
 Phase 3 adds extended catalogs (tables, charts, agentic form validation
 through v0.9 `Functions`), a mobile renderer, and an open-in-sidebar mode

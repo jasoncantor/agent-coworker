@@ -97,11 +97,27 @@ JSON-pointer paths inside `${...}`.
 - The desktop renderer caps component depth and string length to avoid
   runaway surfaces.
 
-## Interaction model (phase 1)
+## Interaction model
 
-Interactive controls (`Button`, `TextField`, `Checkbox`) are shown but their
-events are **not yet delivered back to you**. If you need user input in this
-release, continue to use the `ask` tool.
+Interactive controls (`Button`, `TextField`, `Checkbox`) now round-trip back
+to you when the user interacts with them:
+
+- **Button** — a click fires `eventType: "click"`.
+- **TextField** — pressing Enter fires `eventType: "submit"` with
+  `payload: { value }`; losing focus after editing fires
+  `eventType: "change"` with the current value.
+- **Checkbox** — toggling fires `eventType: "change"` with
+  `payload: { value: boolean }`.
+
+The harness delivers each action as a structured user/steer message starting
+with `[a2ui.action]`. When a turn is already running, the action is folded
+in as a steer; otherwise it starts a new turn.
+
+Typical response: emit another `a2ui` tool call to update the surface (e.g.
+`updateDataModel` to reflect new state), or reply in plain text.
+
+Use the `ask` tool when you need a modal, blocking question. Use a2ui
+surfaces when you want a richer or stateful UI.
 
 ## Typical workflow
 

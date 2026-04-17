@@ -178,6 +178,7 @@ Currently implemented `cowork/*` methods include:
   - `cowork/session/file/upload`
   - `cowork/session/delete`
   - `cowork/session/agent/inspect`
+  - `cowork/session/a2ui/action`
 - provider controls
   - `cowork/provider/catalog/read`
   - `cowork/provider/authMethods/read`
@@ -254,6 +255,28 @@ The desktop JSON-RPC path now uses this namespace so one workspace connection ca
 `cowork/session/file/upload` writes a file into the workspace uploads directory and returns a legacy-compatible `file_uploaded` event envelope. JSON-RPC clients can then reference that saved file from `turn/start` or `turn/steer` with an `uploadedFile` input part when the file is too large to send inline.
 
 `cowork/session/agent/inspect` is a thread-scoped, root-only read for child agents. It returns the same detailed inspection payload as the root `inspectAgent` tool: the latest child summary, the full latest assistant text, a parsed structured child report when the final assistant text includes a recognized JSON footer, and compact session/last-turn usage snapshots for the child.
+
+`cowork/session/a2ui/action` forwards a user interaction on an A2UI surface (Phase 2) to the running agent. Clients dispatch it when a user clicks a `Button`, submits a `TextField`, or toggles a `Checkbox` inside an A2UI surface.
+
+Request params:
+
+```ts
+{
+  threadId: string;
+  surfaceId: string;
+  componentId: string;
+  eventType: string;            // e.g. "click", "submit", "change"
+  payload?: Record<string, unknown>;
+  clientMessageId?: string;
+}
+```
+
+The harness validates that the surface exists, is not deleted, and contains `componentId`. If validation fails the server replies with a JSON-RPC invalidParams error. On success the harness synthesizes a structured user message and delivers it:
+
+- If a turn is already running, the action is delivered as a steer against that turn, and the result carries `delivery: "delivered-as-steer"` and the active `turnId`.
+- Otherwise, the harness starts a new turn carrying the action text as the user message, and the result carries `delivery: "delivered-as-turn"` and the new `turnId`.
+
+The synthesized text is deterministic and human-readable (starts with `[a2ui.action] The user interacted with surface "<id>".`) so the agent can respond with further `a2ui` tool calls or plain text.
 
 ### Core JSON-RPC notifications currently available
 
