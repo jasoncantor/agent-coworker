@@ -1378,7 +1378,7 @@ export async function startAgentServer(
             status: 204,
             headers: {
               ...corsHeaders,
-              "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+              "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
               "Access-Control-Allow-Headers": "Content-Type, Sec-WebSocket-Protocol",
               "Access-Control-Max-Age": "86400",
             },

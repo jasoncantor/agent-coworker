@@ -154,6 +154,9 @@ export function registerMobileRelayIpc(context: DesktopIpcModuleContext): void {
 
   handleDesktopInvoke(DESKTOP_IPC_CHANNELS.mobileRelayGetState, async () => {
     if (!await isRemoteAccessEnabled()) {
+      await deps.mobileRelayBridge.stop().catch(() => {
+        // best effort while toggling feature flags at runtime
+      });
       return disabledState();
     }
     deps.mobileRelayBridge.initialize();

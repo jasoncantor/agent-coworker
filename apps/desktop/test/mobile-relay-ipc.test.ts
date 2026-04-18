@@ -195,6 +195,8 @@ describe("mobile relay IPC", () => {
   test("returns an unavailable state when remote access is disabled", async () => {
     process.env.COWORK_ENABLE_REMOTE_ACCESS = "0";
     const initialize = mock(() => {});
+    const stop = mock(async () => ({}));
+    const getSnapshot = mock(() => ({}));
     const handlers = new Map<string, (_event: unknown, args?: unknown) => Promise<unknown>>();
 
     registerMobileRelayIpc({
@@ -205,8 +207,8 @@ describe("mobile relay IPC", () => {
           on() {},
           initialize,
           start: async () => ({}),
-          stop: async () => ({}),
-          getSnapshot: () => ({}),
+          stop,
+          getSnapshot,
           rotateSession: async () => ({}),
           forgetTrustedPhone: async () => ({}),
         } as never,
@@ -229,7 +231,9 @@ describe("mobile relay IPC", () => {
       relayServiceStatus: "unavailable",
       lastError: "Remote access is only available in development builds.",
     });
+    expect(stop).toHaveBeenCalledTimes(1);
     expect(initialize).not.toHaveBeenCalled();
+    expect(getSnapshot).not.toHaveBeenCalled();
   });
 
   test("rejects remote access start when the feature is disabled", async () => {

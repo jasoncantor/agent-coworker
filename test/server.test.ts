@@ -613,6 +613,26 @@ describe("HTTP Handler", () => {
     }
   });
 
+  test("loopback CORS preflight advertises DELETE for transcript routes", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server } = await startAgentServer(serverOpts(tmpDir));
+    try {
+      const httpUrl = `http://127.0.0.1:${server.port}/cowork/desktop/transcript?threadId=thread-1`;
+      const res = await fetch(httpUrl, {
+        method: "OPTIONS",
+        headers: {
+          Origin: "http://127.0.0.1:5173",
+          "Access-Control-Request-Method": "DELETE",
+        },
+      });
+      expect(res.status).toBe(204);
+      expect(res.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173");
+      expect(res.headers.get("access-control-allow-methods")).toContain("DELETE");
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
 });
 
 

@@ -11,6 +11,7 @@ import {
   loadState,
   pickWorkspaceDirectory,
   readTranscript,
+  stopMobileRelay,
   stopWorkspaceServer,
   openPath,
   revealPath,
@@ -804,6 +805,7 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
     },
 
     setDesktopFeatureFlagOverride: async (flagId, enabled) => {
+      const currentFeatureFlags = get().desktopFeatureFlags;
       const currentOverrides = get().desktopFeatureFlagOverrides ?? {};
       const nextOverrides = {
         ...currentOverrides,
@@ -816,6 +818,11 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
         settingsPage: normalizeSettingsPageId(state.settingsPage, nextFeatureFlags),
       }));
       void persistNow(get);
+      if (flagId === "remoteAccess" && currentFeatureFlags.remoteAccess === true && enabled === false) {
+        await stopMobileRelay().catch(() => {
+          // Best-effort teardown: disabling the flag should not fail if the relay is already gone.
+        });
+      }
     },
 
     setUpdateState: (updateState) => set({ updateState }),

@@ -36,6 +36,7 @@ uploads/
 *~
 __pycache__/
 .claude/.supermemory-claude/
+.claude/scheduled_tasks.lock
 .claude/settings.local.json
 .codex/config.toml
 /native
