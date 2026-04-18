@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { A2uiSurfaceCard } from "../src/ui/chat/a2ui/A2uiSurfaceCard";
+import { __internal as surfaceInternal } from "../src/ui/chat/a2ui/A2uiSurfaceCard";
 import type { FeedItem } from "../src/app/types";
 
 type UiSurfaceItem = Extract<FeedItem, { kind: "ui_surface" }>;
@@ -53,6 +54,21 @@ describe("A2uiSurfaceCard", () => {
     expect(html).toContain("was deleted");
     // No Column/Heading should render for deleted surfaces.
     expect(html).not.toContain("Hello, world");
+  });
+
+  test("extracts a readable surface title from the first heading-like node", () => {
+    const title = surfaceInternal.extractSurfaceTitle(
+      {
+        id: "root",
+        type: "Column",
+        children: [
+          { id: "kicker", type: "Text", props: { text: "Kicker" } },
+          { id: "title", type: "Heading", props: { text: { literal: "A2UI Demo Lab" } } },
+        ],
+      },
+      {},
+    );
+    expect(title).toBe("A2UI Demo Lab");
   });
 
   test("shows an unsupported-catalog banner when catalog id doesn't match basic catalog", () => {

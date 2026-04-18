@@ -1,7 +1,7 @@
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 
-import { AlertTriangleIcon, LoaderCircleIcon, MessageSquareIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
+import { AlertTriangleIcon, LoaderCircleIcon, MessageSquareIcon, MousePointerClickIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import coworkIconSvg from "../../build/icon.icon/Assets/svgviewer-output.svg";
 
 import {
@@ -124,6 +124,58 @@ export function countActiveChildAgents(agents: ThreadAgentSummary[]): number {
 
 export function filterFeedForDeveloperMode(feed: FeedItem[], developerMode: boolean): FeedItem[] {
   return developerMode ? feed : feed.filter((item) => item.kind !== "system" && item.kind !== "log");
+}
+
+export type A2uiActionMessage = {
+  surfaceId: string;
+  componentId: string;
+  eventType: string;
+  payload?: Record<string, unknown>;
+};
+
+export function parseA2uiActionMessage(text: string): A2uiActionMessage | null {
+  const lines = text.trim().split("\n");
+  if (lines.length < 4) return null;
+  const header = lines[0]?.match(/^\[a2ui\.action\] The user interacted with surface "(.+)"\.$/);
+  if (!header) return null;
+  if (!lines[1]?.startsWith("component: ") || !lines[2]?.startsWith("event: ")) {
+    return null;
+  }
+
+  let payload: Record<string, unknown> | undefined;
+  if (lines[3]?.startsWith("payload: ")) {
+    try {
+      const parsed = JSON.parse(lines[3].slice("payload: ".length));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        payload = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Best effort only.
+    }
+  }
+
+  return {
+    surfaceId: header[1]!,
+    componentId: lines[1].slice("component: ".length).trim(),
+    eventType: lines[2].slice("event: ".length).trim(),
+    ...(payload ? { payload } : {}),
+  };
+}
+
+export function summarizeA2uiActionMessage(action: A2uiActionMessage): string {
+  const prefix = action.eventType === "click"
+    ? "Clicked"
+    : action.eventType === "submit"
+      ? "Submitted"
+      : action.eventType === "change"
+        ? "Changed"
+        : `Triggered ${action.eventType} on`;
+  const payloadValue = action.payload?.value;
+  const valueSuffix =
+    typeof payloadValue === "string" || typeof payloadValue === "number" || typeof payloadValue === "boolean"
+      ? ` -> ${String(payloadValue)}`
+      : "";
+  return `${prefix} ${action.componentId}${valueSuffix}`;
 }
 
 export function formatSessionUsageHeadline(
@@ -422,6 +474,34 @@ const FeedRow = memo(function FeedRow(props: {
     && extractCitationUrlsFromAnnotations(item.annotations).size > 0;
 
   if (item.kind === "message") {
+    if (item.role === "user") {
+      const a2uiAction = parseA2uiActionMessage(item.text);
+      if (a2uiAction) {
+        return (
+          <Message from="user">
+            <MessageContent>
+              <Card className="max-w-3xl border-border/60 bg-muted/20">
+                <CardContent className="space-y-1.5 p-3">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    <MousePointerClickIcon className="size-3.5 text-primary" />
+                    A2UI Action
+                  </div>
+                  <div className="text-sm font-medium text-foreground">
+                    {summarizeA2uiActionMessage(a2uiAction)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Surface <code className="font-mono">{a2uiAction.surfaceId}</code>
+                    {" • "}
+                    Event <code className="font-mono">{a2uiAction.eventType}</code>
+                  </div>
+                </CardContent>
+              </Card>
+            </MessageContent>
+          </Message>
+        );
+      }
+    }
+
     return (
       <Message from={item.role}>
         <MessageContent>

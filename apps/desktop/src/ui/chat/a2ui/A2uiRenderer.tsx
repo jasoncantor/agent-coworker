@@ -237,7 +237,7 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
 
     case "Card":
       return (
-        <div className="rounded-[10px] border border-border/50 bg-background/70 p-3 shadow-none">
+        <div className="rounded-xl border border-border/50 bg-background/70 p-4 shadow-sm">
           <div className="flex flex-col gap-2">
             {children.map((child, index) => (
               <Fragment key={childKey(child, index)}>
@@ -275,7 +275,7 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
           type="button"
           disabled={!canClick}
           title={tooltip}
-          className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground disabled:opacity-75"
+          className="inline-flex h-10 items-center justify-center rounded-lg border border-primary/25 bg-primary px-3.5 text-[13px] font-medium text-primary-foreground shadow-sm transition hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-75"
           onClick={(event) => {
             event.preventDefault();
             if (!canClick || !context.onAction) return;
@@ -455,7 +455,10 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
       const pct = Math.max(0, Math.min(100, (value / max) * 100));
       return (
         <div className="flex flex-col gap-1">
-          {label ? <span className="text-xs text-muted-foreground">{label}</span> : null}
+          <div className="flex items-center justify-between gap-3">
+            {label ? <span className="text-xs text-muted-foreground">{label}</span> : <span />}
+            <span className="text-[11px] font-medium text-muted-foreground">{Math.round(pct)}%</span>
+          </div>
           <div
             role="progressbar"
             aria-valuemin={0}
@@ -516,12 +519,12 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
         return <UnknownComponent component={component} context={childContext} reason="Table requires props.columns" />;
       }
       return (
-        <div className="overflow-x-auto rounded-md border border-border/50 bg-background/50">
+        <div className="overflow-x-auto rounded-lg border border-border/50 bg-background/50">
           <table className="min-w-full text-left text-xs">
             <thead className="bg-muted/30 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
               <tr>
                 {columns.map((col) => (
-                  <th key={col.key} className="px-3 py-2 font-semibold">{col.label}</th>
+                  <th key={col.key} className="px-3 py-2.5 font-semibold">{col.label}</th>
                 ))}
               </tr>
             </thead>
@@ -529,7 +532,7 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
               {rows.map((row, rowIndex) => (
                 <tr key={`row-${rowIndex}`} className={rowIndex % 2 === 0 ? "bg-transparent" : "bg-muted/15"}>
                   {columns.map((col) => (
-                    <td key={`cell-${rowIndex}-${col.key}`} className="px-3 py-1.5 align-top text-foreground/90">
+                    <td key={`cell-${rowIndex}-${col.key}`} className="px-3 py-2 align-top text-foreground/90">
                       {tableCellRender(row, col.key)}
                     </td>
                   ))}
@@ -612,7 +615,7 @@ function ControlledTextField({
             onBlurSubmit(value);
           }
         }}
-        className="h-9 w-full rounded-md border border-border/60 bg-background/70 px-3 text-sm text-foreground shadow-none placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+        className="h-10 w-full rounded-lg border border-border/60 bg-background/70 px-3 text-sm text-foreground shadow-none placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
       />
     </label>
   );
@@ -645,7 +648,7 @@ function ControlledTextArea({
         onBlur={() => {
           if (onBlurSubmit && value !== defaultValue) onBlurSubmit(value);
         }}
-        className="w-full resize-y rounded-md border border-border/60 bg-background/70 px-3 py-2 text-sm text-foreground shadow-none placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+        className="w-full resize-y rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm text-foreground shadow-none placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
       />
     </label>
   );
@@ -678,7 +681,7 @@ function ControlledSelect({
           setValue(next);
           onChange?.(next);
         }}
-        className="h-9 w-full rounded-md border border-border/60 bg-background/70 px-3 text-sm text-foreground shadow-none focus:outline-none focus:ring-2 focus:ring-ring/40"
+        className="h-10 w-full rounded-lg border border-border/60 bg-background/70 px-3 text-sm text-foreground shadow-none focus:outline-none focus:ring-2 focus:ring-ring/40"
       >
         {hasPlaceholder ? <option value="" disabled>{placeholder}</option> : null}
         {options.map((option) => (
