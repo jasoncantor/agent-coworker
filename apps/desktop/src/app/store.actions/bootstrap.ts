@@ -117,8 +117,17 @@ function normalizeSettingsPageId(
   value: unknown,
   desktopFeatures: DesktopFeatureFlags = getDesktopFeatureFlags(),
 ): SettingsPageId {
-  const normalized =
-    value === "providers"
+  const normalized = normalizeKnownSettingsPageId(value);
+
+  if (normalized === "remoteAccess" && desktopFeatures.remoteAccess !== true) {
+    return "providers";
+  }
+
+  return normalized;
+}
+
+function normalizeKnownSettingsPageId(value: unknown): SettingsPageId {
+  return value === "providers"
     || value === "usage"
     || value === "workspaces"
     || value === "remoteAccess"
@@ -128,18 +137,12 @@ function normalizeSettingsPageId(
     || value === "featureFlags"
     || value === "updates"
     || value === "developer"
-      ? value
-      : "providers";
-
-  if (normalized === "remoteAccess" && desktopFeatures.remoteAccess !== true) {
-    return "providers";
-  }
-
-  return normalized;
+    ? value
+    : "providers";
 }
 
 const normalizedSettingsPageSchema = z.preprocess(
-  (value) => normalizeSettingsPageId(value),
+  (value) => normalizeKnownSettingsPageId(value),
   z.enum(["providers", "usage", "workspaces", "remoteAccess", "backup", "mcp", "memory", "featureFlags", "updates", "developer"])
 );
 const normalizedNullableSelectionSchema = z.preprocess(
