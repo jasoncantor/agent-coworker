@@ -93,6 +93,11 @@ export const projectedItemSchema = z.discriminatedUnion("type", [
     theme: z.record(z.string(), z.unknown()).optional(),
     root: z.record(z.string(), z.unknown()).optional(),
     dataModel: z.unknown().optional(),
+    changeKind: z
+      .enum(["createSurface", "updateComponents", "updateDataModel", "deleteSurface"])
+      .optional(),
+    reason: z.string().optional(),
+    toolCallId: z.string().optional(),
   }).strict(),
 ]);
 
@@ -195,6 +200,9 @@ function toFeedItem(
         ...(item.theme ? { theme: item.theme } : {}),
         ...(item.root ? { root: item.root } : {}),
         ...(item.dataModel !== undefined ? { dataModel: item.dataModel } : {}),
+        ...(item.changeKind ? { changeKind: item.changeKind } : {}),
+        ...(item.reason ? { reason: item.reason } : {}),
+        ...(item.toolCallId ? { toolCallId: item.toolCallId } : {}),
       };
   }
 }

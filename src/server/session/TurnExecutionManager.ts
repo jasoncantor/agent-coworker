@@ -416,7 +416,10 @@ export class TurnExecutionManager {
        * on `ToolContext`.
        */
       getA2uiSurfaceManager?: () => {
-        applyUnknown: (value: unknown) => {
+        applyUnknown: (
+          value: unknown,
+          meta?: { reason?: string; toolCallId?: string },
+        ) => {
           ok: boolean;
           surfaceId?: string;
           change?: "created" | "updated" | "deleted" | "noop";
@@ -759,8 +762,10 @@ export class TurnExecutionManager {
         costTracker: this.context.state.costTracker ?? undefined,
         ...(this.context.state.config.enableA2ui === true && this.deps.getA2uiSurfaceManager
           ? {
-              applyA2uiEnvelope: (envelope: unknown) =>
-                this.deps.getA2uiSurfaceManager!().applyUnknown(envelope),
+              applyA2uiEnvelope: (
+                envelope: unknown,
+                meta?: { reason?: string; toolCallId?: string },
+              ) => this.deps.getA2uiSurfaceManager!().applyUnknown(envelope, meta),
             }
           : {}),
         onSessionUsageBudgetUpdated: (snapshot) => {

@@ -671,8 +671,11 @@ export function createConversationProjection(opts: CreateConversationProjectionO
   };
 
   const emitA2uiSurfaceItem = (evt: Extract<ServerEvent, { type: "a2ui_surface" }>) => {
+    // Each revision gets its own feed item so the transcript shows a full
+    // history of surface updates. The client coalesces batches from the same
+    // tool call at render time.
     const item: ProjectedItem = {
-      id: makeItemId("uiSurface", evt.surfaceId),
+      id: makeItemId("uiSurface", `${evt.surfaceId}@${evt.revision}`),
       type: "uiSurface",
       surfaceId: evt.surfaceId,
       catalogId: evt.catalogId,
@@ -682,6 +685,9 @@ export function createConversationProjection(opts: CreateConversationProjectionO
       ...(evt.theme ? { theme: evt.theme } : {}),
       ...(evt.root ? { root: evt.root } : {}),
       ...(evt.dataModel !== undefined ? { dataModel: evt.dataModel } : {}),
+      ...(evt.changeKind ? { changeKind: evt.changeKind } : {}),
+      ...(evt.reason ? { reason: evt.reason } : {}),
+      ...(evt.toolCallId ? { toolCallId: evt.toolCallId } : {}),
     };
     opts.sink.emitItemStarted(null, item);
     opts.sink.emitItemCompleted(null, item);

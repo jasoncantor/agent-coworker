@@ -792,6 +792,9 @@ export function createThreadEventReducer(deps: ThreadEventReducerDeps) {
       ...(item.theme !== undefined ? { theme: item.theme } : {}),
       ...(item.root !== undefined ? { root: item.root } : {}),
       ...(item.dataModel !== undefined ? { dataModel: item.dataModel } : {}),
+      ...(item.changeKind ? { changeKind: item.changeKind } : {}),
+      ...(item.reason ? { reason: item.reason } : {}),
+      ...(item.toolCallId ? { toolCallId: item.toolCallId } : {}),
     };
     set((s) => {
       const runtime = s.threadRuntimeById[threadId];

@@ -20,7 +20,7 @@ function createProjection() {
 }
 
 describe("conversationProjection a2ui_surface", () => {
-  test("emits a uiSurface ProjectedItem keyed by surfaceId", () => {
+  test("emits a uiSurface ProjectedItem keyed by surfaceId and revision", () => {
     const { projection, started, completed } = createProjection();
     projection.handle({
       type: "a2ui_surface",
@@ -33,6 +33,8 @@ describe("conversationProjection a2ui_surface", () => {
       root: { id: "root", type: "Column" },
       dataModel: { message: "hi" },
       updatedAt: "2026-01-01T00:00:00.000Z",
+      changeKind: "createSurface",
+      reason: "initial render",
     });
 
     expect(started).toHaveLength(1);
@@ -43,11 +45,14 @@ describe("conversationProjection a2ui_surface", () => {
     expect(item.surfaceId).toBe("s1");
     expect(item.revision).toBe(1);
     expect(item.deleted).toBe(false);
-    // Stable id so subsequent events upsert the same feed row
+    expect(item.changeKind).toBe("createSurface");
+    expect(item.reason).toBe("initial render");
+    // Stable id per (surfaceId, revision) — enables per-revision history rows.
     expect(item.id).toContain("s1");
+    expect(item.id).toContain("1");
   });
 
-  test("subsequent events reuse the same projected item id", () => {
+  test("subsequent revisions produce distinct projected item ids", () => {
     const { projection, started } = createProjection();
     const baseEvent = {
       type: "a2ui_surface" as const,
@@ -62,6 +67,6 @@ describe("conversationProjection a2ui_surface", () => {
     projection.handle({ ...baseEvent, revision: 2 });
     projection.handle({ ...baseEvent, revision: 3, deleted: true });
     const ids = started.map(([, item]) => item.id);
-    expect(new Set(ids).size).toBe(1);
+    expect(new Set(ids).size).toBe(3);
   });
 });

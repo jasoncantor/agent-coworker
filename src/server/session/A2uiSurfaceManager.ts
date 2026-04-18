@@ -3,9 +3,11 @@ import {
   A2UI_PROTOCOL_VERSION,
   applyEnvelope,
   createEmptySurfaces,
+  envelopeKind,
   envelopeSurfaceId,
   parseA2uiEnvelope,
   type A2uiEnvelope,
+  type A2uiEnvelopeKind,
   type A2uiSurfaceState,
   type A2uiSurfacesById,
   type ApplyEnvelopeResult,
@@ -30,6 +32,12 @@ export type A2uiApplyResult = {
   warning?: string;
   surfaceId?: string;
   change?: ApplyEnvelopeResult["change"];
+};
+
+/** Metadata that rides with an envelope so emitted events can carry it. */
+export type A2uiApplyMeta = {
+  reason?: string;
+  toolCallId?: string;
 };
 
 /**
@@ -90,18 +98,27 @@ export class A2uiSurfaceManager {
     const now = new Date().toISOString();
     for (const [surfaceId, state] of Object.entries(this.surfaces)) {
       if (state.deleted) continue;
-      this.deps.emit(this.resolvedEvent({ ...state, deleted: true, updatedAt: now }));
+      this.deps.emit(
+        this.resolvedEvent({ ...state, deleted: true, updatedAt: now }, { changeKind: "deleteSurface" }),
+      );
     }
     this.surfaces = createEmptySurfaces();
   }
 
   /**
    * Apply a single envelope. Returns a structured result that the tool
-   * layer can fold into the tool's return value.
+   * layer can fold into the tool's return value. Optional `meta` gets
+   * attached to the emitted ServerEvent so clients can surface a reason
+   * and coalesce revisions that share a tool call.
    */
-  applyEnvelope(envelope: A2uiEnvelope, now = new Date().toISOString()): A2uiApplyResult {
+  applyEnvelope(
+    envelope: A2uiEnvelope,
+    now = new Date().toISOString(),
+    meta: A2uiApplyMeta = {},
+  ): A2uiApplyResult {
     this.evictIfOverflowing(now);
 
+    const kind = envelopeKind(envelope);
     const result = applyEnvelope(this.surfaces, envelope, now);
     this.surfaces = { ...result.surfaces };
 
@@ -132,7 +149,7 @@ export class A2uiSurfaceManager {
       };
     }
 
-    this.deps.emit(this.resolvedEvent(state));
+    this.deps.emit(this.resolvedEvent(state, { ...meta, changeKind: kind }));
 
     return {
       ok: true,
@@ -143,18 +160,18 @@ export class A2uiSurfaceManager {
   }
 
   /** Apply multiple envelopes and aggregate per-envelope results. */
-  applyEnvelopes(envelopes: readonly A2uiEnvelope[]): A2uiApplyResult[] {
+  applyEnvelopes(envelopes: readonly A2uiEnvelope[], meta: A2uiApplyMeta = {}): A2uiApplyResult[] {
     const now = new Date().toISOString();
-    return envelopes.map((envelope) => this.applyEnvelope(envelope, now));
+    return envelopes.map((envelope) => this.applyEnvelope(envelope, now, meta));
   }
 
   /** Apply a loosely-typed value (JSON string or object) after parsing. */
-  applyUnknown(value: unknown): A2uiApplyResult {
+  applyUnknown(value: unknown, meta: A2uiApplyMeta = {}): A2uiApplyResult {
     const parsed = parseA2uiEnvelope(value);
     if (!parsed.ok) {
       return { ok: false, error: parsed.error };
     }
-    return this.applyEnvelope(parsed.envelope);
+    return this.applyEnvelope(parsed.envelope, undefined, meta);
   }
 
   /**
@@ -194,7 +211,10 @@ export class A2uiSurfaceManager {
     };
   }
 
-  private resolvedEvent(state: A2uiSurfaceState): ServerEvent {
+  private resolvedEvent(
+    state: A2uiSurfaceState,
+    meta: A2uiApplyMeta & { changeKind?: A2uiEnvelopeKind } = {},
+  ): ServerEvent {
     return {
       type: "a2ui_surface",
       sessionId: this.deps.sessionId,
@@ -207,6 +227,9 @@ export class A2uiSurfaceManager {
       ...(state.root ? { root: state.root as unknown as Record<string, unknown> } : {}),
       ...(state.dataModel !== undefined ? { dataModel: state.dataModel } : {}),
       updatedAt: state.updatedAt,
+      ...(meta.changeKind ? { changeKind: meta.changeKind } : {}),
+      ...(meta.reason ? { reason: meta.reason } : {}),
+      ...(meta.toolCallId ? { toolCallId: meta.toolCallId } : {}),
     };
   }
 
@@ -230,7 +253,7 @@ export class A2uiSurfaceManager {
       updatedAt: now,
     };
     this.surfaces = { ...this.surfaces, [victim.surfaceId]: next };
-    this.deps.emit(this.resolvedEvent(next));
+    this.deps.emit(this.resolvedEvent(next, { changeKind: "deleteSurface" }));
   }
 }
 

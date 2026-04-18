@@ -71,7 +71,10 @@ export function createA2uiTool(ctx: ToolContext) {
   return defineTool({
     description: A2UI_TOOL_DESCRIPTION,
     inputSchema: a2uiInputSchema,
-    execute: async (input: z.infer<typeof a2uiInputSchema>) => {
+    execute: async (
+      input: z.infer<typeof a2uiInputSchema>,
+      options?: { toolCallId?: string },
+    ) => {
       if (!ctx.applyA2uiEnvelope) {
         throw new Error(
           "A2UI is not enabled for this session. Set `enableA2ui: true` in config/defaults.json, ~/.agent/config.json, or .agent/config.json.",
@@ -83,8 +86,14 @@ export function createA2uiTool(ctx: ToolContext) {
         ctx.log(`tool> a2ui ${JSON.stringify({ count: input.envelopes.length })}`);
       }
 
+      const meta = input.reason || options?.toolCallId
+        ? {
+            ...(input.reason ? { reason: input.reason } : {}),
+            ...(options?.toolCallId ? { toolCallId: options.toolCallId } : {}),
+          }
+        : undefined;
       const results = input.envelopes.map((envelope, index) => {
-        const applied = ctx.applyA2uiEnvelope!(envelope);
+        const applied = ctx.applyA2uiEnvelope!(envelope, meta);
         return {
           index,
           ok: applied.ok,

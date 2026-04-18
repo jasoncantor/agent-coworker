@@ -215,6 +215,12 @@ export type ToolApprovalMetadata = {
 
 export type FeedItem = SessionFeedItem;
 
+export type A2uiChangeKind =
+  | "createSurface"
+  | "updateComponents"
+  | "updateDataModel"
+  | "deleteSurface";
+
 /**
  * One captured snapshot of an A2UI surface at a particular revision. The dock
  * keeps these client-side so the user can scrub back through prior revisions.
@@ -228,6 +234,12 @@ export type A2uiSurfaceRevision = {
   theme?: Record<string, unknown>;
   root?: Record<string, unknown>;
   dataModel?: unknown;
+  /** Envelope kind that produced this revision, when known. */
+  changeKind?: A2uiChangeKind;
+  /** Free-form agent-authored explanation that arrived on the tool call. */
+  reason?: string;
+  /** Tool-call id shared by revisions that came from the same tool call. */
+  toolCallId?: string;
 };
 
 /** Per-thread state for the floating A2UI dock. */

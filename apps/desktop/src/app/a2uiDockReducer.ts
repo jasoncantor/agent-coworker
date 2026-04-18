@@ -1,5 +1,6 @@
 import {
   MAX_A2UI_REVISIONS_PER_SURFACE,
+  type A2uiChangeKind,
   type A2uiSurfaceRevision,
   type A2uiThreadDock,
   type FeedItem,
@@ -15,6 +16,9 @@ export type ProjectedUiSurface = {
   theme?: Record<string, unknown>;
   root?: Record<string, unknown>;
   dataModel?: unknown;
+  changeKind?: A2uiChangeKind;
+  reason?: string;
+  toolCallId?: string;
 };
 
 function toRevision(item: ProjectedUiSurface, ts: string): A2uiSurfaceRevision {
@@ -27,7 +31,39 @@ function toRevision(item: ProjectedUiSurface, ts: string): A2uiSurfaceRevision {
     ...(item.theme !== undefined ? { theme: item.theme } : {}),
     ...(item.root !== undefined ? { root: item.root } : {}),
     ...(item.dataModel !== undefined ? { dataModel: item.dataModel } : {}),
+    ...(item.changeKind ? { changeKind: item.changeKind } : {}),
+    ...(item.reason ? { reason: item.reason } : {}),
+    ...(item.toolCallId ? { toolCallId: item.toolCallId } : {}),
   };
+}
+
+/** Ms window for coalescing successive revisions that share a tool call. */
+const COALESCE_WINDOW_MS = 2000;
+
+/**
+ * Two revisions coalesce when they're close in time AND either:
+ *   - share a `toolCallId` (strongest signal), or
+ *   - share an identical `reason` string within COALESCE_WINDOW_MS.
+ *
+ * This groups the multi-envelope rebuilds the model sometimes emits (which
+ * otherwise inflate the revision count 4×–5×) into a single history entry
+ * while keeping unrelated updates separate.
+ */
+function shouldCoalesceWithPrevious(prev: A2uiSurfaceRevision, next: A2uiSurfaceRevision): boolean {
+  const prevMs = Date.parse(prev.ts);
+  const nextMs = Date.parse(next.ts);
+  const withinWindow = Number.isFinite(prevMs) && Number.isFinite(nextMs)
+    ? Math.abs(nextMs - prevMs) <= COALESCE_WINDOW_MS
+    : false;
+
+  if (prev.toolCallId && next.toolCallId && prev.toolCallId === next.toolCallId) {
+    return true;
+  }
+  if (!withinWindow) return false;
+  if (prev.reason && next.reason && prev.reason === next.reason) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -48,10 +84,15 @@ export function recordSurfaceRevision(
   const existing = dock.revisionsBySurfaceId[item.surfaceId] ?? [];
   const newRev = toRevision(item, ts);
   const hadSameRevision = existing.some((r) => r.revision === item.revision);
+  const last = existing[existing.length - 1];
 
   let merged: A2uiSurfaceRevision[];
   if (hadSameRevision) {
     merged = existing.map((r) => (r.revision === item.revision ? newRev : r));
+  } else if (last && shouldCoalesceWithPrevious(last, newRev)) {
+    // Replace the tail with the latest state so a multi-envelope rebuild
+    // shows up as one history entry rather than N adjacent steps.
+    merged = [...existing.slice(0, -1), newRev];
   } else {
     const appended = [...existing, newRev];
     appended.sort((a, b) => a.revision - b.revision);
@@ -153,6 +194,9 @@ export function seedDockFromFeed(
       ...(item.theme !== undefined ? { theme: item.theme } : {}),
       ...(item.root !== undefined ? { root: item.root } : {}),
       ...(item.dataModel !== undefined ? { dataModel: item.dataModel } : {}),
+      ...(item.changeKind ? { changeKind: item.changeKind } : {}),
+      ...(item.reason ? { reason: item.reason } : {}),
+      ...(item.toolCallId ? { toolCallId: item.toolCallId } : {}),
     };
     dock = recordSurfaceRevision(dock, projected, item.ts ?? fallbackTs);
   }

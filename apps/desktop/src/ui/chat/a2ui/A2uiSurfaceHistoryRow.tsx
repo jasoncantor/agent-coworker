@@ -7,6 +7,7 @@ import { useAppStore } from "../../../app/store";
 import type { FeedItem } from "../../../app/types";
 import type { A2uiRenderableComponent } from "./A2uiRenderer";
 import { extractSurfaceTitle } from "./surfaceTitle";
+import { changeKindLabel, changeKindToneClass } from "./changeKind";
 
 type UiSurfaceFeedItem = Extract<FeedItem, { kind: "ui_surface" }>;
 
@@ -40,16 +41,16 @@ export const A2uiSurfaceHistoryRow = memo(function A2uiSurfaceHistoryRow({
   }, [item.dataModel, item.root, item.surfaceId]);
 
   const isDeleted = item.deleted;
+  const kindLabel = changeKindLabel(item.changeKind);
+  const reason = typeof item.reason === "string" ? item.reason.trim() : "";
   const revisionCount = revisions?.length ?? 0;
-  const label = isDeleted
-    ? "Surface deleted"
-    : revisionCount > 1
-      ? `Updated · rev ${item.revision}`
-      : `New surface · rev ${item.revision}`;
+
+  const setA2uiActiveRevision = useAppStore((s) => s.setA2uiActiveRevision);
 
   const onClick = () => {
     if (!threadId) return;
     focusA2uiSurface(threadId, item.surfaceId);
+    setA2uiActiveRevision(threadId, item.surfaceId, item.revision);
     setA2uiDockExpanded(threadId, true);
   };
 
@@ -62,7 +63,7 @@ export const A2uiSurfaceHistoryRow = memo(function A2uiSurfaceHistoryRow({
         "text-xs text-foreground/90 shadow-sm transition-colors hover:border-border/65 hover:bg-muted/30",
         isDeleted && "text-muted-foreground",
       )}
-      title={`Focus ${title} in dock (rev ${item.revision})`}
+      title={reason || `Focus ${title} in dock (rev ${item.revision})`}
     >
       <span
         className={cn(
@@ -73,7 +74,23 @@ export const A2uiSurfaceHistoryRow = memo(function A2uiSurfaceHistoryRow({
         {isDeleted ? <Trash2Icon className="size-3" /> : <SparklesIcon className="size-3" />}
       </span>
       <span className="truncate font-medium">{title}</span>
-      <span className="flex-none text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span
+        className={cn(
+          "flex-none rounded-full border px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide leading-[1.2]",
+          changeKindToneClass(item.changeKind),
+        )}
+      >
+        {kindLabel}
+      </span>
+      {reason ? (
+        <span className="min-w-0 truncate text-muted-foreground" aria-hidden="true">
+          · {reason}
+        </span>
+      ) : revisionCount > 1 ? (
+        <span className="flex-none text-[10px] uppercase tracking-wide text-muted-foreground">
+          rev {item.revision}
+        </span>
+      ) : null}
     </button>
   );
 });

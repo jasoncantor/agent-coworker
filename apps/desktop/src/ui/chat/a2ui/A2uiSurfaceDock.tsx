@@ -14,9 +14,10 @@ import { isBasicCatalogId } from "../../../../../../src/shared/a2ui/component";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
 import { cn } from "../../../lib/utils";
 import { useAppStore } from "../../../app/store";
-import type { A2uiSurfaceRevision, A2uiThreadDock } from "../../../app/types";
+import type { A2uiChangeKind, A2uiSurfaceRevision, A2uiThreadDock } from "../../../app/types";
 import { A2uiRenderer, type A2uiActionDispatcher, type A2uiRenderableComponent } from "./A2uiRenderer";
 import { extractSurfaceTitle } from "./surfaceTitle";
+import { changeKindLabel, changeKindToneClass } from "./changeKind";
 
 function buildThemeStyle(theme?: Record<string, unknown>): CSSProperties | undefined {
   if (!theme) return undefined;
@@ -344,45 +345,61 @@ function RevisionControls({
 }) {
   const active = revisions[activeIndex]!;
   const relAge = formatRelativeAge(Date.now(), active.ts);
+  const kindLabel = changeKindLabel(active.changeKind);
   return (
-    <div className="mb-3 flex items-center justify-between gap-2 rounded-md border border-border/35 bg-muted/15 px-2 py-1 text-[11px] text-muted-foreground">
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          aria-label="Previous revision"
-          title="Previous revision"
-          disabled={!canGoPrev}
-          onClick={() => onStep(-1)}
-          className="inline-flex size-6 items-center justify-center rounded transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <ChevronLeftIcon className="size-3.5" />
-        </button>
-        <button
-          type="button"
-          aria-label="Next revision"
-          title="Next revision"
-          disabled={!canGoNext}
-          onClick={() => onStep(1)}
-          className="inline-flex size-6 items-center justify-center rounded transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <ChevronRightIcon className="size-3.5" />
-        </button>
+    <div className="mb-3 flex flex-col gap-1 rounded-md border border-border/35 bg-muted/15 px-2 py-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            aria-label="Previous revision"
+            title="Previous revision"
+            disabled={!canGoPrev}
+            onClick={() => onStep(-1)}
+            className="inline-flex size-6 items-center justify-center rounded transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronLeftIcon className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="Next revision"
+            title="Next revision"
+            disabled={!canGoNext}
+            onClick={() => onStep(1)}
+            className="inline-flex size-6 items-center justify-center rounded transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronRightIcon className="size-3.5" />
+          </button>
+          <span
+            className={cn(
+              "ml-1 inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide",
+              changeKindToneClass(active.changeKind),
+            )}
+          >
+            {kindLabel}
+          </span>
+        </div>
+        <span className="tabular-nums">
+          rev <span className="font-semibold text-foreground/85">{active.revision}</span> · {activeIndex + 1}/{revisions.length}
+          {relAge ? <span className="ml-2">{relAge}</span> : null}
+        </span>
+        {canGoNext ? (
+          <button
+            type="button"
+            onClick={onJumpLatest}
+            className="rounded px-1.5 py-0.5 font-medium text-primary transition-colors hover:bg-primary/10"
+          >
+            Jump to latest
+          </button>
+        ) : (
+          <span className="rounded px-1.5 py-0.5 font-medium text-muted-foreground/70">Latest</span>
+        )}
       </div>
-      <span className="tabular-nums">
-        rev <span className="font-semibold text-foreground/85">{active.revision}</span> · {activeIndex + 1}/{revisions.length}
-        {relAge ? <span className="ml-2">{relAge}</span> : null}
-      </span>
-      {canGoNext ? (
-        <button
-          type="button"
-          onClick={onJumpLatest}
-          className="rounded px-1.5 py-0.5 font-medium text-primary transition-colors hover:bg-primary/10"
-        >
-          Jump to latest
-        </button>
-      ) : (
-        <span className="rounded px-1.5 py-0.5 font-medium text-muted-foreground/70">Latest</span>
-      )}
+      {active.reason ? (
+        <div className="truncate pl-1 italic text-muted-foreground/90" title={active.reason}>
+          {active.reason}
+        </div>
+      ) : null}
     </div>
   );
 }

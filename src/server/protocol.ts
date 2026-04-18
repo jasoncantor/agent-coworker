@@ -391,6 +391,12 @@ export type ServerEvent =
     root?: Record<string, unknown>;
     dataModel?: unknown;
     updatedAt: string;
+    /** Envelope kind that produced this revision — useful for human-readable history. */
+    changeKind?: "createSurface" | "updateComponents" | "updateDataModel" | "deleteSurface";
+    /** Free-form explanation supplied by the agent on the tool call. */
+    reason?: string;
+    /** Ids grouping revisions that came from the same tool call — lets clients coalesce. */
+    toolCallId?: string;
   }
   | {
     type: "turn_usage";

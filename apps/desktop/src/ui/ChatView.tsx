@@ -83,6 +83,7 @@ import { ActivityGroupCard } from "./chat/ActivityGroupCard";
 import { buildChatRenderItems } from "./chat/activityGroups";
 import { normalizeFeedForToolCards } from "./chat/toolCards/legacyToolLogs";
 import { ToolCard } from "./chat/toolCards/ToolCard";
+import { A2uiInlineCard } from "./chat/a2ui/A2uiInlineCard";
 import { A2uiSurfaceDock } from "./chat/a2ui/A2uiSurfaceDock";
 import { A2uiSurfaceHistoryRow } from "./chat/a2ui/A2uiSurfaceHistoryRow";
 
@@ -466,6 +467,7 @@ const FeedRow = memo(function FeedRow(props: {
   item: FeedItem;
   citationUrlsByIndex?: ReadonlyMap<number, string>;
   citationSources?: CitationSource[];
+  isLatestUiSurface?: boolean;
 }) {
   const { developerMode } = useChatViewContext();
   const item = props.item;
@@ -545,7 +547,9 @@ const FeedRow = memo(function FeedRow(props: {
   }
 
   if (item.kind === "ui_surface") {
-    return <A2uiSurfaceHistoryRow item={item} />;
+    return props.isLatestUiSurface
+      ? <A2uiInlineCard item={item} />
+      : <A2uiSurfaceHistoryRow item={item} />;
   }
 
   if (item.kind === "log") {
@@ -843,6 +847,15 @@ export function ChatView() {
     return merged;
   }, [inlineCitationSourcesByMessageId, overflowCitationSourcesByMessageId]);
   const renderItems = useMemo(() => buildChatRenderItems(visibleFeed), [visibleFeed]);
+  const latestUiSurfaceItemId = useMemo(() => {
+    for (let i = renderItems.length - 1; i >= 0; i--) {
+      const entry = renderItems[i];
+      if (entry && entry.kind === "feed-item" && entry.item.kind === "ui_surface" && !entry.item.deleted) {
+        return entry.item.id;
+      }
+    }
+    return null;
+  }, [renderItems]);
   const activeChildAgentCount = useMemo(
     () => countActiveChildAgents(rt?.agents ?? []),
     [rt?.agents],
@@ -1208,6 +1221,7 @@ export function ChatView() {
                     item={item.item}
                     citationUrlsByIndex={citationUrlsByMessageId.get(item.item.id)}
                     citationSources={citationSourcesByMessageId.get(item.item.id)}
+                    isLatestUiSurface={item.item.id === latestUiSurfaceItemId}
                   />
                 )
               )

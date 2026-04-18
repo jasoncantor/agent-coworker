@@ -79,7 +79,10 @@ export interface ToolContext {
    * per-envelope result (ok/error plus surfaceId/change metadata). Only
    * populated when the harness enables the A2UI feature.
    */
-  applyA2uiEnvelope?: (envelope: unknown) => {
+  applyA2uiEnvelope?: (
+    envelope: unknown,
+    meta?: { reason?: string; toolCallId?: string },
+  ) => {
     ok: boolean;
     surfaceId?: string;
     change?: "created" | "updated" | "deleted" | "noop";

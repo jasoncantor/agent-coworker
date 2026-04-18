@@ -96,6 +96,9 @@ export type SessionFeedItem =
       theme?: Record<string, unknown>;
       root?: Record<string, unknown>;
       dataModel?: unknown;
+      changeKind?: "createSurface" | "updateComponents" | "updateDataModel" | "deleteSurface";
+      reason?: string;
+      toolCallId?: string;
     };
 
 export type SessionLastTurnUsage = {
@@ -212,6 +215,11 @@ const feedItemSchema: z.ZodType<SessionFeedItem> = z.discriminatedUnion("kind", 
     theme: z.record(z.string(), z.unknown()).optional(),
     root: z.record(z.string(), z.unknown()).optional(),
     dataModel: z.unknown().optional(),
+    changeKind: z
+      .enum(["createSurface", "updateComponents", "updateDataModel", "deleteSurface"])
+      .optional(),
+    reason: z.string().optional(),
+    toolCallId: z.string().optional(),
   }).strict(),
 ]);
 

@@ -96,7 +96,10 @@ export interface RunTurnParams {
    * per-envelope outcome. Plumbed into the `a2ui` tool's ToolContext when
    * provided. Only set when the harness enables generative UI for the turn.
    */
-  applyA2uiEnvelope?: (envelope: unknown) => {
+  applyA2uiEnvelope?: (
+    envelope: unknown,
+    meta?: { reason?: string; toolCallId?: string },
+  ) => {
     ok: boolean;
     surfaceId?: string;
     change?: "created" | "updated" | "deleted" | "noop";

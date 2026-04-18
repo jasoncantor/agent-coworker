@@ -92,7 +92,8 @@ describe("A2UI end-to-end (manager → projection → feed)", () => {
     expect(surfaceItem.revision).toBe(1);
     expect(surfaceItem.deleted).toBe(false);
 
-    // A follow-up updateDataModel should upsert the same feed row
+    // Each revision now appends a new feed item so the transcript shows the
+    // full update history (clients coalesce at render time).
     await tool.execute({
       envelopes: [
         {
@@ -104,12 +105,12 @@ describe("A2UI end-to-end (manager → projection → feed)", () => {
     projection.handle(events.at(-1)!);
 
     const surfaces = feed.filter((item) => item.kind === "ui_surface");
-    expect(surfaces).toHaveLength(1);
-    const updated = surfaces[0]! as Extract<SessionFeedItem, { kind: "ui_surface" }>;
+    expect(surfaces).toHaveLength(2);
+    const updated = surfaces[surfaces.length - 1]! as Extract<SessionFeedItem, { kind: "ui_surface" }>;
     expect(updated.revision).toBe(2);
     expect((updated.dataModel as Record<string, unknown>).message).toBe("Hi there");
 
-    // deleteSurface marks the feed item as deleted without removing it.
+    // deleteSurface also appends — it becomes a tombstone in the transcript.
     await tool.execute({
       envelopes: [
         { version: "v0.9", deleteSurface: { surfaceId: "greeter" } },
@@ -118,8 +119,8 @@ describe("A2UI end-to-end (manager → projection → feed)", () => {
     projection.handle(events.at(-1)!);
 
     const finalSurfaces = feed.filter((item) => item.kind === "ui_surface");
-    expect(finalSurfaces).toHaveLength(1);
-    const tombstone = finalSurfaces[0]! as Extract<SessionFeedItem, { kind: "ui_surface" }>;
+    expect(finalSurfaces).toHaveLength(3);
+    const tombstone = finalSurfaces[finalSurfaces.length - 1]! as Extract<SessionFeedItem, { kind: "ui_surface" }>;
     expect(tombstone.deleted).toBe(true);
   });
 });

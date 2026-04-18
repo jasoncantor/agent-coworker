@@ -117,4 +117,68 @@ describe("a2uiDockReducer", () => {
     expect(revisionByNumber(dock.revisionsBySurfaceId.s1!, 2)!.revision).toBe(2);
     expect(revisionByNumber(dock.revisionsBySurfaceId.s1!, 99)).toBeNull();
   });
+
+  test("coalesces successive revisions that share a toolCallId", () => {
+    let dock = createDefaultA2uiDock();
+    dock = recordSurfaceRevision(
+      dock,
+      makeProjected({ revision: 1, toolCallId: "tc1", reason: "Render", changeKind: "createSurface" }),
+      "2026-04-17T00:00:00.000Z",
+    );
+    dock = recordSurfaceRevision(
+      dock,
+      makeProjected({ revision: 2, toolCallId: "tc1", reason: "Render", changeKind: "updateComponents" }),
+      "2026-04-17T00:00:00.010Z",
+    );
+    dock = recordSurfaceRevision(
+      dock,
+      makeProjected({ revision: 3, toolCallId: "tc1", reason: "Render", changeKind: "updateDataModel" }),
+      "2026-04-17T00:00:00.020Z",
+    );
+    expect(dock.revisionsBySurfaceId.s1).toHaveLength(1);
+    expect(dock.revisionsBySurfaceId.s1![0]!.revision).toBe(3);
+    expect(dock.revisionsBySurfaceId.s1![0]!.changeKind).toBe("updateDataModel");
+  });
+
+  test("does not coalesce revisions from different tool calls", () => {
+    let dock = createDefaultA2uiDock();
+    dock = recordSurfaceRevision(
+      dock,
+      makeProjected({ revision: 1, toolCallId: "tc1", changeKind: "createSurface" }),
+      "2026-04-17T00:00:00.000Z",
+    );
+    dock = recordSurfaceRevision(
+      dock,
+      makeProjected({ revision: 2, toolCallId: "tc2", changeKind: "updateDataModel" }),
+      "2026-04-17T00:00:00.050Z",
+    );
+    expect(dock.revisionsBySurfaceId.s1).toHaveLength(2);
+  });
+
+  test("coalesces identical reasons inside the time window when toolCallId is absent", () => {
+    let dock = createDefaultA2uiDock();
+    dock = recordSurfaceRevision(
+      dock,
+      makeProjected({ revision: 1, reason: "boost energy", changeKind: "updateDataModel" }),
+      "2026-04-17T00:00:00.000Z",
+    );
+    dock = recordSurfaceRevision(
+      dock,
+      makeProjected({ revision: 2, reason: "boost energy", changeKind: "updateDataModel" }),
+      "2026-04-17T00:00:00.500Z",
+    );
+    expect(dock.revisionsBySurfaceId.s1).toHaveLength(1);
+    expect(dock.revisionsBySurfaceId.s1![0]!.revision).toBe(2);
+  });
+
+  test("records reason + changeKind on the revision snapshot", () => {
+    const dock = recordSurfaceRevision(
+      createDefaultA2uiDock(),
+      makeProjected({ revision: 4, reason: "hero rebuild", changeKind: "updateComponents" }),
+      "2026-04-17T00:00:00.000Z",
+    );
+    const rev = dock.revisionsBySurfaceId.s1![0]!;
+    expect(rev.reason).toBe("hero rebuild");
+    expect(rev.changeKind).toBe("updateComponents");
+  });
 });
