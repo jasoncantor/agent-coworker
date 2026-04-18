@@ -1453,7 +1453,7 @@ export async function startAgentServer(
   }
 
   const requestedPort = opts.port ?? 7337;
-  const webDesktopService = process.env.COWORK_WEB_DESKTOP_SERVICE === "1"
+  const webDesktopService = env.COWORK_WEB_DESKTOP_SERVICE === "1"
     ? new WebDesktopService()
     : null;
 

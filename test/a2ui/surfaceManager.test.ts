@@ -119,4 +119,27 @@ describe("A2uiSurfaceManager", () => {
     expect(deleteEvent).toBeTruthy();
     expect((deleteEvent as Extract<ServerEvent, { type: "a2ui_surface" }>).deleted).toBe(true);
   });
+
+  test("prunes deleted tombstones before creating a new surface at the cap", () => {
+    const { manager } = createManager();
+
+    manager.hydrate(Object.fromEntries(
+      Array.from({ length: 16 }, (_, offset) => {
+        const surfaceId = `s${offset + 1}`;
+        return [surfaceId, {
+          surfaceId,
+          catalogId: A2UI_BASIC_CATALOG_ID,
+          revision: 2,
+          updatedAt: `2026-01-01T00:00:${String(offset + 1).padStart(2, "0")}.000Z`,
+          deleted: true,
+        }];
+      }),
+    ));
+
+    const result = manager.applyEnvelope(createEnvelope("s17"));
+
+    expect(result.ok).toBe(true);
+    expect(Object.keys(manager.getSurfaces()).length).toBeLessThanOrEqual(16);
+    expect(manager.getSurfaces()).toHaveProperty("s17");
+  });
 });

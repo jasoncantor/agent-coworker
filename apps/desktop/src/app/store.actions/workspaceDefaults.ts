@@ -342,6 +342,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
       defaultAllowedChildModelRefs: controlSessionConfig?.allowedChildModelRefs ?? workspace.defaultAllowedChildModelRefs ?? [],
       defaultToolOutputOverflowChars: controlSessionConfig?.defaultToolOutputOverflowChars ?? workspace.defaultToolOutputOverflowChars,
       defaultFeatureFlags,
+      defaultEnableA2ui: defaultFeatureFlags.a2ui,
       providerOptions: normalizeWorkspaceProviderOptions(controlSessionConfig?.providerOptions) ?? workspace.providerOptions,
       userName: typeof controlSessionConfig?.userName === "string" ? controlSessionConfig.userName : workspace.userName,
       userProfile: controlSessionConfig?.userProfile

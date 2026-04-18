@@ -7,6 +7,8 @@ import readline from "node:readline";
 import type { Readable } from "node:stream";
 import { z } from "zod";
 
+import type { DesktopFeatureFlagOverrides } from "../shared/featureFlags";
+import { normalizeDesktopFeatureFlagOverrides } from "../shared/featureFlags";
 import { writeTextFileAtomic } from "../utils/atomicFile";
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,256}$/;
@@ -48,6 +50,7 @@ export type DesktopPersistedState = {
   developerMode: boolean;
   showHiddenFiles: boolean;
   perWorkspaceSettings: boolean;
+  desktopFeatureFlagOverrides: DesktopFeatureFlagOverrides;
   providerState?: unknown;
   providerUiState?: unknown;
   onboarding?: unknown;
@@ -173,6 +176,7 @@ function defaultState(): DesktopPersistedState {
     developerMode: false,
     showHiddenFiles: false,
     perWorkspaceSettings: false,
+    desktopFeatureFlagOverrides: {},
   };
 }
 
@@ -271,6 +275,7 @@ async function normalizeState(raw: unknown): Promise<DesktopPersistedState> {
     developerMode: asBoolean(raw.developerMode, false),
     showHiddenFiles: asBoolean(raw.showHiddenFiles, false),
     perWorkspaceSettings: asBoolean(raw.perWorkspaceSettings, false),
+    desktopFeatureFlagOverrides: normalizeDesktopFeatureFlagOverrides(raw.desktopFeatureFlagOverrides) ?? {},
     ...(raw.providerState !== undefined ? { providerState: raw.providerState } : {}),
     ...(raw.providerUiState !== undefined ? { providerUiState: raw.providerUiState } : {}),
     ...(raw.onboarding !== undefined ? { onboarding: raw.onboarding } : {}),

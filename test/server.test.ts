@@ -633,6 +633,35 @@ describe("HTTP Handler", () => {
     }
   });
 
+  test("web desktop service enablement follows merged opts.env", async () => {
+    const tmpDir = await makeTmpProject();
+    const previous = process.env.COWORK_WEB_DESKTOP_SERVICE;
+    delete process.env.COWORK_WEB_DESKTOP_SERVICE;
+    const { server } = await startAgentServer(serverOpts(tmpDir, {
+      env: {
+        AGENT_WORKING_DIR: tmpDir,
+        AGENT_PROVIDER: "google",
+        AGENT_OBSERVABILITY_ENABLED: "false",
+        COWORK_SKIP_DEFAULT_SKILLS_BOOTSTRAP: "1",
+        COWORK_WEB_DESKTOP_SERVICE: "1",
+      },
+    }));
+    try {
+      const httpUrl = `http://127.0.0.1:${server.port}/cowork/desktop/state`;
+      const res = await fetch(httpUrl);
+      expect(res.status).toBe(200);
+      const payload = await res.json();
+      expect(payload).toHaveProperty("workspaces");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.COWORK_WEB_DESKTOP_SERVICE;
+      } else {
+        process.env.COWORK_WEB_DESKTOP_SERVICE = previous;
+      }
+      await stopTestServer(server);
+    }
+  });
+
 });
 
 

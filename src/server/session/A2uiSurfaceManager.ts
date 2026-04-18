@@ -237,8 +237,26 @@ export class A2uiSurfaceManager {
     const ids = Object.keys(this.surfaces);
     if (ids.length < MAX_SURFACES_PER_SESSION) return;
 
+    const deletedIds = ids
+      .map((id) => this.surfaces[id]!)
+      .filter((state) => state.deleted)
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+      .map((state) => state.surfaceId);
+    if (deletedIds.length > 0) {
+      let nextSurfaces = { ...this.surfaces };
+      while (Object.keys(nextSurfaces).length >= MAX_SURFACES_PER_SESSION && deletedIds.length > 0) {
+        const deletedSurfaceId = deletedIds.shift()!;
+        const { [deletedSurfaceId]: _pruned, ...rest } = nextSurfaces;
+        nextSurfaces = rest;
+      }
+      this.surfaces = nextSurfaces;
+      if (Object.keys(this.surfaces).length < MAX_SURFACES_PER_SESSION) {
+        return;
+      }
+    }
+
     // Evict oldest non-deleted surface.
-    const sorted = ids
+    const sorted = Object.keys(this.surfaces)
       .map((id) => this.surfaces[id]!)
       .filter((state) => !state.deleted)
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));

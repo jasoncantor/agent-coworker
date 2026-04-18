@@ -1192,6 +1192,7 @@ describe("workspace settings sync", () => {
       experimentalApi: false,
       a2ui: false,
     });
+    expect(workspace?.defaultEnableA2ui).toBe(false);
 
     expect(latestRequest("cowork/session/defaults/apply")?.params).toMatchObject({
       cwd: "/tmp/workspace",
