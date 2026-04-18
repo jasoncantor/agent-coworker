@@ -140,7 +140,11 @@ export function applyEnvelope(
       const deleteIds = new Set<string>(uc.deleteIds ?? []);
       if (updatesById.size > 0 || deleteIds.size > 0) {
         const rebuilt = replaceInTree(root, updatesById, deleteIds);
-        if (rebuilt) root = rebuilt;
+        if (rebuilt !== null) {
+          root = rebuilt;
+        } else {
+          root = undefined;
+        }
       }
     } else if ((uc.components?.length ?? 0) > 0) {
       // No existing root; synthesize one from the first component if the agent
@@ -154,7 +158,7 @@ export function applyEnvelope(
 
     const next: A2uiSurfaceState = {
       ...existing,
-      ...(root ? { root } : {}),
+      root,
       revision: existing.revision + 1,
       updatedAt: nowIso,
       deleted: false,

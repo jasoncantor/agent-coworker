@@ -95,6 +95,20 @@ describe("applyEnvelope", () => {
     expect(state.root?.children?.map((c) => c.id)).toEqual(["title"]);
   });
 
+  test("updateComponents clears the surface root when deleteIds removes the root component", () => {
+    const base = applyEnvelope(createEmptySurfaces(), createSurface(), NOW).surfaces;
+    const patched = applyEnvelope(
+      base,
+      {
+        version: "v0.9",
+        updateComponents: { surfaceId: "s1", deleteIds: ["root"] },
+      },
+      NOW,
+    );
+    const state = getSurface(patched.surfaces, "s1");
+    expect(state.root).toBeUndefined();
+  });
+
   test("updateDataModel patches a path", () => {
     const base = applyEnvelope(createEmptySurfaces(), createSurface(), NOW).surfaces;
     const patched = applyEnvelope(

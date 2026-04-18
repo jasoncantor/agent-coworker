@@ -159,6 +159,168 @@ describe("mobile cowork jsonrpc client", () => {
     });
   });
 
+  test("accepts uiSurface notifications with A2UI metadata fields", async () => {
+    const sent: string[] = [];
+    const notifications: Array<{ method: string; params?: unknown }> = [];
+    const client = new CoworkJsonRpcClient({
+      clientInfo: { name: "cowork-mobile", version: "0.1.0" },
+      send(text) {
+        sent.push(text);
+      },
+      onNotification(message) {
+        notifications.push(message);
+      },
+    });
+
+    const handshakePromise = client.initialize();
+    const initializePayload = JSON.parse(sent[0]!);
+    await client.handleIncoming(JSON.stringify({
+      id: initializePayload.id,
+      result: {
+        protocolVersion: "0.1",
+        serverInfo: {
+          name: "cowork-server",
+          subprotocol: "cowork.jsonrpc.v1",
+        },
+        capabilities: { experimentalApi: false },
+        transport: {
+          type: "websocket",
+          protocolMode: "jsonrpc",
+        },
+      },
+    }));
+    await handshakePromise;
+
+    await client.handleIncoming(JSON.stringify({
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: null,
+        item: {
+          id: "uiSurface:surface-1",
+          type: "uiSurface",
+          surfaceId: "surface-1",
+          catalogId: "https://a2ui.org/specification/v0_9/basic_catalog.json",
+          version: "v0.9",
+          revision: 2,
+          deleted: false,
+          changeKind: "updateComponents",
+          reason: "refresh summary",
+          toolCallId: "tool-1",
+        },
+      },
+    }));
+
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]?.method).toBe("item/completed");
+  });
+
+  test("accepts thread snapshots whose ui_surface feed items include A2UI metadata fields", async () => {
+    const sent: string[] = [];
+    const client = new CoworkJsonRpcClient({
+      clientInfo: { name: "cowork-mobile", version: "0.1.0" },
+      send(text) {
+        sent.push(text);
+      },
+    });
+
+    const handshakePromise = client.initialize();
+    const initializePayload = JSON.parse(sent[0]!);
+    await client.handleIncoming(JSON.stringify({
+      id: initializePayload.id,
+      result: {
+        protocolVersion: "0.1",
+        serverInfo: {
+          name: "cowork-server",
+          subprotocol: "cowork.jsonrpc.v1",
+        },
+        capabilities: { experimentalApi: false },
+        transport: {
+          type: "websocket",
+          protocolMode: "jsonrpc",
+        },
+      },
+    }));
+    await handshakePromise;
+
+    const readPromise = client.readThread("thread-1");
+    const readPayload = JSON.parse(sent.at(-1)!);
+    await client.handleIncoming(JSON.stringify({
+      id: readPayload.id,
+      result: {
+        thread: {
+          id: "thread-1",
+          title: "Thread",
+          preview: "",
+          modelProvider: "google",
+          model: "gemini-3.1-pro-preview",
+          cwd: "/workspace",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messageCount: 1,
+          lastEventSeq: 1,
+          status: { type: "idle" },
+        },
+        coworkSnapshot: {
+          sessionId: "session-1",
+          title: "Thread",
+          titleSource: "manual",
+          titleModel: null,
+          provider: "google",
+          model: "gemini-3.1-pro-preview",
+          sessionKind: "root",
+          parentSessionId: null,
+          role: null,
+          mode: null,
+          depth: null,
+          nickname: null,
+          requestedModel: null,
+          effectiveModel: null,
+          requestedReasoningEffort: null,
+          effectiveReasoningEffort: null,
+          executionState: null,
+          lastMessagePreview: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messageCount: 1,
+          lastEventSeq: 1,
+          feed: [
+            {
+              id: "ui-surface-1",
+              kind: "ui_surface",
+              ts: new Date().toISOString(),
+              surfaceId: "surface-1",
+              catalogId: "https://a2ui.org/specification/v0_9/basic_catalog.json",
+              version: "v0.9",
+              revision: 2,
+              deleted: false,
+              changeKind: "updateComponents",
+              reason: "refresh summary",
+              toolCallId: "tool-1",
+            },
+          ],
+          agents: [],
+          todos: [],
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+        },
+      },
+    }));
+
+    await expect(readPromise).resolves.toMatchObject({
+      coworkSnapshot: {
+        feed: [
+          expect.objectContaining({
+            kind: "ui_surface",
+            changeKind: "updateComponents",
+            reason: "refresh summary",
+            toolCallId: "tool-1",
+          }),
+        ],
+      },
+    });
+  });
+
   test("resetTransportSession allows a fresh initialize handshake", async () => {
     const sent: string[] = [];
     const client = new CoworkJsonRpcClient({

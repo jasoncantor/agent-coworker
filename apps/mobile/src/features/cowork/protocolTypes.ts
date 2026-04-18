@@ -83,6 +83,9 @@ const projectedItemSchema = z.discriminatedUnion("type", [
     theme: z.record(z.string(), z.unknown()).optional(),
     root: z.record(z.string(), z.unknown()).optional(),
     dataModel: z.unknown().optional(),
+    changeKind: z.enum(["createSurface", "updateComponents", "updateDataModel", "deleteSurface"]).optional(),
+    reason: z.string().optional(),
+    toolCallId: z.string().optional(),
   }).strict(),
 ]);
 
@@ -179,6 +182,9 @@ const sessionFeedItemSchema = z.discriminatedUnion("kind", [
     theme: z.record(z.string(), z.unknown()).optional(),
     root: z.record(z.string(), z.unknown()).optional(),
     dataModel: z.unknown().optional(),
+    changeKind: z.enum(["createSurface", "updateComponents", "updateDataModel", "deleteSurface"]).optional(),
+    reason: z.string().optional(),
+    toolCallId: z.string().optional(),
   }).strict(),
 ]);
 
