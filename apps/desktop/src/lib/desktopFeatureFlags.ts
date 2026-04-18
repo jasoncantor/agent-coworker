@@ -1,5 +1,7 @@
 export type DesktopFeatureFlags = {
   remoteAccess: boolean;
+  workspacePicker: boolean;
+  workspaceLifecycle: boolean;
 };
 
 type DesktopFeatureFlagOptions = {
@@ -31,5 +33,7 @@ export function resolveDesktopFeatureFlags(options: DesktopFeatureFlagOptions): 
     // Remote access is a development-only feature for now. The env flag can
     // disable it in dev, but packaged builds must keep it hidden.
     remoteAccess: !options.isPackaged && (remoteAccessOverride ?? true),
+    workspacePicker: true,
+    workspaceLifecycle: true,
   };
 }

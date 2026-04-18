@@ -16,6 +16,7 @@
     "build": "bun run --cwd ../.. build:desktop-resources && bun run electron-vite -- build && electron-builder --config electron-builder.yml",
     "build:dir": "bun run --cwd ../.. build:desktop-resources && bun run electron-vite -- build && electron-builder --dir --config electron-builder.yml",
     "preview": "bun run electron-vite -- preview",
+    "web": "bun --cwd ../.. build:desktop-resources && bun vite --config vite.config.web.ts",
     "test": "bun test"
   },
   "dependencies": {

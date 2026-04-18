@@ -62,7 +62,7 @@ import {
 } from "../../../components/ui/select";
 import { Textarea } from "../../../components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../../components/ui/tooltip";
-import { confirmAction } from "../../../lib/desktopCommands";
+import { confirmAction, getDesktopFeatureFlags } from "../../../lib/desktopCommands";
 import {
   type CatalogVisibilityOptions,
   modelChoicesFromCatalog,
@@ -1136,6 +1136,9 @@ function WorkspaceDefaultsSummary({
 }
 
 export function WorkspacesPage() {
+  const desktopFeatures = getDesktopFeatureFlags();
+  const workspacePickerEnabled = desktopFeatures.workspacePicker !== false;
+  const workspaceLifecycleEnabled = desktopFeatures.workspaceLifecycle !== false;
   const workspaces = useAppStore((s) => s.workspaces);
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const providerStatusByName = useAppStore((s) => s.providerStatusByName);
@@ -1251,9 +1254,13 @@ export function WorkspacesPage() {
       {workspaces.length === 0 || !ws ? (
         <Card className="border-border/80 bg-card/85">
           <CardContent className="p-8 text-center">
-            <Button type="button" onClick={() => void addWorkspace()}>
-              Add workspace
-            </Button>
+            {workspacePickerEnabled ? (
+              <Button type="button" onClick={() => void addWorkspace()}>
+                Add workspace
+              </Button>
+            ) : (
+              <div className="text-sm text-muted-foreground">This browser shell stays attached to the current server workspace.</div>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -1298,9 +1305,11 @@ export function WorkspacesPage() {
                     <CardTitle>Active workspace</CardTitle>
                     <CardDescription>Selected project for this desktop session.</CardDescription>
                   </div>
-                  <Button variant="outline" type="button" onClick={() => void addWorkspace()}>
-                    Add
-                  </Button>
+                  {workspacePickerEnabled ? (
+                    <Button variant="outline" type="button" onClick={() => void addWorkspace()}>
+                      Add
+                    </Button>
+                  ) : null}
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div>
@@ -1398,7 +1407,11 @@ export function WorkspacesPage() {
                         defaultAction: "cancel",
                       });
                       if (confirmed) {
-                        void updateWorkspaceDefaults(ws.id, { yolo: next }).then(() => restartWorkspaceServer(ws.id));
+                        void updateWorkspaceDefaults(ws.id, { yolo: next }).then(() => {
+                          if (workspaceLifecycleEnabled) {
+                            return restartWorkspaceServer(ws.id);
+                          }
+                        });
                       }
                     }}
                   />
@@ -1755,42 +1768,46 @@ export function WorkspacesPage() {
                   />
                 </div>
 
-                <div className="flex items-center justify-between gap-3 max-[960px]:items-start max-[960px]:flex-col">
-                  <div>
-                    <div className="text-sm font-medium">Restart server</div>
-                    <div className="text-xs text-muted-foreground">Restart the workspace agent server if unresponsive.</div>
+                {workspaceLifecycleEnabled ? (
+                  <div className="flex items-center justify-between gap-3 max-[960px]:items-start max-[960px]:flex-col">
+                    <div>
+                      <div className="text-sm font-medium">Restart server</div>
+                      <div className="text-xs text-muted-foreground">Restart the workspace agent server if unresponsive.</div>
+                    </div>
+                    <Button variant="outline" type="button" onClick={() => void restartWorkspaceServer(ws.id)}>
+                      Restart
+                    </Button>
                   </div>
-                  <Button variant="outline" type="button" onClick={() => void restartWorkspaceServer(ws.id)}>
-                    Restart
-                  </Button>
-                </div>
+                ) : null}
 
-                <div className="flex items-center justify-between gap-3 max-[960px]:items-start max-[960px]:flex-col">
-                  <div>
-                    <div className="text-sm font-medium">Remove workspace</div>
-                    <div className="text-xs text-muted-foreground">Remove this workspace from the app. Your files on disk are not affected.</div>
+                {workspaceLifecycleEnabled ? (
+                  <div className="flex items-center justify-between gap-3 max-[960px]:items-start max-[960px]:flex-col">
+                    <div>
+                      <div className="text-sm font-medium">Remove workspace</div>
+                      <div className="text-xs text-muted-foreground">Remove this workspace from the app. Your files on disk are not affected.</div>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      type="button"
+                      onClick={async () => {
+                        const confirmed = await confirmAction({
+                          title: "Remove workspace",
+                          message: `Remove workspace "${ws.name}"?`,
+                          detail: "Your files on disk will not be affected.",
+                          confirmLabel: "Remove",
+                          cancelLabel: "Cancel",
+                          kind: "warning",
+                          defaultAction: "cancel",
+                        });
+                        if (confirmed) {
+                          void removeWorkspace(ws.id);
+                        }
+                      }}
+                    >
+                      Remove
+                    </Button>
                   </div>
-                  <Button
-                    variant="destructive"
-                    type="button"
-                    onClick={async () => {
-                      const confirmed = await confirmAction({
-                        title: "Remove workspace",
-                        message: `Remove workspace "${ws.name}"?`,
-                        detail: "Your files on disk will not be affected.",
-                        confirmLabel: "Remove",
-                        cancelLabel: "Cancel",
-                        kind: "warning",
-                        defaultAction: "cancel",
-                      });
-                      if (confirmed) {
-                        void removeWorkspace(ws.id);
-                      }
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
+                ) : null}
               </CardContent>
             </Card>
           </div>

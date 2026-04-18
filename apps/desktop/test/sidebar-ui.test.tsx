@@ -27,6 +27,8 @@ const MOCK_UPDATE_STATE = {
   release: null,
   progress: null,
 };
+let workspacePickerEnabled = true;
+let workspaceLifecycleEnabled = true;
 
 mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   appendTranscriptBatch: async () => {},
@@ -58,6 +60,11 @@ mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   getSystemAppearance: async () => MOCK_SYSTEM_APPEARANCE,
   setWindowAppearance: async () => MOCK_SYSTEM_APPEARANCE,
   getUpdateState: async () => MOCK_UPDATE_STATE,
+  getDesktopFeatureFlags: () => ({
+    remoteAccess: true,
+    workspacePicker: workspacePickerEnabled,
+    workspaceLifecycle: workspaceLifecycleEnabled,
+  }),
   checkForUpdates: async () => {},
   quitAndInstallUpdate: async () => {},
   onSystemAppearanceChanged: () => () => {},
@@ -177,6 +184,8 @@ function setupSidebarJsdom() {
 
 describe("desktop sidebar", () => {
   beforeEach(() => {
+    workspacePickerEnabled = true;
+    workspaceLifecycleEnabled = true;
     useAppStore.setState(defaultStoreState);
   });
 
@@ -336,6 +345,38 @@ describe("desktop sidebar", () => {
       expect(skillsButton.className).toContain("w-full");
 
       expect(newChatButton.querySelector("svg")?.className.baseVal ?? "").toContain("lucide-square-pen");
+    } finally {
+      if (root) {
+        await act(async () => {
+          root?.unmount();
+        });
+      }
+      harness.restore();
+    }
+  });
+
+  test.serial("hides add-workspace affordances when browser shell workspace picking is disabled", async () => {
+    const harness = setupSidebarJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+      workspacePickerEnabled = false;
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        resetAppStore({
+          workspaces: [makeWorkspace()],
+          threads: makeThreads(1),
+          selectedWorkspaceId: "ws-1",
+          selectedThreadId: "thread-1",
+        });
+        root.render(createElement(Sidebar));
+      });
+
+      expect(container.querySelector('[aria-label="Add workspace"]')).toBeNull();
+      expect([...container.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Add workspace")).toBe(false);
     } finally {
       if (root) {
         await act(async () => {

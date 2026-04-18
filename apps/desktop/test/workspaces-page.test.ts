@@ -26,6 +26,8 @@ const MOCK_UPDATE_STATE = {
   progress: null,
   error: null,
 };
+let workspacePickerEnabled = true;
+let workspaceLifecycleEnabled = true;
 
 mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   appendTranscriptBatch: async () => {},
@@ -57,6 +59,11 @@ mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   getSystemAppearance: async () => MOCK_SYSTEM_APPEARANCE,
   setWindowAppearance: async () => MOCK_SYSTEM_APPEARANCE,
   getUpdateState: async () => MOCK_UPDATE_STATE,
+  getDesktopFeatureFlags: () => ({
+    remoteAccess: true,
+    workspacePicker: workspacePickerEnabled,
+    workspaceLifecycle: workspaceLifecycleEnabled,
+  }),
   checkForUpdates: async () => {},
   quitAndInstallUpdate: async () => {},
   onSystemAppearanceChanged: () => () => {},
@@ -88,6 +95,8 @@ function setupWorkspacePageJsdom() {
 
 describe("desktop workspaces page", () => {
   beforeEach(() => {
+    workspacePickerEnabled = true;
+    workspaceLifecycleEnabled = true;
     useAppStore.setState((state) => ({
       ...state,
       ready: true,
@@ -433,6 +442,84 @@ describe("desktop workspaces page", () => {
       });
 
       expect(updateWorkspaceDefaults).toHaveBeenCalledWith("ws-1", { defaultEnableA2ui: false });
+    } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
+      harness.restore();
+    }
+  });
+
+  test("hides browser-only unsupported workspace management controls", async () => {
+    workspacePickerEnabled = false;
+    workspaceLifecycleEnabled = false;
+    useAppStore.setState((state) => ({
+      ...state,
+      perWorkspaceSettings: true,
+      workspaces: [
+        {
+          id: "ws-1",
+          name: "Workspace",
+          path: "/tmp/workspace",
+          createdAt: "2026-04-17T00:00:00.000Z",
+          lastOpenedAt: "2026-04-17T00:00:00.000Z",
+          defaultProvider: "google",
+          defaultModel: "gemini-3-flash-preview",
+          defaultPreferredChildModel: "gemini-3-flash-preview",
+          defaultChildModelRoutingMode: "same-provider",
+          defaultPreferredChildModelRef: "google:gemini-3-flash-preview",
+          defaultAllowedChildModelRefs: [],
+          defaultEnableMcp: true,
+          defaultEnableA2ui: true,
+          defaultBackupsEnabled: true,
+          yolo: false,
+        },
+      ],
+      selectedWorkspaceId: "ws-1",
+      providerCatalog: [
+        {
+          id: "google",
+          name: "Google",
+          defaultModel: "gemini-3-flash-preview",
+          models: [{ id: "gemini-3-flash-preview", displayName: "Gemini 3 Flash Preview", knowledgeCutoff: "unknown", supportsImageInput: true }],
+        },
+      ],
+      providerConnected: ["google"],
+      providerStatusByName: {
+        google: { verified: true },
+      },
+      providerDefaultModelByProvider: {
+        google: "gemini-3-flash-preview",
+      },
+    }));
+
+    const harness = setupWorkspacePageJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        root.render(createElement(WorkspacesPage));
+      });
+
+      expect([...container.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Add")).toBe(false);
+
+      const advancedTab = [...container.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Advanced");
+      if (!(advancedTab instanceof harness.dom.window.HTMLButtonElement)) {
+        throw new Error("missing Advanced tab");
+      }
+
+      await act(async () => {
+        advancedTab.click();
+      });
+
+      expect(container.textContent).not.toContain("Restart server");
+      expect(container.textContent).not.toContain("Remove workspace");
     } finally {
       if (root) {
         await act(async () => {

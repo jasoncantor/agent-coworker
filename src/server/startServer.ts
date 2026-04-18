@@ -65,6 +65,7 @@ import {
   resolveWsProtocol,
   splitWebSocketSubprotocolHeader,
 } from "./wsProtocol/negotiation";
+import { handleWebDesktopRoute } from "./webDesktopRoutes";
 
 const jsonObjectSchema = z.record(z.string(), z.unknown());
 const errorWithCodeSchema = z.object({
@@ -1287,12 +1288,53 @@ export async function startAgentServer(
     await jsonRpcRequestRouter(ws, message);
   };
 
+  // Returns the request's Origin header iff it is a loopback origin (localhost/127.0.0.1/::1,
+  // any port). Returns null otherwise, in which case CORS headers are omitted so non-loopback
+  // pages cannot read cross-origin responses from this server.
+  function pickLoopbackOrigin(req: Request): string | null {
+    const origin = req.headers.get("origin");
+    if (!origin) return null;
+    try {
+      const u = new URL(origin);
+      const host = u.hostname;
+      if (
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "[::1]" ||
+        host === "::1"
+      ) {
+        return origin;
+      }
+    } catch {
+      // fall through
+    }
+    return null;
+  }
+
   function createServer(port: number): ReturnType<typeof Bun.serve> {
     return Bun.serve<StartServerSocketData>({
       hostname,
       port,
-      fetch(req, srv) {
+      async fetch(req, srv) {
         const url = new URL(req.url);
+        const allowedOrigin = pickLoopbackOrigin(req);
+        const corsHeaders: Record<string, string> = allowedOrigin
+          ? {
+              "Access-Control-Allow-Origin": allowedOrigin,
+              Vary: "Origin",
+            }
+          : {};
+        if (req.method === "OPTIONS") {
+          return new Response(null, {
+            status: 204,
+            headers: {
+              ...corsHeaders,
+              "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+              "Access-Control-Allow-Headers": "Content-Type, Sec-WebSocket-Protocol",
+              "Access-Control-Max-Age": "86400",
+            },
+          });
+        }
         if (url.pathname === "/ws") {
           const resumeSessionIdRaw = url.searchParams.get("resumeSessionId");
           const resumeSessionId = resumeSessionIdRaw && resumeSessionIdRaw.trim() ? resumeSessionIdRaw.trim() : undefined;
@@ -1302,7 +1344,7 @@ export async function startAgentServer(
             defaultProtocol: wsProtocolDefault,
           });
           if (!protocolResult.ok) {
-            return new Response(protocolResult.error, { status: 400 });
+            return new Response(protocolResult.error, { status: 400, headers: corsHeaders });
           }
           const upgraded = srv.upgrade(req, {
             headers: protocolResult.protocol.selectedSubprotocol
@@ -1318,9 +1360,16 @@ export async function startAgentServer(
             },
           });
           if (upgraded) return;
-          return new Response("WebSocket upgrade failed", { status: 400 });
+          return new Response("WebSocket upgrade failed", { status: 400, headers: corsHeaders });
         }
-        return new Response("OK", { status: 200 });
+        const webDesktopRoute = await handleWebDesktopRoute(req, { cwd: opts.cwd });
+        if (webDesktopRoute) {
+          for (const [key, value] of Object.entries(corsHeaders)) {
+            webDesktopRoute.headers.set(key, value);
+          }
+          return webDesktopRoute;
+        }
+        return new Response("OK", { status: 200, headers: corsHeaders });
       },
       websocket: {
         open(ws) {
