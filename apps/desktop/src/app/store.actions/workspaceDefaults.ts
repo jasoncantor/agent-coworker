@@ -173,6 +173,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
       provider?: ProviderName;
       model?: string;
       enableMcp?: boolean;
+      enableA2ui?: boolean;
       backupsEnabled?: boolean;
       toolOutputOverflowChars?: number | null;
       preferredChildModel?: string;
@@ -201,6 +202,13 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
     const enableMcpChanged =
       typeof opts.desired.enableMcp === "boolean"
       && opts.desired.enableMcp !== opts.current.enableMcp;
+
+    if (
+      typeof opts.desired.enableA2ui === "boolean"
+      && opts.desired.enableA2ui !== opts.current.sessionConfig?.enableA2ui
+    ) {
+      configPatch.enableA2ui = opts.desired.enableA2ui;
+    }
 
     if (
       typeof opts.desired.backupsEnabled === "boolean"
@@ -320,6 +328,10 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
           ? normalizeWorkspaceUserProfile(workspace.userProfile)
           : undefined,
       defaultEnableMcp: typeof runtime?.controlEnableMcp === "boolean" ? runtime.controlEnableMcp : workspace.defaultEnableMcp,
+      defaultEnableA2ui:
+        typeof controlSessionConfig?.enableA2ui === "boolean"
+          ? controlSessionConfig.enableA2ui
+          : workspace.defaultEnableA2ui ?? true,
       defaultBackupsEnabled:
         typeof controlSessionConfig?.defaultBackupsEnabled === "boolean"
           ? controlSessionConfig.defaultBackupsEnabled
@@ -413,6 +425,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         });
         return;
       }
+      const harnessA2uiDefault = workspaceRuntime?.controlSessionConfig?.enableA2ui;
       const harnessBackupsDefault = workspaceRuntime?.controlSessionConfig?.defaultBackupsEnabled;
       const harnessToolOutputOverflowChars = workspaceRuntime?.controlSessionConfig?.defaultToolOutputOverflowChars;
 
@@ -493,6 +506,9 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         desired: {
           ...(!preserveSessionModel && provider && model ? { provider, model } : {}),
           enableMcp: desiredEnableMcp,
+          ...(typeof (mode === "explicit" ? ws.defaultEnableA2ui : harnessA2uiDefault) === "boolean"
+            ? { enableA2ui: mode === "explicit" ? (ws.defaultEnableA2ui ?? true) : harnessA2uiDefault }
+            : {}),
           ...(typeof (mode === "explicit" ? ws.defaultBackupsEnabled : harnessBackupsDefault) === "boolean"
             ? { backupsEnabled: mode === "explicit" ? ws.defaultBackupsEnabled : harnessBackupsDefault }
             : {}),
@@ -590,6 +606,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
         workspacePatch.defaultToolOutputOverflowChars !== undefined ||
         clearDefaultToolOutputOverflowChars === true ||
         workspacePatch.defaultEnableMcp !== undefined ||
+        workspacePatch.defaultEnableA2ui !== undefined ||
         workspacePatch.defaultBackupsEnabled !== undefined ||
         workspacePatch.providerOptions !== undefined ||
         workspacePatch.userName !== undefined ||
@@ -643,6 +660,7 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
               provider,
               model,
               enableMcp: nextWorkspace.defaultEnableMcp,
+              enableA2ui: nextWorkspace.defaultEnableA2ui ?? true,
               backupsEnabled: nextWorkspace.defaultBackupsEnabled,
               toolOutputOverflowChars,
               ...(preferredChildModel ? { preferredChildModel } : {}),

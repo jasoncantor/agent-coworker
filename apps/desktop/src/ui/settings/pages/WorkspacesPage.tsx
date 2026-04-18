@@ -1165,6 +1165,7 @@ export function WorkspacesPage() {
   const preferredChildModelRef = (ws?.defaultPreferredChildModelRef ?? `${provider}:${preferredChildModel || model}`).trim();
   const allowedChildModelRefs = ws?.defaultAllowedChildModelRefs ?? [];
   const enableMcp = ws?.defaultEnableMcp ?? true;
+  const enableA2ui = ws?.defaultEnableA2ui ?? true;
   const backupsEnabled = ws?.defaultBackupsEnabled ?? true;
   const yolo = ws?.yolo ?? false;
 
@@ -1356,6 +1357,21 @@ export function WorkspacesPage() {
                     onPressedChange={(next) => {
                       if (!ws) return;
                       void updateWorkspaceDefaults(ws.id, { defaultBackupsEnabled: next });
+                    }}
+                  />
+                </div>
+
+                <div className="flex items-start justify-between gap-4 max-[960px]:flex-col">
+                  <div>
+                    <div className="text-sm font-medium">Generative UI (A2UI)</div>
+                    <div className="text-xs text-muted-foreground">Let models render richer cards, forms, tables, and other A2UI surfaces in chat for this workspace.</div>
+                  </div>
+                  <ToggleChip
+                    pressed={enableA2ui}
+                    aria-label="Enable A2UI generative UI"
+                    onPressedChange={(next) => {
+                      if (!ws) return;
+                      void updateWorkspaceDefaults(ws.id, { defaultEnableA2ui: next });
                     }}
                   />
                 </div>

@@ -194,7 +194,7 @@ function makeSession(
       patch: Partial<
         Pick<
           AgentConfig,
-          "provider" | "model" | "preferredChildModel" | "enableMcp" | "enableMemory" | "memoryRequireApproval" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars" | "userName"
+          "provider" | "model" | "preferredChildModel" | "enableMcp" | "enableA2ui" | "enableMemory" | "memoryRequireApproval" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars" | "userName"
         >
       > & {
         userProfile?: Partial<NonNullable<AgentConfig["userProfile"]>>;
@@ -639,6 +639,32 @@ describe("AgentSession", () => {
       ]);
     });
 
+    test("setConfig refreshes the cached system prompt when enableA2ui changes", async () => {
+      const persistProjectConfigPatchImpl = mock(async () => {});
+      const loadSystemPromptWithSkillsImpl = mock(async (config: AgentConfig) => ({
+        prompt: `prompt:a2ui-${String(config.enableA2ui ?? true)}`,
+        discoveredSkills: [{ name: "ui-skill", description: "UI skill" }],
+      }));
+      const { session } = makeSession({
+        persistProjectConfigPatchImpl,
+        loadSystemPromptWithSkillsImpl,
+        system: "prompt:a2ui-true",
+      });
+
+      await session.setConfig({ enableA2ui: false });
+      await session.sendUserMessage("hello");
+
+      expect(loadSystemPromptWithSkillsImpl).toHaveBeenCalledTimes(1);
+      expect(persistProjectConfigPatchImpl).toHaveBeenCalledWith({ enableA2ui: false });
+
+      const runTurnArgs = mockRunTurn.mock.calls.at(-1)?.[0] as any;
+      expect(runTurnArgs.system).toBe("prompt:a2ui-false");
+      expect(runTurnArgs.discoveredSkills).toEqual([
+        { name: "ui-skill", description: "UI skill" },
+      ]);
+      expect(session.getSessionConfigEvent().config.enableA2ui).toBe(false);
+    });
+
     test("upsertMemory refreshes the cached system prompt for later turns", async () => {
       const loadSystemPromptWithSkillsImpl = mock(async () => ({
         prompt: "prompt:memory-updated",
@@ -912,6 +938,7 @@ describe("AgentSession", () => {
       expect(evt.config.observabilityEnabled).toBe(false);
       expect(evt.config.backupsEnabled).toBe(true);
       expect(evt.config.defaultBackupsEnabled).toBe(true);
+      expect(evt.config.enableA2ui).toBe(true);
       expect(evt.config.toolOutputOverflowChars).toBe(25000);
       expect("defaultToolOutputOverflowChars" in evt.config).toBe(false);
       expect(evt.config.preferredChildModel).toBe("gemini-3-flash-preview");

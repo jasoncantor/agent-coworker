@@ -608,7 +608,7 @@ When a WebSocket connection opens, the server sends these events in order:
 
 1. `server_hello` — session ID, config, protocol version, capabilities
 2. `session_settings` — current runtime settings (e.g. MCP toggle)
-3. `session_config` — current runtime config (`yolo`, `observabilityEnabled`, `backupsEnabled`, `defaultBackupsEnabled`, `toolOutputOverflowChars`, `defaultToolOutputOverflowChars`, `preferredChildModel`, `childModelRoutingMode`, `preferredChildModelRef`, `allowedChildModelRefs`, `maxSteps`, `providerOptions`, `userName`, `userProfile`)
+3. `session_config` — current runtime config (`yolo`, `observabilityEnabled`, `backupsEnabled`, `defaultBackupsEnabled`, `enableA2ui`, `toolOutputOverflowChars`, `defaultToolOutputOverflowChars`, `preferredChildModel`, `childModelRoutingMode`, `preferredChildModelRef`, `allowedChildModelRefs`, `maxSteps`, `providerOptions`, `userName`, `userProfile`)
 4. `session_info` — session metadata including title
 5. `observability_status` — Langfuse observability state
 6. `provider_catalog` — available providers and models (async)
@@ -4487,6 +4487,7 @@ Current runtime config. Sent on connection and after `set_config`.
     "observabilityEnabled": true,
     "backupsEnabled": true,
     "defaultBackupsEnabled": true,
+    "enableA2ui": true,
     "toolOutputOverflowChars": 25000,
     "defaultToolOutputOverflowChars": 25000,
     "preferredChildModel": "gpt-5.4",
@@ -4540,6 +4541,7 @@ Current runtime config. Sent on connection and after `set_config`.
 | `config.observabilityEnabled` | `boolean` | Whether observability is enabled |
 | `config.backupsEnabled` | `boolean` | Whether backups are enabled for the live session after applying any session-scoped override |
 | `config.defaultBackupsEnabled` | `boolean` | The persisted workspace backup default from the harness/core config, before any live session override is applied |
+| `config.enableA2ui` | `boolean` | Whether A2UI generative UI is enabled for the session/workspace default and therefore exposed in the model prompt/tool contract |
 | `config.toolOutputOverflowChars` | `number \| null` | Effective character threshold for when oversized tool outputs start spilling into `.ModelScratchpad`; `null` disables spill files. Spill results still keep a fixed inline preview (currently the first 5,000 characters). |
 | `config.defaultToolOutputOverflowChars` | `number \| null` | Persisted workspace overflow default when explicitly configured; omitted when the session is inheriting the built-in or user-level default |
 | `config.preferredChildModel` | `string` | Normalized same-provider fallback model identifier used for legacy/default suggestion state |

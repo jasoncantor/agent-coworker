@@ -373,6 +373,76 @@ describe("desktop workspaces page", () => {
     expect(html).toContain("Background details");
   });
 
+  test("renders and wires the A2UI workspace toggle", async () => {
+    const updateWorkspaceDefaults = mock(async () => {});
+    useAppStore.setState((state) => ({
+      ...state,
+      perWorkspaceSettings: true,
+      workspaces: [
+        {
+          id: "ws-1",
+          name: "Workspace",
+          path: "/tmp/workspace",
+          createdAt: "2026-04-17T00:00:00.000Z",
+          lastOpenedAt: "2026-04-17T00:00:00.000Z",
+          defaultProvider: "google",
+          defaultModel: "gemini-3-flash-preview",
+          defaultPreferredChildModel: "gemini-3-flash-preview",
+          defaultChildModelRoutingMode: "same-provider",
+          defaultPreferredChildModelRef: "google:gemini-3-flash-preview",
+          defaultAllowedChildModelRefs: [],
+          defaultEnableMcp: true,
+          defaultEnableA2ui: true,
+          defaultBackupsEnabled: true,
+          yolo: false,
+        },
+      ],
+      selectedWorkspaceId: "ws-1",
+      providerCatalog: [
+        {
+          id: "google",
+          name: "Google",
+          defaultModel: "gemini-3-flash-preview",
+          models: [{ id: "gemini-3-flash-preview", displayName: "Gemini 3 Flash Preview", knowledgeCutoff: "unknown", supportsImageInput: true }],
+        },
+      ],
+      updateWorkspaceDefaults,
+    }));
+
+    const harness = setupWorkspacePageJsdom();
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+      const container = harness.dom.window.document.getElementById("root");
+      if (!container) throw new Error("missing root");
+      root = createRoot(container);
+
+      await act(async () => {
+        root.render(createElement(WorkspacesPage));
+      });
+
+      expect(container.textContent).toContain("Generative UI (A2UI)");
+
+      const toggle = container.querySelector('[aria-label="Enable A2UI generative UI"]');
+      if (!(toggle instanceof harness.dom.window.HTMLButtonElement)) {
+        throw new Error("missing A2UI toggle");
+      }
+
+      await act(async () => {
+        toggle.click();
+      });
+
+      expect(updateWorkspaceDefaults).toHaveBeenCalledWith("ws-1", { defaultEnableA2ui: false });
+    } finally {
+      if (root) {
+        await act(async () => {
+          root.unmount();
+        });
+      }
+      harness.restore();
+    }
+  });
+
   test("renders cross-provider child routing controls for workspace defaults", async () => {
     useAppStore.setState((state) => ({
       ...state,

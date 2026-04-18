@@ -85,6 +85,7 @@ export const sessionDefaultsApplyRequestSchema = z.object({
   enableMcp: z.boolean().optional(),
   config: z.object({
     backupsEnabled: z.boolean().optional(),
+    enableA2ui: z.boolean().optional(),
     toolOutputOverflowChars: z.number().int().nullable().optional(),
     clearToolOutputOverflowChars: z.boolean().optional(),
     preferredChildModel: z.string().optional(),
@@ -124,6 +125,7 @@ export const sessionConfigEventSchema = z.object({
     observabilityEnabled: z.boolean().optional(),
     backupsEnabled: z.boolean().optional(),
     defaultBackupsEnabled: z.boolean().optional(),
+    enableA2ui: z.boolean().optional(),
     enableMemory: z.boolean().optional(),
     memoryRequireApproval: z.boolean().optional(),
     preferredChildModel: z.string().optional(),

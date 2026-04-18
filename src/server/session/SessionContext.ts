@@ -59,6 +59,7 @@ export type PersistedProjectConfigPatch = Partial<
     | "preferredChildModelRef"
     | "allowedChildModelRefs"
     | "enableMcp"
+    | "enableA2ui"
     | "enableMemory"
     | "memoryRequireApproval"
     | "observabilityEnabled"

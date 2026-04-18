@@ -213,6 +213,7 @@ const persistedWorkspaceSchema = z.object({
     details: optionalStringSchema,
   }).passthrough().optional(),
   defaultEnableMcp: z.preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean()),
+  defaultEnableA2ui: z.preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean()).optional(),
   defaultBackupsEnabled: z.preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean()),
   yolo: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()),
 }).passthrough();

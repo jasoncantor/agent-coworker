@@ -173,6 +173,7 @@ const persistedWorkspaceSchema = z.object({
     details: optionalStringSchema,
   }).passthrough().optional(),
   defaultEnableMcp: z.preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean()),
+  defaultEnableA2ui: z.preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean()).optional(),
   defaultBackupsEnabled: z.preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean()),
   yolo: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()),
 }).passthrough().transform((workspace): WorkspaceRecord => {
@@ -207,6 +208,7 @@ const persistedWorkspaceSchema = z.object({
     userName: workspace.userName,
     userProfile: workspace.userProfile ? normalizeWorkspaceUserProfile(workspace.userProfile) : undefined,
     defaultEnableMcp: workspace.defaultEnableMcp,
+    defaultEnableA2ui: workspace.defaultEnableA2ui ?? true,
     defaultBackupsEnabled: workspace.defaultBackupsEnabled,
     yolo: workspace.yolo,
   };
@@ -729,6 +731,7 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
             "userName",
             "userProfile",
             "defaultEnableMcp",
+            "defaultEnableA2ui",
             "defaultBackupsEnabled",
             "yolo",
           ];

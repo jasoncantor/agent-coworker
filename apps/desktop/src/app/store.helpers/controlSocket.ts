@@ -762,6 +762,9 @@ export function createControlSocketHelpers(
             ? {
                 ...workspace,
                 defaultBackupsEnabled: evt.config.defaultBackupsEnabled,
+                defaultEnableA2ui: typeof evt.config.enableA2ui === "boolean"
+                  ? evt.config.enableA2ui
+                  : workspace.defaultEnableA2ui,
                 defaultPreferredChildModel: evt.config.preferredChildModel,
                 defaultChildModelRoutingMode: evt.config.childModelRoutingMode,
                 defaultPreferredChildModelRef: evt.config.preferredChildModelRef,

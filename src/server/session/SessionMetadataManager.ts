@@ -75,6 +75,7 @@ export class SessionMetadataManager {
             },
           }
         : {}),
+      ...(patch.enableA2ui !== undefined ? { enableA2ui: patch.enableA2ui } : {}),
       ...(patch.enableMemory !== undefined ? { enableMemory: patch.enableMemory } : {}),
     };
   }
@@ -90,6 +91,9 @@ export class SessionMetadataManager {
     }
     if (patch.backupsEnabled !== undefined) {
       nextConfig = { ...nextConfig, backupsEnabled: patch.backupsEnabled };
+    }
+    if (patch.enableA2ui !== undefined) {
+      nextConfig = { ...nextConfig, enableA2ui: patch.enableA2ui };
     }
     if (patch.enableMemory !== undefined) {
       nextConfig = { ...nextConfig, enableMemory: patch.enableMemory };
@@ -171,6 +175,9 @@ export class SessionMetadataManager {
     if (patch.backupsEnabled !== undefined) {
       persistPatch.backupsEnabled = patch.backupsEnabled;
     }
+    if (patch.enableA2ui !== undefined) {
+      persistPatch.enableA2ui = patch.enableA2ui;
+    }
     if (patch.enableMemory !== undefined) {
       persistPatch.enableMemory = patch.enableMemory;
     }
@@ -208,6 +215,7 @@ export class SessionMetadataManager {
       || baseMaxSteps !== nextMaxSteps
       || (baseConfig.observabilityEnabled ?? false) !== (nextConfig.observabilityEnabled ?? false)
       || (baseConfig.backupsEnabled ?? true) !== (nextConfig.backupsEnabled ?? true)
+      || (baseConfig.enableA2ui ?? true) !== (nextConfig.enableA2ui ?? true)
       || (baseConfig.enableMemory ?? true) !== (nextConfig.enableMemory ?? true)
       || (baseConfig.memoryRequireApproval ?? false) !== (nextConfig.memoryRequireApproval ?? false)
       || baseConfig.preferredChildModel !== nextConfig.preferredChildModel
@@ -260,6 +268,7 @@ export class SessionMetadataManager {
         yolo: this.context.state.yolo,
         observabilityEnabled: this.context.state.config.observabilityEnabled ?? false,
         backupsEnabled,
+        enableA2ui: this.context.state.config.enableA2ui ?? true,
         enableMemory: this.context.state.config.enableMemory ?? true,
         memoryRequireApproval: this.context.state.config.memoryRequireApproval ?? false,
         defaultBackupsEnabled,
@@ -469,6 +478,7 @@ export class SessionMetadataManager {
     if (
       patch.userName !== undefined
       || patch.userProfile !== undefined
+      || patch.enableA2ui !== undefined
       || patch.enableMemory !== undefined
       || patch.providerOptions !== undefined
     ) {

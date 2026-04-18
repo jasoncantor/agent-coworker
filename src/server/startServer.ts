@@ -154,6 +154,7 @@ async function persistProjectConfigPatch(
       | "preferredChildModelRef"
       | "allowedChildModelRefs"
       | "enableMcp"
+      | "enableA2ui"
       | "enableMemory"
       | "memoryRequireApproval"
       | "observabilityEnabled"
@@ -234,6 +235,7 @@ function mergeConfigPatch(
       | "preferredChildModelRef"
       | "allowedChildModelRefs"
       | "enableMcp"
+      | "enableA2ui"
       | "enableMemory"
       | "memoryRequireApproval"
       | "observabilityEnabled"
@@ -581,6 +583,7 @@ export async function startAgentServer(
           observabilityEnabled: controlConfig.observabilityEnabled ?? false,
           backupsEnabled: defaultBackupsEnabled,
           defaultBackupsEnabled,
+          enableA2ui: controlConfig.enableA2ui ?? true,
           enableMemory: controlConfig.enableMemory ?? true,
           memoryRequireApproval: controlConfig.memoryRequireApproval ?? false,
           preferredChildModel: controlConfig.preferredChildModel,
@@ -652,6 +655,7 @@ export async function startAgentServer(
               | "preferredChildModelRef"
               | "allowedChildModelRefs"
               | "enableMcp"
+              | "enableA2ui"
               | "enableMemory"
               | "memoryRequireApproval"
               | "observabilityEnabled"

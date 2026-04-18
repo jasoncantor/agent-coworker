@@ -54,6 +54,7 @@ export type SessionConfigPatch = {
   yolo?: boolean;
   observabilityEnabled?: boolean;
   backupsEnabled?: boolean;
+  enableA2ui?: boolean;
   enableMemory?: boolean;
   memoryRequireApproval?: boolean;
   preferredChildModel?: string;
@@ -77,6 +78,7 @@ export type SessionConfigState = {
   observabilityEnabled: boolean;
   backupsEnabled: boolean;
   defaultBackupsEnabled: boolean;
+  enableA2ui: boolean;
   enableMemory: boolean;
   memoryRequireApproval: boolean;
   preferredChildModel: string;

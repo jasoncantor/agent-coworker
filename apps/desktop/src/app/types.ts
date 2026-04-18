@@ -72,6 +72,7 @@ export type WorkspaceRecord = {
   userName?: string;
   userProfile?: WorkspaceUserProfile;
   defaultEnableMcp: boolean;
+  defaultEnableA2ui?: boolean;
   defaultBackupsEnabled: boolean;
   yolo: boolean;
 };

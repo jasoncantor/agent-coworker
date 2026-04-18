@@ -110,6 +110,7 @@ export function createWorkspaceActions(set: StoreSet, get: StoreGet): Pick<AppSt
         defaultPreferredChildModelRef: `google:${defaultModelForProvider("google")}`,
         defaultAllowedChildModelRefs: [],
         defaultEnableMcp: true,
+        defaultEnableA2ui: true,
         defaultBackupsEnabled: true,
         yolo: false,
       };
