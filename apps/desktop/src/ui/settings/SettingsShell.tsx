@@ -123,7 +123,7 @@ function SettingsNavigation({
   const perWorkspaceSettings = useAppStore((s) => s.perWorkspaceSettings);
 
   return (
-    <aside className="settings-shell__nav app-left-sidebar-pane flex min-h-0 min-w-0 flex-col border-r border-border/50 max-[960px]:border-r-0 max-[960px]:border-b">
+    <aside className="settings-shell__nav app-left-sidebar-pane flex min-h-0 min-w-0 flex-col border-r border-border/50 max-[860px]:border-r-0 max-[860px]:border-b">
       <div className="shrink-0 border-b border-border/50 px-3 py-3">
         <Button
           className="settings-shell__back-button h-9 w-full justify-start rounded-md border border-border/50 bg-foreground/[0.03] px-2.5 text-[13px] font-medium"
@@ -145,7 +145,7 @@ function SettingsNavigation({
         className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2 pb-4"
         aria-label="Settings sections"
       >
-        <div className="flex flex-col gap-3 max-[960px]:flex-row max-[960px]:flex-wrap max-[960px]:gap-x-4 max-[960px]:gap-y-3">
+        <div className="flex flex-col gap-3 max-[860px]:flex-row max-[860px]:flex-wrap max-[860px]:gap-x-4 max-[860px]:gap-y-3">
           {settingsGroups.map((group) => (
             <div key={group.label} className="flex min-w-0 flex-col">
               <div className="mb-0.5 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
@@ -199,7 +199,7 @@ export function SettingsShell() {
       className="settings-shell relative grid h-full min-h-0 min-w-0 bg-transparent"
       style={{ gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)` }}
     >
-      <div className="settings-shell__drag-zone" aria-hidden="true" />
+      <div className="settings-shell__drag-zone absolute inset-x-0 top-0" aria-hidden="true" />
       <SettingsNavigation
         activePage={settingsPage}
         onSelectPage={setSettingsPage}
@@ -217,7 +217,7 @@ export function SettingsShell() {
           >
             <header
               className={cn(
-                "settings-shell__page-header shrink-0 px-5 py-4 backdrop-blur-sm max-[960px]:px-4",
+                "settings-shell__page-header shrink-0 px-5 py-4 backdrop-blur-sm max-[860px]:px-4",
                 isBackupPage ? "" : "sticky top-0 z-10",
               )}
             >
@@ -249,7 +249,7 @@ export function SettingsShell() {
                   "settings-shell__content w-full",
                   isBackupPage
                     ? "flex min-h-0 flex-1 flex-col p-0"
-                    : "max-[960px]:p-4 min-[961px]:px-5 min-[961px]:pb-6 min-[961px]:pt-4",
+                    : "max-[860px]:p-4 min-[861px]:px-5 min-[861px]:pb-6 min-[861px]:pt-4",
                 )}
               >
                 <div
