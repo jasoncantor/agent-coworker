@@ -183,7 +183,7 @@ export function AppTopBar({
       {showWin32CollapsedStrip ? (
         <div className="app-topbar__win32-left-rail absolute inset-y-0 left-0">
           <div className="app-topbar__win32-left-drag-zone" aria-hidden="true" />
-          <div className="app-topbar__sidebar-strip app-topbar__win32-left-strip app-topbar__toolbar app-topbar__controls absolute inset-0 flex min-w-0 items-center gap-1 px-2">
+          <div className="app-topbar__sidebar-strip app-topbar__win32-left-strip app-topbar__toolbar-layer app-topbar__controls absolute inset-0 flex min-w-0 items-center gap-1 px-2">
             <Button
               size="icon-sm"
               variant="ghost"
@@ -209,7 +209,7 @@ export function AppTopBar({
           </div>
         </div>
       ) : isWin32 ? null : (
-        <div className="app-topbar__inline-sidebar-toggle app-topbar__toolbar app-topbar__controls absolute left-3 top-1/2 flex min-w-0 -translate-y-1/2 items-center gap-1">
+        <div className="app-topbar__inline-sidebar-toggle app-topbar__toolbar-layer app-topbar__controls absolute left-3 top-1/2 flex min-w-0 -translate-y-1/2 items-center gap-1">
           <Button
             size="icon-sm"
             variant="ghost"
@@ -388,7 +388,7 @@ export function AppTopBar({
       </div>
 
       {showContextToggle || busy ? (
-        <div className="app-topbar__toolbar app-topbar__toolbar--right app-topbar__controls absolute inset-y-0 right-3 flex items-center gap-1.5">
+        <div className="app-topbar__toolbar-layer app-topbar__toolbar--right app-topbar__controls absolute inset-y-0 right-3 flex items-center gap-1.5">
           {busy ? (
             <Badge variant="secondary" className="gap-1.5 rounded-md border-border/55 bg-muted/20 px-2 py-0 text-[11px] text-muted-foreground shadow-none">
               <LoaderCircleIcon className="h-3 w-3 animate-spin" />
