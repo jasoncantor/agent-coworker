@@ -378,6 +378,10 @@ export function createWorkspaceDefaultsActions(set: StoreSet, get: StoreGet): Pi
               ...workspace.defaultFeatureFlags,
               ...featureFlagPatch,
             }),
+            defaultEnableA2ui: resolveWorkspaceFeatureFlags({
+              ...workspace.defaultFeatureFlags,
+              ...featureFlagPatch,
+            }).a2ui,
           }
         : {}),
       ...(workspacePatch.providerOptions !== undefined

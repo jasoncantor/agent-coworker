@@ -627,6 +627,7 @@ describe("control socket helpers over JSON-RPC", () => {
       experimentalApi: false,
       a2ui: false,
     });
+    expect(state.workspaces[0]?.defaultEnableA2ui).toBe(false);
   });
 
   test("pending waiter diagnostics reflect in-flight JSON-RPC waits", async () => {

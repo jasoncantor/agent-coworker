@@ -780,6 +780,10 @@ export function createControlSocketHelpers(
                         ...workspace.defaultFeatureFlags,
                         ...defaultFeatureFlags,
                       }),
+                      defaultEnableA2ui: resolveWorkspaceFeatureFlags({
+                        ...workspace.defaultFeatureFlags,
+                        ...defaultFeatureFlags,
+                      }).a2ui,
                     }
                   : {}),
                 providerOptions,
