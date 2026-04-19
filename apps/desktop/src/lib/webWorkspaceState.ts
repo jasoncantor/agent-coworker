@@ -85,6 +85,7 @@ export function loadPersistedState(): PersistedState {
       threads: parsed.threads ?? [],
       developerMode: parsed.developerMode ?? false,
       showHiddenFiles: parsed.showHiddenFiles ?? false,
+      desktopFeatureFlagOverrides: parsed.desktopFeatureFlagOverrides ?? {},
       perWorkspaceSettings: parsed.perWorkspaceSettings,
       providerState: parsed.providerState,
       providerUiState: parsed.providerUiState,

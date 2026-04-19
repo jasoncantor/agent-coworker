@@ -105,6 +105,24 @@ describe("web workspace state", () => {
     expect(reloadedSecondState.threads).toHaveLength(0);
     expect(reloadedSecondState.showHiddenFiles).toBe(true);
   });
+
+  test("preserves desktop feature flag overrides in localStorage-backed state", () => {
+    saveServerUrl("ws://127.0.0.1:7337/ws");
+    saveWorkspacePath("/tmp/workspace-one");
+
+    const state = seedWorkspaceFromUrl("ws://127.0.0.1:7337/ws", "/tmp/workspace-one");
+    state.desktopFeatureFlagOverrides = {
+      remoteAccess: false,
+      workspacePicker: true,
+    };
+    savePersistedState(state);
+
+    const reloaded = loadPersistedState();
+    expect(reloaded.desktopFeatureFlagOverrides).toEqual({
+      remoteAccess: false,
+      workspacePicker: true,
+    });
+  });
 });
 
 afterAll(() => {

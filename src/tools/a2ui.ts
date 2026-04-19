@@ -64,8 +64,9 @@ Example (minimal createSurface):
 Security rules (enforced by the client):
   - Text values always render as plain text. HTML tags are NOT parsed.
   - Image URLs must be http(s). Other schemes are ignored.
-  - Interactions (button clicks, form submits) are not yet delivered back to the agent;
-    treat the surfaces as display-only for this release.`;
+  - In supported clients, interactions (button clicks, form submits) are delivered
+    back to the agent through A2UI action events. Design surfaces so the agent can
+    react with follow-up a2ui tool calls or normal assistant text after user input.`;
 
 export function createA2uiTool(ctx: ToolContext) {
   return defineTool({

@@ -116,9 +116,11 @@ export class A2uiSurfaceManager {
     now = new Date().toISOString(),
     meta: A2uiApplyMeta = {},
   ): A2uiApplyResult {
-    this.evictIfOverflowing(now);
-
     const kind = envelopeKind(envelope);
+    const incomingSurfaceId = envelopeSurfaceId(envelope);
+    if (kind === "createSurface" && !this.surfaces[incomingSurfaceId]) {
+      this.evictIfOverflowing(now);
+    }
     const result = applyEnvelope(this.surfaces, envelope, now);
     this.surfaces = { ...result.surfaces };
 

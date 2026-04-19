@@ -140,6 +140,22 @@ describe("a2uiDockReducer", () => {
     expect(dock.revisionsBySurfaceId.s1![0]!.changeKind).toBe("updateDataModel");
   });
 
+  test("still coalesces revisions from the same toolCallId outside the reason time window", () => {
+    let dock = createDefaultA2uiDock();
+    dock = recordSurfaceRevision(
+      dock,
+      makeProjected({ revision: 1, toolCallId: "tc1", reason: "Render", changeKind: "createSurface" }),
+      "2026-04-17T00:00:00.000Z",
+    );
+    dock = recordSurfaceRevision(
+      dock,
+      makeProjected({ revision: 2, toolCallId: "tc1", reason: "Render", changeKind: "updateDataModel" }),
+      "2026-04-17T00:00:05.000Z",
+    );
+    expect(dock.revisionsBySurfaceId.s1).toHaveLength(1);
+    expect(dock.revisionsBySurfaceId.s1![0]!.revision).toBe(2);
+  });
+
   test("does not coalesce revisions from different tool calls", () => {
     let dock = createDefaultA2uiDock();
     dock = recordSurfaceRevision(

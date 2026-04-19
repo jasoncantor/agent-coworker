@@ -30,6 +30,14 @@ function createMockContext(overrides?: Partial<ToolContext>): {
 }
 
 describe("a2ui tool", () => {
+  test("describes interactions as agent-delivered rather than display-only", () => {
+    const { ctx } = createMockContext();
+    const tool = createA2uiTool(ctx);
+    expect(tool.description).toContain("supported clients");
+    expect(tool.description).toContain("action events");
+    expect(tool.description).not.toContain("display-only");
+  });
+
   test("throws when A2UI is not enabled", async () => {
     const { ctx } = createMockContext({ applyA2uiEnvelope: undefined });
     const tool = createA2uiTool(ctx);

@@ -41,8 +41,8 @@ function toRevision(item: ProjectedUiSurface, ts: string): A2uiSurfaceRevision {
 const COALESCE_WINDOW_MS = 2000;
 
 /**
- * Two revisions coalesce when they're close in time AND either:
- *   - share a `toolCallId` (strongest signal), or
+ * Two revisions coalesce when they either:
+ *   - share a `toolCallId` (strongest signal; unconditional across time), or
  *   - share an identical `reason` string within COALESCE_WINDOW_MS.
  *
  * This groups the multi-envelope rebuilds the model sometimes emits (which
