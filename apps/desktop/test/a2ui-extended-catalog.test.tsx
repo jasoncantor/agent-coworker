@@ -94,6 +94,26 @@ describe("A2uiRenderer extended catalog (Phase 3)", () => {
       ],
     });
     expect(unsafe).not.toContain("javascript:alert");
+
+    const dataHref = render({
+      id: "root",
+      type: "Column",
+      children: [
+        { id: "a", type: "Link", props: { text: "bad", href: "data:text/html,<h1>owned</h1>" } },
+      ],
+    });
+    expect(dataHref).not.toContain("data:text/html");
+  });
+
+  test("Image still accepts data URLs", () => {
+    const html = render({
+      id: "root",
+      type: "Column",
+      children: [
+        { id: "img", type: "Image", props: { src: "data:image/png;base64,ZmFrZQ==", alt: "Inline" } },
+      ],
+    });
+    expect(html).toContain("data:image/png;base64,ZmFrZQ==");
   });
 
   test("ProgressBar clamps values and exposes aria attributes", () => {

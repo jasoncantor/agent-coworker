@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { WebDesktopService } from "../src/server/webDesktopService";
+import { __internal, WebDesktopService } from "../src/server/webDesktopService";
 import { handleWebDesktopRoute } from "../src/server/webDesktopRoutes";
 
 const cleanupPaths = new Set<string>();
@@ -125,5 +125,62 @@ describe("web desktop routes", () => {
     expect(state.desktopFeatureFlagOverrides).toEqual({});
 
     await service.stopAll();
+  });
+
+  test("restarts the workspace server when launch params change for the same workspace id", async () => {
+    const workspaceA = await makeTempDir("cowork-web-desktop-restart-a-");
+    const workspaceB = await makeTempDir("cowork-web-desktop-restart-b-");
+    const starts: Array<{ workspacePath: string; yolo: boolean }> = [];
+    const kills: string[] = [];
+    let launchCount = 0;
+
+    function makeChild(id: string) {
+      return {
+        __id: id,
+        exitCode: null,
+        signalCode: null,
+        once() {
+          return this;
+        },
+      } as any;
+    }
+
+    const manager = new __internal.SourceWorkspaceServerManager({
+      repoRoot: "/repo",
+      sourceEntry: "/repo/src/server/index.ts",
+      launchWorkspaceServer: async ({ workspacePath, yolo }) => {
+        starts.push({ workspacePath, yolo });
+        launchCount += 1;
+        return { child: makeChild(`child-${launchCount}`), url: `ws://mock-${launchCount}` };
+      },
+      gracefulKill: async (child) => {
+        kills.push((child as any).__id);
+      },
+    });
+
+    const first = await manager.startWorkspaceServer({
+      workspaceId: "ws1",
+      workspacePath: workspaceA,
+      yolo: false,
+    });
+    const second = await manager.startWorkspaceServer({
+      workspaceId: "ws1",
+      workspacePath: workspaceA,
+      yolo: false,
+    });
+    const third = await manager.startWorkspaceServer({
+      workspaceId: "ws1",
+      workspacePath: workspaceB,
+      yolo: true,
+    });
+
+    expect(first).toEqual({ url: "ws://mock-1" });
+    expect(second).toEqual({ url: "ws://mock-1" });
+    expect(third).toEqual({ url: "ws://mock-2" });
+    expect(starts).toEqual([
+      { workspacePath: await fs.realpath(workspaceA), yolo: false },
+      { workspacePath: await fs.realpath(workspaceB), yolo: true },
+    ]);
+    expect(kills).toEqual(["child-1"]);
   });
 });

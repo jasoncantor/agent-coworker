@@ -81,6 +81,25 @@ export type WebDesktopServiceLike = {
 type WorkspaceServerHandle = {
   child: ChildProcessByStdio<null, Readable, Readable>;
   url: string;
+  workspacePath: string;
+  yolo: boolean;
+};
+
+type SourceWorkspaceServerLaunch = {
+  child: ChildProcessByStdio<null, Readable, Readable>;
+  url: string;
+};
+
+type SourceWorkspaceServerManagerDeps = {
+  repoRoot?: string;
+  sourceEntry?: string;
+  launchWorkspaceServer?: (opts: {
+    repoRoot: string;
+    sourceEntry: string;
+    workspacePath: string;
+    yolo: boolean;
+  }) => Promise<SourceWorkspaceServerLaunch>;
+  gracefulKill?: (child: ChildProcessByStdio<null, Readable, Readable>) => Promise<void>;
 };
 
 const transcriptEventSchema = z.object({
@@ -418,9 +437,18 @@ async function gracefulKill(child: ChildProcessByStdio<null, Readable, Readable>
 }
 
 class SourceWorkspaceServerManager {
-  private readonly repoRoot = resolveRepoRoot();
-  private readonly sourceEntry = path.join(this.repoRoot, "src", "server", "index.ts");
+  private readonly repoRoot: string;
+  private readonly sourceEntry: string;
   private readonly servers = new Map<string, WorkspaceServerHandle>();
+  private readonly launchWorkspaceServerImpl: NonNullable<SourceWorkspaceServerManagerDeps["launchWorkspaceServer"]>;
+  private readonly gracefulKillImpl: NonNullable<SourceWorkspaceServerManagerDeps["gracefulKill"]>;
+
+  constructor(deps: SourceWorkspaceServerManagerDeps = {}) {
+    this.repoRoot = deps.repoRoot ?? resolveRepoRoot();
+    this.sourceEntry = deps.sourceEntry ?? path.join(this.repoRoot, "src", "server", "index.ts");
+    this.launchWorkspaceServerImpl = deps.launchWorkspaceServer ?? launchWorkspaceServer;
+    this.gracefulKillImpl = deps.gracefulKill ?? gracefulKill;
+  }
 
   async startWorkspaceServer(opts: { workspaceId: string; workspacePath: string; yolo: boolean }): Promise<{ url: string }> {
     const workspaceId = asSafeId(opts.workspaceId);
@@ -431,49 +459,38 @@ class SourceWorkspaceServerManager {
 
     const existing = this.servers.get(workspaceId);
     if (existing && existing.child.exitCode === null && existing.child.signalCode === null) {
-      return { url: existing.url };
-    }
-    if (existing) {
+      if (existing.workspacePath === workspacePath && existing.yolo === opts.yolo) {
+        return { url: existing.url };
+      }
       this.servers.delete(workspaceId);
-      await gracefulKill(existing.child);
+      await this.gracefulKillImpl(existing.child);
+    } else if (existing) {
+      this.servers.delete(workspaceId);
+      await this.gracefulKillImpl(existing.child);
     }
-
-    const args = [
-      this.sourceEntry,
-      "--dir",
-      workspacePath,
-      "--port",
-      "0",
-      "--json",
-      "--ws-protocol-default",
-      "jsonrpc",
-    ];
-    if (opts.yolo) {
-      args.push("--yolo");
-    }
-
-    const child = spawn(process.execPath, args, {
-      cwd: this.repoRoot,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        COWORK_SKIP_DEFAULT_SKILLS_BOOTSTRAP: process.env.COWORK_SKIP_DEFAULT_SKILLS_BOOTSTRAP ?? "1",
-      },
-    });
 
     try {
-      const listening = await waitForServerListening(child);
-      const handle: WorkspaceServerHandle = { child, url: listening.url };
+      const listening = await this.launchWorkspaceServerImpl({
+        repoRoot: this.repoRoot,
+        sourceEntry: this.sourceEntry,
+        workspacePath,
+        yolo: opts.yolo,
+      });
+      const handle: WorkspaceServerHandle = {
+        child: listening.child,
+        url: listening.url,
+        workspacePath,
+        yolo: opts.yolo,
+      };
       this.servers.set(workspaceId, handle);
-      child.once("exit", () => {
+      listening.child.once("exit", () => {
         const active = this.servers.get(workspaceId);
-        if (active?.child === child) {
+        if (active?.child === listening.child) {
           this.servers.delete(workspaceId);
         }
       });
-      return { url: listening.url };
+      return { url: handle.url };
     } catch (error) {
-      await gracefulKill(child);
       throw error;
     }
   }
@@ -488,13 +505,51 @@ class SourceWorkspaceServerManager {
       return;
     }
     this.servers.delete(safeWorkspaceId);
-    await gracefulKill(handle.child);
+    await this.gracefulKillImpl(handle.child);
   }
 
   async stopAll(): Promise<void> {
     const handles = [...this.servers.values()];
     this.servers.clear();
-    await Promise.all(handles.map((handle) => gracefulKill(handle.child)));
+    await Promise.all(handles.map((handle) => this.gracefulKillImpl(handle.child)));
+  }
+}
+
+async function launchWorkspaceServer(opts: {
+  repoRoot: string;
+  sourceEntry: string;
+  workspacePath: string;
+  yolo: boolean;
+}): Promise<SourceWorkspaceServerLaunch> {
+  const args = [
+    opts.sourceEntry,
+    "--dir",
+    opts.workspacePath,
+    "--port",
+    "0",
+    "--json",
+    "--ws-protocol-default",
+    "jsonrpc",
+  ];
+  if (opts.yolo) {
+    args.push("--yolo");
+  }
+
+  const child = spawn(process.execPath, args, {
+    cwd: opts.repoRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      COWORK_SKIP_DEFAULT_SKILLS_BOOTSTRAP: process.env.COWORK_SKIP_DEFAULT_SKILLS_BOOTSTRAP ?? "1",
+    },
+  });
+
+  try {
+    const listening = await waitForServerListening(child);
+    return { child, url: listening.url };
+  } catch (error) {
+    await gracefulKill(child);
+    throw error;
   }
 }
 
@@ -672,3 +727,7 @@ export class WebDesktopService implements WebDesktopServiceLike {
     await this.serverManager.stopAll();
   }
 }
+
+export const __internal = {
+  SourceWorkspaceServerManager,
+};

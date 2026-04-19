@@ -123,6 +123,20 @@ function resolveImageSrc(rawValue: unknown, model: unknown): string | null {
   }
 }
 
+function resolveLinkHref(rawValue: unknown, model: unknown): string | null {
+  const value = resolveDynamicString(rawValue, model).trim();
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return value;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 type RenderContext = {
   dataModel: unknown;
   interactive: boolean;
@@ -458,7 +472,7 @@ function RenderNode({ component, context }: { component: A2uiRenderableComponent
 
     case "Link": {
       const text = resolveText(props, context.dataModel, "text", "label");
-      const href = resolveImageSrc(props?.href ?? props?.url, context.dataModel);
+      const href = resolveLinkHref(props?.href ?? props?.url, context.dataModel);
       if (!href) {
         return <span className="text-sm text-muted-foreground underline-offset-2">{text || "link"}</span>;
       }
