@@ -72,6 +72,21 @@ const projectedItemSchema = z.discriminatedUnion("type", [
     code: z.string(),
     source: z.string(),
   }).strict(),
+  z.object({
+    id: nonEmptyStringSchema,
+    type: z.literal("uiSurface"),
+    surfaceId: nonEmptyStringSchema,
+    catalogId: nonEmptyStringSchema,
+    version: z.literal("v0.9"),
+    revision: z.number().int().nonnegative(),
+    deleted: z.boolean(),
+    theme: z.record(z.string(), z.unknown()).optional(),
+    root: z.record(z.string(), z.unknown()).optional(),
+    dataModel: z.unknown().optional(),
+    changeKind: z.enum(["createSurface", "updateComponents", "updateDataModel", "deleteSurface"]).optional(),
+    reason: z.string().optional(),
+    toolCallId: z.string().optional(),
+  }).strict(),
 ]);
 
 const sessionFeedItemSchema = z.discriminatedUnion("kind", [
@@ -154,6 +169,22 @@ const sessionFeedItemSchema = z.discriminatedUnion("kind", [
     kind: z.literal("system"),
     ts: z.string(),
     line: z.string(),
+  }).strict(),
+  z.object({
+    id: nonEmptyStringSchema,
+    kind: z.literal("ui_surface"),
+    ts: z.string(),
+    surfaceId: nonEmptyStringSchema,
+    catalogId: nonEmptyStringSchema,
+    version: z.literal("v0.9"),
+    revision: z.number().int().nonnegative(),
+    deleted: z.boolean(),
+    theme: z.record(z.string(), z.unknown()).optional(),
+    root: z.record(z.string(), z.unknown()).optional(),
+    dataModel: z.unknown().optional(),
+    changeKind: z.enum(["createSurface", "updateComponents", "updateDataModel", "deleteSurface"]).optional(),
+    reason: z.string().optional(),
+    toolCallId: z.string().optional(),
   }).strict(),
 ]);
 

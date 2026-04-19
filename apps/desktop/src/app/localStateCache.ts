@@ -1,13 +1,19 @@
 import type { DesktopStateCache } from "./types";
+import { getCurrentWebWorkspaceScopeHash } from "../lib/webWorkspaceState";
 
 export const DESKTOP_STATE_CACHE_KEY = "cowork.desktop.state-cache.v2";
+
+function getDesktopStateCacheKey(): string {
+  const scopeHash = getCurrentWebWorkspaceScopeHash();
+  return scopeHash ? `${DESKTOP_STATE_CACHE_KEY}:${scopeHash}` : DESKTOP_STATE_CACHE_KEY;
+}
 
 export function loadDesktopStateCacheRaw(): unknown | null {
   if (typeof window === "undefined") {
     return null;
   }
   try {
-    const raw = window.localStorage.getItem(DESKTOP_STATE_CACHE_KEY);
+    const raw = window.localStorage.getItem(getDesktopStateCacheKey());
     if (!raw) {
       return null;
     }
@@ -22,7 +28,7 @@ export function saveDesktopStateCache(state: DesktopStateCache): void {
     return;
   }
   try {
-    window.localStorage.setItem(DESKTOP_STATE_CACHE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(getDesktopStateCacheKey(), JSON.stringify(state));
   } catch {
     // Best effort only; do not block the desktop UI on local storage writes.
   }
@@ -33,7 +39,7 @@ export function clearDesktopStateCache(): void {
     return;
   }
   try {
-    window.localStorage.removeItem(DESKTOP_STATE_CACHE_KEY);
+    window.localStorage.removeItem(getDesktopStateCacheKey());
   } catch {
     // Ignore local storage cleanup failures.
   }

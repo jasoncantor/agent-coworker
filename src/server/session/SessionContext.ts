@@ -59,12 +59,14 @@ export type PersistedProjectConfigPatch = Partial<
     | "preferredChildModelRef"
     | "allowedChildModelRefs"
     | "enableMcp"
+    | "enableA2ui"
     | "enableMemory"
     | "memoryRequireApproval"
     | "observabilityEnabled"
     | "backupsEnabled"
     | "toolOutputOverflowChars"
     | "userName"
+    | "featureFlags"
   >
 > & {
   userProfile?: Partial<NonNullable<AgentConfig["userProfile"]>>;

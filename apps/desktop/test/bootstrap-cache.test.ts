@@ -262,7 +262,9 @@ mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   getSystemAppearance: async () => MOCK_SYSTEM_APPEARANCE,
   setWindowAppearance: async () => MOCK_SYSTEM_APPEARANCE,
   getUpdateState: async () => MOCK_UPDATE_STATE,
-  getDesktopFeatureFlags: () => ({ remoteAccess: remoteAccessEnabled }),
+  getDesktopFeatureFlags: (overrides?: { remoteAccess?: boolean }) => ({
+    remoteAccess: typeof overrides?.remoteAccess === "boolean" ? overrides.remoteAccess : remoteAccessEnabled,
+  }),
   isRemoteAccessEnabled: () => remoteAccessEnabled,
   checkForUpdates: async () => {},
   quitAndInstallUpdate: async () => {},
@@ -435,6 +437,28 @@ describe("desktop bootstrap cache", () => {
 
     expect(seed?.view).toBe("settings");
     expect(seed?.settingsPage).toBe("providers");
+  });
+
+  test("buildCachedDesktopStateSeed preserves remote access page when persisted overrides enable it", () => {
+    remoteAccessEnabled = false;
+    const seed = buildCachedDesktopStateSeed({
+      ...cachedState,
+      persistedState: {
+        ...cachedState.persistedState,
+        desktopFeatureFlagOverrides: {
+          remoteAccess: true,
+        },
+      },
+      ui: {
+        ...cachedState.ui,
+        view: "settings",
+        settingsPage: "remoteAccess",
+        lastNonSettingsView: "chat",
+      },
+    });
+
+    expect(seed?.view).toBe("settings");
+    expect(seed?.settingsPage).toBe("remoteAccess");
   });
 
   test("buildCachedDesktopStateSeed accepts legacy cached payloads", () => {

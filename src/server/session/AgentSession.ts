@@ -61,6 +61,7 @@ import { SessionSnapshotProjector } from "./SessionSnapshotProjector";
 import { SessionSnapshotBuilder } from "./SessionSnapshotBuilder";
 import { SkillManager } from "./SkillManager";
 import { TurnExecutionManager } from "./TurnExecutionManager";
+import { A2uiSurfaceManager } from "./A2uiSurfaceManager";
 import type {
   AgentInspectResult,
   AgentReasoningEffort,
@@ -69,6 +70,7 @@ import type {
   AgentContextMode,
 } from "../../shared/agents";
 import type { SessionSnapshot } from "../../shared/sessionSnapshot";
+import type { A2uiComponent, A2uiSurfaceState, A2uiSurfacesById } from "../../shared/a2ui";
 
 // Packaged Bun sidecar builds need these dynamic imports because the old createRequire
 // path is unavailable there, and we want to avoid eagerly loading the heavier
@@ -259,10 +261,36 @@ const DISCONNECTED_REPLAY_EVENT_TYPES = new Set<ServerEvent["type"]>([
   "budget_warning",
   "budget_exceeded",
   "config_updated",
+  "a2ui_surface",
 ]);
 
 function shouldReplayDisconnectedEvent(evt: ServerEvent): boolean {
   return DISCONNECTED_REPLAY_EVENT_TYPES.has(evt.type);
+}
+
+function deriveA2uiSurfacesFromSnapshot(snapshot: SessionSnapshot | null | undefined): A2uiSurfacesById | undefined {
+  if (!snapshot) return undefined;
+
+  const surfaces: Record<string, A2uiSurfaceState> = {};
+  for (const item of snapshot.feed) {
+    if (item.kind !== "ui_surface") continue;
+    const existing = surfaces[item.surfaceId];
+    if (existing && existing.revision > item.revision) {
+      continue;
+    }
+    surfaces[item.surfaceId] = {
+      surfaceId: item.surfaceId,
+      catalogId: item.catalogId,
+      ...(item.theme ? { theme: structuredClone(item.theme) } : {}),
+      ...(item.root ? { root: structuredClone(item.root) as A2uiComponent } : {}),
+      ...(item.dataModel !== undefined ? { dataModel: structuredClone(item.dataModel) } : {}),
+      revision: item.revision,
+      updatedAt: item.ts,
+      deleted: item.deleted,
+    };
+  }
+
+  return Object.keys(surfaces).length > 0 ? surfaces : undefined;
 }
 
 export class AgentSession {
@@ -282,6 +310,7 @@ export class AgentSession {
   private providerAuthManager: ProviderAuthManager | null = null;
   private providerCatalogManager: ProviderCatalogManager | null = null;
   private turnExecutionManager: TurnExecutionManager | null = null;
+  private a2uiSurfaceManager: A2uiSurfaceManager | null = null;
   private skillManager: SkillManager | null = null;
   private readonly metadataManager: SessionMetadataManager;
   private adminManager: SessionAdminManager | null = null;
@@ -602,9 +631,22 @@ export class AgentSession {
         metadataManager: this.metadataManager,
         backupController: this.backupController,
         flushPendingExternalSkillRefresh: async () => await this.flushPendingExternalSkillRefresh(),
+        getA2uiSurfaceManager: () => this.getA2uiSurfaceManager(),
       });
     }
     return this.turnExecutionManager;
+  }
+
+  private getA2uiSurfaceManager(): A2uiSurfaceManager {
+    if (!this.a2uiSurfaceManager) {
+      this.a2uiSurfaceManager = new A2uiSurfaceManager({
+        sessionId: this.id,
+        emit: (evt) => this.context.emit(evt),
+        log: (line) => this.context.emit({ type: "log", sessionId: this.id, line }),
+      });
+      this.a2uiSurfaceManager.hydrate(deriveA2uiSurfacesFromSnapshot(this.sessionSnapshotProjector.getSnapshot()));
+    }
+    return this.a2uiSurfaceManager;
   }
 
   private getAdminManager(): SessionAdminManager {
@@ -1021,6 +1063,7 @@ export class AgentSession {
   }
 
   reset() {
+    this.a2uiSurfaceManager?.reset();
     this.getAdminManager().reset();
   }
 
@@ -1674,6 +1717,10 @@ export class AgentSession {
       return;
     }
     await this.getTurnExecutionManager().sendSteerMessage(text, expectedTurnId, clientMessageId, attachments, inputParts);
+  }
+
+  validateA2uiAction(opts: { surfaceId: string; componentId: string }): ReturnType<A2uiSurfaceManager["validateAction"]> {
+    return this.getA2uiSurfaceManager().validateAction(opts);
   }
 
   getSessionUsage() {

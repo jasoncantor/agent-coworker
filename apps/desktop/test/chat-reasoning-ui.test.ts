@@ -11,10 +11,12 @@ import {
   formatSessionUsageHeadline,
   getComposerSubmitState,
   loadOverflowCitationContext,
+  parseA2uiActionMessage,
   reasoningLabelForMode,
   reasoningPreviewText,
   resolveComposerBusyPolicy,
   sessionUsageTone,
+  summarizeA2uiActionMessage,
   shouldToggleReasoningExpanded,
 } from "../src/ui/ChatView";
 
@@ -46,6 +48,31 @@ describe("desktop reasoning UI helpers", () => {
       { id: "b", kind: "message", role: "assistant", ts: "2024-01-01T00:00:01.000Z", text: "hi" },
     ]);
     expect(filterFeedForDeveloperMode(feed, true)).toEqual(feed);
+  });
+
+  test("parses structured A2UI action messages", () => {
+    const parsed = parseA2uiActionMessage(
+      [
+        '[a2ui.action] The user interacted with surface "demo-surface".',
+        "component: launch",
+        "event: click",
+        'payload: {"value":true}',
+        "",
+        "Respond with another a2ui tool call to update the surface (or reply in plain text).",
+      ].join("\n"),
+    );
+
+    expect(parsed).toEqual({
+      surfaceId: "demo-surface",
+      componentId: "launch",
+      eventType: "click",
+      payload: { value: true },
+    });
+    expect(summarizeA2uiActionMessage(parsed!)).toBe("Clicked launch -> true");
+  });
+
+  test("ignores ordinary user messages when parsing A2UI actions", () => {
+    expect(parseA2uiActionMessage("hello world")).toBeNull();
   });
 
   test("formats session usage headline for normal mode without token counts", () => {

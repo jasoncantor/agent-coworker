@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { WorkspaceFeatureFlagOverrides } from "./shared/featureFlags";
 
 export const PROVIDER_NAMES = [
   "google",
@@ -193,6 +194,12 @@ export interface AgentConfig {
   includeRawChunks?: boolean;
 
   /**
+   * Whether the A2UI (Agent-to-UI) generative-UI tool is exposed to the model
+   * and associated protocol events are emitted. Defaults to true.
+   */
+  enableA2ui?: boolean;
+
+  /**
    * Whether workspace/session backups are enabled.
    * Defaults to true when not specified.
    */
@@ -219,6 +226,14 @@ export interface AgentConfig {
    * Keys are command names and values include template and metadata.
    */
   command?: Record<string, CommandTemplateConfig>;
+
+  /**
+   * Optional feature-flag overrides.
+   * Workspace flags are merged across built-in, user, and project config layers.
+   */
+  featureFlags?: {
+    workspace?: WorkspaceFeatureFlagOverrides;
+  };
 }
 
 export type PluginScope = "workspace" | "user";

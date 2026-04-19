@@ -61,6 +61,7 @@ export const Sidebar = memo(function Sidebar() {
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
   const workspaceRuntimeById = useAppStore((s) => s.workspaceRuntimeById);
   const threadRuntimeById = useAppStore((s) => s.threadRuntimeById);
+  const desktopFeatures = useAppStore((s) => s.desktopFeatureFlags);
 
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const removeWorkspace = useAppStore((s) => s.removeWorkspace);
@@ -89,6 +90,8 @@ export const Sidebar = memo(function Sidebar() {
     pluginManagementWorkspaceId,
     pluginManagementMode,
   }), [pluginManagementMode, pluginManagementWorkspaceId, selectedWorkspaceId, workspaces]);
+  const workspacePickerEnabled = desktopFeatures.workspacePicker !== false;
+  const workspaceLifecycleEnabled = desktopFeatures.workspaceLifecycle !== false;
   const activeWorkspaceId = view === "skills"
     ? pluginSelection.displayWorkspaceId
     : selectedWorkspaceId;
@@ -201,7 +204,7 @@ export const Sidebar = memo(function Sidebar() {
 
     const result = await showContextMenu([
       { id: "select", label: "Select workspace" },
-      { id: "remove", label: "Remove workspace" },
+      ...(workspaceLifecycleEnabled ? [{ id: "remove", label: "Remove workspace" }] : []),
     ]);
 
     if (result === "select") {
@@ -319,15 +322,17 @@ export const Sidebar = memo(function Sidebar() {
       <section className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex items-center justify-between px-1">
           <div className="text-[11px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">Workspaces</div>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="sidebar-lift size-6 rounded-md text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
-            onClick={() => void addWorkspace()}
-            aria-label="Add workspace"
-          >
-            <FolderPlusIcon className="h-4 w-4" />
-          </Button>
+          {workspacePickerEnabled ? (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="sidebar-lift size-6 rounded-md text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground"
+              onClick={() => void addWorkspace()}
+              aria-label="Add workspace"
+            >
+              <FolderPlusIcon className="h-4 w-4" />
+            </Button>
+          ) : null}
         </div>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
@@ -335,9 +340,11 @@ export const Sidebar = memo(function Sidebar() {
             <div className="rounded-xl border border-border/55 bg-foreground/[0.03] px-4 py-4 text-center text-xs text-muted-foreground">
               <FolderPlusIcon strokeWidth={1.5} className="mx-auto mb-2 h-6 w-6 text-muted-foreground/70" />
               <div>No workspaces yet</div>
-              <Button className="mt-3 h-7 rounded-lg px-3" size="sm" variant="outline" type="button" onClick={() => void addWorkspace()}>
-                Add workspace
-              </Button>
+              {workspacePickerEnabled ? (
+                <Button className="mt-3 h-7 rounded-lg px-3" size="sm" variant="outline" type="button" onClick={() => void addWorkspace()}>
+                  Add workspace
+                </Button>
+              ) : null}
             </div>
           ) : (
             workspaces.map((workspace) => {

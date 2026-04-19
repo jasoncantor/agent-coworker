@@ -1002,6 +1002,38 @@ describe("loadSystemPrompt", () => {
     expect(prompt).not.toContain("Read, write, or search persistent memory");
   });
 
+  test("injects A2UI enabled guidance into the system prompt", async () => {
+    const config = makeConfig({
+      enableA2ui: false,
+      featureFlags: {
+        workspace: {
+          a2ui: true,
+        },
+      },
+      skillsDirs: ["/nonexistent/skills"],
+    });
+
+    const prompt = await loadSystemPrompt(config);
+    expect(prompt).toContain("## A2UI Enabled");
+    expect(prompt).toContain("You may call the `a2ui` tool");
+  });
+
+  test("injects A2UI disabled guidance and hides the a2ui skill when disabled", async () => {
+    const config = makeConfig({
+      enableA2ui: true,
+      featureFlags: {
+        workspace: {
+          a2ui: false,
+        },
+      },
+    });
+
+    const prompt = await loadSystemPrompt(config);
+    expect(prompt).toContain("## A2UI Disabled");
+    expect(prompt).not.toContain("- **a2ui**:");
+    expect(prompt).not.toContain("Use when you need to render generative UI surfaces");
+  });
+
   test("skips hot cache section when AGENT.md is empty/whitespace", async () => {
     const { tmp } = await makeTmpDirs();
     const projectAgentDir = path.join(tmp, "project", ".agent");

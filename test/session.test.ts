@@ -194,7 +194,7 @@ function makeSession(
       patch: Partial<
         Pick<
           AgentConfig,
-          "provider" | "model" | "preferredChildModel" | "enableMcp" | "enableMemory" | "memoryRequireApproval" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars" | "userName"
+          "provider" | "model" | "preferredChildModel" | "enableMcp" | "enableA2ui" | "enableMemory" | "memoryRequireApproval" | "observabilityEnabled" | "backupsEnabled" | "toolOutputOverflowChars" | "userName" | "featureFlags"
         >
       > & {
         userProfile?: Partial<NonNullable<AgentConfig["userProfile"]>>;
@@ -639,6 +639,44 @@ describe("AgentSession", () => {
       ]);
     });
 
+    test("setConfig refreshes the cached system prompt when the A2UI feature flag changes", async () => {
+      const persistProjectConfigPatchImpl = mock(async () => {});
+      const loadSystemPromptWithSkillsImpl = mock(async (config: AgentConfig) => ({
+        prompt: `prompt:a2ui-${String(config.enableA2ui ?? false)}`,
+        discoveredSkills: [{ name: "ui-skill", description: "UI skill" }],
+      }));
+      const { session } = makeSession({
+        persistProjectConfigPatchImpl,
+        loadSystemPromptWithSkillsImpl,
+        system: "prompt:a2ui-false",
+      });
+
+      await session.setConfig({
+        featureFlags: {
+          workspace: {
+            a2ui: true,
+          },
+        },
+      });
+      await session.sendUserMessage("hello");
+
+      expect(loadSystemPromptWithSkillsImpl).toHaveBeenCalledTimes(1);
+      expect(persistProjectConfigPatchImpl).toHaveBeenCalledWith({
+        featureFlags: {
+          workspace: {
+            a2ui: true,
+          },
+        },
+      });
+
+      const runTurnArgs = mockRunTurn.mock.calls.at(-1)?.[0] as any;
+      expect(runTurnArgs.system).toBe("prompt:a2ui-true");
+      expect(runTurnArgs.discoveredSkills).toEqual([
+        { name: "ui-skill", description: "UI skill" },
+      ]);
+      expect(session.getSessionConfigEvent().config.enableA2ui).toBe(true);
+    });
+
     test("upsertMemory refreshes the cached system prompt for later turns", async () => {
       const loadSystemPromptWithSkillsImpl = mock(async () => ({
         prompt: "prompt:memory-updated",
@@ -912,6 +950,7 @@ describe("AgentSession", () => {
       expect(evt.config.observabilityEnabled).toBe(false);
       expect(evt.config.backupsEnabled).toBe(true);
       expect(evt.config.defaultBackupsEnabled).toBe(true);
+      expect(evt.config.enableA2ui).toBe(false);
       expect(evt.config.toolOutputOverflowChars).toBe(25000);
       expect("defaultToolOutputOverflowChars" in evt.config).toBe(false);
       expect(evt.config.preferredChildModel).toBe("gemini-3-flash-preview");
@@ -6067,6 +6106,112 @@ describe("AgentSession", () => {
         taskType: "plan",
         targetPaths: ["src/auth", "test/auth"],
       }));
+    });
+
+    test("rehydrates persisted A2UI surfaces so resumed actions validate against restored state", () => {
+      const { emit } = makeEmit();
+
+      const session = AgentSession.fromPersisted({
+        persisted: {
+          sessionId: "persisted-a2ui-session",
+          sessionKind: "root",
+          parentSessionId: null,
+          role: null,
+          title: "Persisted A2UI",
+          titleSource: "manual",
+          titleModel: null,
+          provider: "google",
+          model: "gemini-3.1-pro-preview",
+          workingDirectory: "/tmp/persisted",
+          enableMcp: true,
+          createdAt: "2026-03-09T00:00:00.000Z",
+          updatedAt: "2026-03-09T00:00:01.000Z",
+          status: "active",
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+          messageCount: 1,
+          lastEventSeq: 3,
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello" }] as any,
+          providerState: null,
+          todos: [],
+          harnessContext: null,
+          costTracker: null,
+        },
+        initialSessionSnapshot: {
+          sessionId: "persisted-a2ui-session",
+          title: "Persisted A2UI",
+          titleSource: "manual",
+          titleModel: null,
+          provider: "google",
+          model: "gemini-3.1-pro-preview",
+          sessionKind: "root",
+          parentSessionId: null,
+          role: null,
+          mode: null,
+          depth: null,
+          nickname: null,
+          taskType: null,
+          targetPaths: null,
+          requestedModel: null,
+          effectiveModel: null,
+          requestedReasoningEffort: null,
+          effectiveReasoningEffort: null,
+          executionState: null,
+          lastMessagePreview: null,
+          createdAt: "2026-03-09T00:00:00.000Z",
+          updatedAt: "2026-03-09T00:00:01.000Z",
+          messageCount: 1,
+          lastEventSeq: 3,
+          feed: [
+            {
+              id: "ui-surface-1",
+              kind: "ui_surface",
+              ts: "2026-03-09T00:00:01.000Z",
+              surfaceId: "surface-1",
+              catalogId: "https://a2ui.org/specification/v0_9/basic_catalog.json",
+              version: "v0.9",
+              revision: 1,
+              deleted: false,
+              root: {
+                id: "root",
+                type: "Column",
+                children: [
+                  {
+                    id: "buy",
+                    type: "Button",
+                    props: { text: "Buy" },
+                  },
+                ],
+              },
+              dataModel: { qty: 1 },
+              changeKind: "createSurface",
+            },
+          ],
+          agents: [],
+          todos: [],
+          sessionUsage: null,
+          lastTurnUsage: null,
+          hasPendingAsk: false,
+          hasPendingApproval: false,
+        },
+        baseConfig: makeConfig("/tmp/persisted", {
+          provider: "google",
+          model: "gemini-3.1-pro-preview",
+          preferredChildModel: "gemini-3.1-pro-preview",
+          enableA2ui: true,
+        }),
+        emit,
+        sessionBackupFactory: makeSessionBackupFactory(),
+        getProviderStatusesImpl: async () => [],
+      });
+
+      expect(session.validateA2uiAction({ surfaceId: "surface-1", componentId: "buy" })).toEqual({
+        ok: true,
+        surfaceId: "surface-1",
+        componentId: "buy",
+        componentType: "Button",
+      });
     });
 
     test("restores persisted providerOptions into resumed runtime config", async () => {

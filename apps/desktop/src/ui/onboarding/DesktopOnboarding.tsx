@@ -118,6 +118,8 @@ function WelcomeStep({ onContinue, onDismiss }: { onContinue: () => void; onDism
 // ── Step 2: Workspace ──
 
 function WorkspaceStep({ onContinue, onBack }: { onContinue: () => void; onBack: () => void }) {
+  const desktopFeatures = useAppStore((s) => s.desktopFeatureFlags);
+  const workspacePickerEnabled = desktopFeatures.workspacePicker !== false;
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const selectWorkspace = useAppStore((s) => s.selectWorkspace);
   const workspaces = useAppStore((s) => s.workspaces);
@@ -162,7 +164,9 @@ function WorkspaceStep({ onContinue, onBack }: { onContinue: () => void; onBack:
           {hasMultipleWorkspaces ? "Choose a workspace" : "Add a workspace"}
         </h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          {hasMultipleWorkspaces
+          {!workspacePickerEnabled
+            ? "This browser shell is connected to the workspace the Cowork server was started with."
+            : hasMultipleWorkspaces
             ? "Select an existing workspace or add a new one."
             : "Choose a folder on your machine. This is where Cowork will read and write files."}
         </p>
@@ -222,11 +226,13 @@ function WorkspaceStep({ onContinue, onBack }: { onContinue: () => void; onBack:
         </Card>
       ) : null}
 
-      <div className="flex gap-3">
-        <Button variant={hasWorkspace ? "outline" : "default"} onClick={() => void addWorkspace()}>
-          {hasWorkspace ? "Add different folder" : "Choose folder"}
-        </Button>
-      </div>
+      {workspacePickerEnabled ? (
+        <div className="flex gap-3">
+          <Button variant={hasWorkspace ? "outline" : "default"} onClick={() => void addWorkspace()}>
+            {hasWorkspace ? "Add different folder" : "Choose folder"}
+          </Button>
+        </div>
+      ) : null}
 
       <div className="flex gap-3 pt-2">
         <Button onClick={onContinue} disabled={!hasWorkspace}>

@@ -94,8 +94,7 @@ samp {
   -webkit-app-region: no-drag;
 }
 
-.app-topbar__toolbar {
-  position: relative;
+.app-topbar__toolbar-layer {
   z-index: 1;
 }
 
@@ -279,7 +278,7 @@ samp {
 }
 
 /* Inline gridTemplateColumns on desktop; collapse to one column at small widths */
-@media (max-width: 960px) {
+@media (max-width: 860px) {
   .settings-shell {
     grid-template-columns: minmax(0, 1fr) !important;
   }
@@ -290,7 +289,7 @@ samp {
   background: var(--surface-settings-main);
 }
 
-@media (min-width: 961px) {
+@media (min-width: 861px) {
   .settings-shell__main {
     box-shadow: var(--shadow-settings-pane-divider);
   }

@@ -1,5 +1,10 @@
 import { startWorkspaceServer } from "../lib/desktopCommands";
 import { createDefaultUpdaterState, type UpdaterState } from "../lib/desktopApi";
+import type {
+  DesktopFeatureFlagId,
+  DesktopFeatureFlagOverrides,
+  DesktopFeatureFlags,
+} from "../lib/desktopFeatureFlags";
 import { fallbackAuthMethods } from "../lib/providerDisplayNames";
 import type { MCPServerConfig, ProviderName, ServerEvent, TodoItem } from "../lib/wsProtocol";
 import { PROVIDER_NAMES } from "../lib/wsProtocol";
@@ -174,6 +179,8 @@ export type AppStoreState = {
   developerMode: boolean;
   showHiddenFiles: boolean;
   perWorkspaceSettings: boolean;
+  desktopFeatureFlags: DesktopFeatureFlags;
+  desktopFeatureFlagOverrides: DesktopFeatureFlagOverrides;
   updateState: UpdaterState;
 
   onboardingVisible: boolean;
@@ -207,12 +214,20 @@ export type AppStoreState = {
   sendMessage: (text: string, busyPolicy?: ThreadBusyPolicy, attachments?: import("./store.helpers/jsonRpcSocket").FileAttachmentInput[]) => Promise<boolean>;
   cancelThread: (threadId: string, opts?: { includeSubagents?: boolean }) => void;
   clearThreadUsageHardCap: (threadId: string) => void;
+  dispatchA2uiAction: (opts: {
+    threadId: string;
+    surfaceId: string;
+    componentId: string;
+    eventType: string;
+    payload?: Record<string, unknown>;
+  }) => Promise<boolean>;
   setThreadModel: (threadId: string, provider: ProviderName, model: string) => void;
   setComposerText: (text: string) => void;
   setInjectContext: (v: boolean) => void;
   setDeveloperMode: (v: boolean) => void;
   setShowHiddenFiles: (v: boolean) => void;
   setPerWorkspaceSettings: (enabled: boolean) => void;
+  setDesktopFeatureFlagOverride: (flagId: DesktopFeatureFlagId, enabled: boolean) => Promise<void>;
   setUpdateState: (state: UpdaterState) => void;
   checkForUpdates: () => Promise<void>;
   quitAndInstallUpdate: () => Promise<void>;
@@ -323,6 +338,11 @@ export type AppStoreState = {
 
   openFilePreview: (opts: { path: string }) => void;
   closeFilePreview: () => void;
+
+  setA2uiDockExpanded: (threadId: string, expanded: boolean) => void;
+  focusA2uiSurface: (threadId: string, surfaceId: string | null) => void;
+  setA2uiActiveRevision: (threadId: string, surfaceId: string, revision: number) => void;
+  markA2uiSurfaceSeen: (threadId: string, surfaceId: string, revision: number) => void;
 };
 
 export type AppStoreActionKeys = {

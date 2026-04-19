@@ -178,6 +178,7 @@ Currently implemented `cowork/*` methods include:
   - `cowork/session/file/upload`
   - `cowork/session/delete`
   - `cowork/session/agent/inspect`
+  - `cowork/session/a2ui/action`
 - provider controls
   - `cowork/provider/catalog/read`
   - `cowork/provider/authMethods/read`
@@ -254,6 +255,28 @@ The desktop JSON-RPC path now uses this namespace so one workspace connection ca
 `cowork/session/file/upload` writes a file into the workspace uploads directory and returns a legacy-compatible `file_uploaded` event envelope. JSON-RPC clients can then reference that saved file from `turn/start` or `turn/steer` with an `uploadedFile` input part when the file is too large to send inline.
 
 `cowork/session/agent/inspect` is a thread-scoped, root-only read for child agents. It returns the same detailed inspection payload as the root `inspectAgent` tool: the latest child summary, the full latest assistant text, a parsed structured child report when the final assistant text includes a recognized JSON footer, and compact session/last-turn usage snapshots for the child.
+
+`cowork/session/a2ui/action` forwards a user interaction on an A2UI surface (Phase 2) to the running agent. Clients dispatch it when a user clicks a `Button`, submits a `TextField`, or toggles a `Checkbox` inside an A2UI surface.
+
+Request params:
+
+```ts
+{
+  threadId: string;
+  surfaceId: string;
+  componentId: string;
+  eventType: string;            // e.g. "click", "submit", "change"
+  payload?: Record<string, unknown>;
+  clientMessageId?: string;
+}
+```
+
+The harness validates that the surface exists, is not deleted, and contains `componentId`. If validation fails the server replies with a JSON-RPC invalidParams error. On success the harness synthesizes a structured user message and delivers it:
+
+- If a turn is already running, the action is delivered as a steer against that turn, and the result carries `delivery: "delivered-as-steer"` and the active `turnId`.
+- Otherwise, the harness starts a new turn carrying the action text as the user message, and the result carries `delivery: "delivered-as-turn"` and the new `turnId`.
+
+The synthesized text is deterministic and human-readable (starts with `[a2ui.action] The user interacted with surface "<id>".`) so the agent can respond with further `a2ui` tool calls or plain text.
 
 ### Core JSON-RPC notifications currently available
 
@@ -371,6 +394,7 @@ The remainder of this document describes the **legacy Cowork protocol**, which r
   - Session Data: [messages](#messages) | [sessions](#sessions) | [session_snapshot](#session_snapshot) | [agent_spawned](#agent_spawned) | [agent_list](#agent_list) | [agent_wait_result](#agent_wait_result) | [session_deleted](#session_deleted) | [file_uploaded](#file_uploaded) | [turn_usage](#turn_usage) | [session_usage](#session_usage) | [budget_warning](#budget_warning) | [budget_exceeded](#budget_exceeded)
   - Backup & Observability: [session_backup_state](#session_backup_state) | [workspace_backups](#workspace_backups) | [workspace_backup_delta](#workspace_backup_delta) | [observability_status](#observability_status)
   - Harness: [harness_context](#harness_context)
+  - Generative UI: [a2ui_surface](#a2ui_surface)
   - Error & Keepalive: [error](#error) | [pong](#pong)
 
 ## Protocol v7 Notes
@@ -584,7 +608,7 @@ When a WebSocket connection opens, the server sends these events in order:
 
 1. `server_hello` — session ID, config, protocol version, capabilities
 2. `session_settings` — current runtime settings (e.g. MCP toggle)
-3. `session_config` — current runtime config (`yolo`, `observabilityEnabled`, `backupsEnabled`, `defaultBackupsEnabled`, `toolOutputOverflowChars`, `defaultToolOutputOverflowChars`, `preferredChildModel`, `childModelRoutingMode`, `preferredChildModelRef`, `allowedChildModelRefs`, `maxSteps`, `providerOptions`, `userName`, `userProfile`)
+3. `session_config` — current runtime config (`yolo`, `observabilityEnabled`, `backupsEnabled`, `defaultBackupsEnabled`, `enableA2ui`, `toolOutputOverflowChars`, `defaultToolOutputOverflowChars`, `preferredChildModel`, `childModelRoutingMode`, `preferredChildModelRef`, `allowedChildModelRefs`, `maxSteps`, `providerOptions`, `userName`, `userProfile`, `featureFlags.workspace`)
 4. `session_info` — session metadata including title
 5. `observability_status` — Langfuse observability state
 6. `provider_catalog` — available providers and models (async)
@@ -2689,6 +2713,11 @@ Update runtime configuration values.
         "autoLoad": true,
         "reloadOnContextMismatch": true
       }
+    },
+    "featureFlags": {
+      "workspace": {
+        "experimentalApi": true
+      }
     }
   }
 }
@@ -2735,6 +2764,10 @@ Update runtime configuration values.
 | `config.userProfile.instructions` | `string` | No | Custom behavioral instructions the agent should follow. An empty string clears it |
 | `config.userProfile.work` | `string` | No | Work/job context for prompt injection. An empty string clears it |
 | `config.userProfile.details` | `string` | No | Extra user details the agent should know. An empty string clears it |
+| `config.featureFlags` | `object` | No | Workspace-scoped feature-flag patch |
+| `config.featureFlags.workspace` | `object` | No | Workspace feature-flag overrides merged into project config |
+| `config.featureFlags.workspace.experimentalApi` | `boolean` | No | Toggle experimental JSON-RPC capability metadata for this workspace config |
+| `config.featureFlags.workspace.a2ui` | `boolean` | No | Toggle A2UI generative UI surfaces and action routing for this workspace |
 
 **Response:** `session_config`
 
@@ -3930,6 +3963,55 @@ When non-null, `context` contains all [HarnessContextPayload](#harnesscontextpay
 
 ---
 
+### a2ui_surface
+
+Resolved generative-UI surface state emitted when the agent calls the `a2ui` tool. Published after every envelope application and carries the post-reduction snapshot (not the raw envelope).
+
+This event is emitted only when the harness has A2UI enabled. A2UI is on by default, but any config layer can disable it with `"enableA2ui": false`, and the environment can override it with `AGENT_ENABLE_A2UI=false`. Clients can safely ignore the event when they do not implement an A2UI renderer.
+
+```json
+{
+  "type": "a2ui_surface",
+  "sessionId": "...",
+  "surfaceId": "greeter",
+  "catalogId": "https://a2ui.org/specification/v0_9/basic_catalog.json",
+  "version": "v0.9",
+  "revision": 3,
+  "deleted": false,
+  "theme": { "primaryColor": "#0f766e" },
+  "root": {
+    "id": "root",
+    "type": "Column",
+    "children": [
+      { "id": "title", "type": "Heading", "props": { "text": "Hello" } },
+      { "id": "body",  "type": "Text",    "props": { "text": { "path": "/message" } } }
+    ]
+  },
+  "dataModel": { "message": "Welcome to A2UI." },
+  "updatedAt": "2026-03-01T12:00:00.000Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"a2ui_surface"` | — |
+| `sessionId` | `string` | Session identifier |
+| `surfaceId` | `string` | Unique id inside the session. Subsequent events for the same id replace the previous state. |
+| `catalogId` | `string` | URL identifying the A2UI component catalog the agent wrote against. Clients that only render the v0.9 basic catalog should show a fallback when the id does not match. |
+| `version` | `"v0.9"` | A2UI protocol version. |
+| `revision` | `integer` | Monotonically increases every time the harness folds a new envelope. |
+| `deleted` | `boolean` | `true` after `deleteSurface`. Clients should unmount the surface. |
+| `theme` | `Record<string, unknown> \| undefined` | Opaque theme blob from `createSurface.theme`. |
+| `root` | `Record<string, unknown> \| undefined` | Current root component tree. |
+| `dataModel` | `unknown \| undefined` | Current JSON data model the component tree reads via `{ path, ... }` bindings. |
+| `updatedAt` | `string` | ISO 8601 of the last fold. |
+
+On the JSON-RPC transport, the harness also projects the event into the standard `item/started` + `item/completed` notifications as a `uiSurface` ProjectedItem, and additionally emits a dedicated `cowork/session/a2ui/surface` notification carrying the raw event shape above. Thin clients can consume either; the ProjectedItem path keeps the surface in sync with the session feed.
+
+See [`src/shared/a2ui`](../src/shared/a2ui) for the envelope schema, reducer, and binding evaluator, and [`skills/a2ui/SKILL.md`](../skills/a2ui/SKILL.md) for the agent-facing guide.
+
+---
+
 ### turn_usage
 
 Token usage data for a completed turn. Emitted after `assistant_message` when the provider returns usage data.
@@ -4414,6 +4496,7 @@ Current runtime config. Sent on connection and after `set_config`.
     "observabilityEnabled": true,
     "backupsEnabled": true,
     "defaultBackupsEnabled": true,
+    "enableA2ui": true,
     "toolOutputOverflowChars": 25000,
     "defaultToolOutputOverflowChars": 25000,
     "preferredChildModel": "gpt-5.4",
@@ -4467,6 +4550,7 @@ Current runtime config. Sent on connection and after `set_config`.
 | `config.observabilityEnabled` | `boolean` | Whether observability is enabled |
 | `config.backupsEnabled` | `boolean` | Whether backups are enabled for the live session after applying any session-scoped override |
 | `config.defaultBackupsEnabled` | `boolean` | The persisted workspace backup default from the harness/core config, before any live session override is applied |
+| `config.enableA2ui` | `boolean` | Whether A2UI generative UI is enabled for the session/workspace default and therefore exposed in the model prompt/tool contract |
 | `config.toolOutputOverflowChars` | `number \| null` | Effective character threshold for when oversized tool outputs start spilling into `.ModelScratchpad`; `null` disables spill files. Spill results still keep a fixed inline preview (currently the first 5,000 characters). |
 | `config.defaultToolOutputOverflowChars` | `number \| null` | Persisted workspace overflow default when explicitly configured; omitted when the session is inheriting the built-in or user-level default |
 | `config.preferredChildModel` | `string` | Normalized same-provider fallback model identifier used for legacy/default suggestion state |
@@ -4480,6 +4564,10 @@ Current runtime config. Sent on connection and after `set_config`.
 | `config.userProfile.instructions` | `string` | Effective profile instructions |
 | `config.userProfile.work` | `string` | Effective profile work/job context |
 | `config.userProfile.details` | `string` | Effective profile details |
+| `config.featureFlags` | `object` | Effective workspace-scoped feature-flag state |
+| `config.featureFlags.workspace` | `object` | Effective workspace feature flags |
+| `config.featureFlags.workspace.experimentalApi` | `boolean` | Effective experimental JSON-RPC capability metadata flag |
+| `config.featureFlags.workspace.a2ui` | `boolean` | Effective A2UI feature-flag state for this workspace |
 | `config.providerOptions.openai.reasoningEffort` | `"none" \| "low" \| "medium" \| "high" \| "xhigh"` | Current editable OpenAI reasoning effort |
 | `config.providerOptions.openai.reasoningSummary` | `"auto" \| "concise" \| "detailed"` | Current editable OpenAI reasoning summary |
 | `config.providerOptions.openai.textVerbosity` | `"low" \| "medium" \| "high"` | Current editable OpenAI verbosity |

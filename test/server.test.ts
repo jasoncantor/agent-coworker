@@ -613,6 +613,55 @@ describe("HTTP Handler", () => {
     }
   });
 
+  test("loopback CORS preflight advertises DELETE for transcript routes", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server } = await startAgentServer(serverOpts(tmpDir));
+    try {
+      const httpUrl = `http://127.0.0.1:${server.port}/cowork/desktop/transcript?threadId=thread-1`;
+      const res = await fetch(httpUrl, {
+        method: "OPTIONS",
+        headers: {
+          Origin: "http://127.0.0.1:5173",
+          "Access-Control-Request-Method": "DELETE",
+        },
+      });
+      expect(res.status).toBe(204);
+      expect(res.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173");
+      expect(res.headers.get("access-control-allow-methods")).toContain("DELETE");
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("web desktop service enablement follows merged opts.env", async () => {
+    const tmpDir = await makeTmpProject();
+    const previous = process.env.COWORK_WEB_DESKTOP_SERVICE;
+    delete process.env.COWORK_WEB_DESKTOP_SERVICE;
+    const { server } = await startAgentServer(serverOpts(tmpDir, {
+      env: {
+        AGENT_WORKING_DIR: tmpDir,
+        AGENT_PROVIDER: "google",
+        AGENT_OBSERVABILITY_ENABLED: "false",
+        COWORK_SKIP_DEFAULT_SKILLS_BOOTSTRAP: "1",
+        COWORK_WEB_DESKTOP_SERVICE: "1",
+      },
+    }));
+    try {
+      const httpUrl = `http://127.0.0.1:${server.port}/cowork/desktop/state`;
+      const res = await fetch(httpUrl);
+      expect(res.status).toBe(200);
+      const payload = await res.json();
+      expect(payload).toHaveProperty("workspaces");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.COWORK_WEB_DESKTOP_SERVICE;
+      } else {
+        process.env.COWORK_WEB_DESKTOP_SERVICE = previous;
+      }
+      await stopTestServer(server);
+    }
+  });
+
 });
 
 

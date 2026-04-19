@@ -4,12 +4,14 @@ import { z } from "zod";
 import {
   checkForUpdates as runUpdateCheck,
   getUpdateState,
+  getDesktopFeatureFlags,
   quitAndInstallUpdate as runQuitAndInstallUpdate,
   deleteTranscript,
   listDirectory,
   loadState,
   pickWorkspaceDirectory,
   readTranscript,
+  stopMobileRelay,
   stopWorkspaceServer,
   openPath,
   revealPath,
@@ -17,10 +19,15 @@ import {
   createDirectory,
   renamePath,
   trashPath,
-  isRemoteAccessEnabled,
 } from "../../lib/desktopCommands";
+import type { DesktopFeatureFlags } from "../../lib/desktopFeatureFlags";
 import type { ChildModelRoutingMode } from "../../lib/wsProtocol";
 import { safeParseServerEvent, type ProviderName } from "../../lib/wsProtocol";
+import {
+  normalizeDesktopFeatureFlagOverrides,
+  normalizeWorkspaceFeatureFlagOverrides,
+  resolveWorkspaceFeatureFlags,
+} from "../../../../../src/shared/featureFlags";
 
 import {
   type AppStoreDataState,
@@ -106,30 +113,37 @@ const normalizedViewSchema = z.preprocess(
   z.enum(["chat", "skills", "settings"])
 );
 
-function normalizeSettingsPageId(value: unknown): SettingsPageId {
-  const normalized =
-    value === "providers"
-    || value === "usage"
-    || value === "workspaces"
-    || value === "remoteAccess"
-    || value === "backup"
-    || value === "mcp"
-    || value === "memory"
-    || value === "updates"
-    || value === "developer"
-      ? value
-      : "providers";
+function normalizeSettingsPageId(
+  value: unknown,
+  desktopFeatures: DesktopFeatureFlags = getDesktopFeatureFlags(),
+): SettingsPageId {
+  const normalized = normalizeKnownSettingsPageId(value);
 
-  if (normalized === "remoteAccess" && !isRemoteAccessEnabled()) {
+  if (normalized === "remoteAccess" && desktopFeatures.remoteAccess !== true) {
     return "providers";
   }
 
   return normalized;
 }
 
+function normalizeKnownSettingsPageId(value: unknown): SettingsPageId {
+  return value === "providers"
+    || value === "usage"
+    || value === "workspaces"
+    || value === "remoteAccess"
+    || value === "backup"
+    || value === "mcp"
+    || value === "memory"
+    || value === "featureFlags"
+    || value === "updates"
+    || value === "developer"
+    ? value
+    : "providers";
+}
+
 const normalizedSettingsPageSchema = z.preprocess(
-  (value) => normalizeSettingsPageId(value),
-  z.enum(["providers", "usage", "workspaces", "remoteAccess", "backup", "mcp", "memory", "updates", "developer"])
+  (value) => normalizeKnownSettingsPageId(value),
+  z.enum(["providers", "usage", "workspaces", "remoteAccess", "backup", "mcp", "memory", "featureFlags", "updates", "developer"])
 );
 const normalizedNullableSelectionSchema = z.preprocess(
   (value) => (typeof value === "string" && value.trim() ? value : null),
@@ -165,6 +179,13 @@ const persistedWorkspaceSchema = z.object({
     }
     return undefined;
   }, z.number().int().nonnegative().nullable().optional()),
+  defaultFeatureFlags: z.preprocess(
+    (value) => normalizeWorkspaceFeatureFlagOverrides(value),
+    z.object({
+      experimentalApi: z.boolean().optional(),
+      a2ui: z.boolean().optional(),
+    }).passthrough().optional(),
+  ),
   providerOptions: z.unknown().optional(),
   userName: optionalStringSchema,
   userProfile: z.object({
@@ -173,6 +194,7 @@ const persistedWorkspaceSchema = z.object({
     details: optionalStringSchema,
   }).passthrough().optional(),
   defaultEnableMcp: z.preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean()),
+  defaultEnableA2ui: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()).optional(),
   defaultBackupsEnabled: z.preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean()),
   yolo: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()),
 }).passthrough().transform((workspace): WorkspaceRecord => {
@@ -189,6 +211,10 @@ const persistedWorkspaceSchema = z.object({
     ?? (legacyPreferredValue
       ? (legacyPreferredValue.includes(":") ? legacyPreferredValue : `${workspace.defaultProvider}:${legacyPreferredValue}`)
       : "");
+  const defaultFeatureFlags = resolveWorkspaceFeatureFlags(
+    workspace.defaultFeatureFlags
+    ?? (workspace.defaultEnableA2ui !== undefined ? { a2ui: workspace.defaultEnableA2ui } : undefined),
+  );
   return {
     id: workspace.id,
     name: workspace.name,
@@ -203,10 +229,12 @@ const persistedWorkspaceSchema = z.object({
     defaultPreferredChildModelRef: preferredChildModelRef,
     defaultAllowedChildModelRefs: workspace.defaultAllowedChildModelRefs ?? [],
     defaultToolOutputOverflowChars: workspace.defaultToolOutputOverflowChars,
+    defaultFeatureFlags,
     providerOptions: normalizeWorkspaceProviderOptions(workspace.providerOptions),
     userName: workspace.userName,
     userProfile: workspace.userProfile ? normalizeWorkspaceUserProfile(workspace.userProfile) : undefined,
     defaultEnableMcp: workspace.defaultEnableMcp,
+    defaultEnableA2ui: defaultFeatureFlags.a2ui,
     defaultBackupsEnabled: workspace.defaultBackupsEnabled,
     yolo: workspace.yolo,
   };
@@ -279,6 +307,14 @@ const persistedStateSchema = z.object({
   developerMode: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()),
   showHiddenFiles: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()),
   perWorkspaceSettings: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()),
+  desktopFeatureFlagOverrides: z.preprocess(
+    (value) => normalizeDesktopFeatureFlagOverrides(value),
+    z.object({
+      remoteAccess: z.boolean().optional(),
+      workspacePicker: z.boolean().optional(),
+      workspaceLifecycle: z.boolean().optional(),
+    }).passthrough().optional(),
+  ),
 }).passthrough().transform((state) => {
   const providerState = normalizePersistedProviderState((state as { providerState?: unknown }).providerState);
   const providerUiState = normalizePersistedProviderUiState((state as { providerUiState?: unknown }).providerUiState, {
@@ -294,6 +330,7 @@ const persistedStateSchema = z.object({
     developerMode: state.developerMode,
     showHiddenFiles: state.showHiddenFiles,
     perWorkspaceSettings: state.perWorkspaceSettings,
+    desktopFeatureFlagOverrides: state.desktopFeatureFlagOverrides,
     providerState,
     providerUiState,
     onboarding,
@@ -309,6 +346,7 @@ export function hydratePersistedDesktopState(value: unknown): HydratedPersistedD
 function buildResolvedDesktopUiState(
   workspaces: WorkspaceRecord[],
   threads: ThreadRecord[],
+  desktopFeatures: DesktopFeatureFlags,
   ui?: CachedDesktopUiState | null,
 ) {
   const normalizedUi = persistedUiSchema.parse(ui ?? {});
@@ -356,7 +394,7 @@ function buildResolvedDesktopUiState(
     pluginManagementWorkspaceId,
     pluginManagementMode,
     view: normalizedUi.view ?? "chat",
-    settingsPage: normalizeSettingsPageId(normalizedUi.settingsPage),
+    settingsPage: normalizeSettingsPageId(normalizedUi.settingsPage, desktopFeatures),
     lastNonSettingsView,
     sidebarCollapsed: normalizedUi.sidebarCollapsed ?? false,
     sidebarWidth: normalizedUi.sidebarWidth ?? 248,
@@ -443,6 +481,7 @@ export function buildCachedDesktopStateSeed(value: unknown): Partial<AppStoreDat
     }
 
     const state = hydratePersistedDesktopState(cached.persistedState);
+    const desktopFeatureFlags = getDesktopFeatureFlags(state.desktopFeatureFlagOverrides);
     RUNTIME.sessionSnapshots.clear();
     if (cached.sessionSnapshots && typeof cached.sessionSnapshots === "object" && !Array.isArray(cached.sessionSnapshots)) {
       for (const [sessionId, entry] of Object.entries(cached.sessionSnapshots as Record<string, unknown>)) {
@@ -451,7 +490,12 @@ export function buildCachedDesktopStateSeed(value: unknown): Partial<AppStoreDat
         RUNTIME.sessionSnapshots.set(sessionId, normalized);
       }
     }
-    const ui = buildResolvedDesktopUiState(state.workspaces, state.threads, cached.ui as CachedDesktopUiState | undefined);
+    const ui = buildResolvedDesktopUiState(
+      state.workspaces,
+      state.threads,
+      desktopFeatureFlags,
+      cached.ui as CachedDesktopUiState | undefined,
+    );
     const connectedProviders = deriveConnectedProviders(state.providerState as PersistedProviderState | undefined);
     return {
       ready: true,
@@ -470,6 +514,8 @@ export function buildCachedDesktopStateSeed(value: unknown): Partial<AppStoreDat
       developerMode: state.developerMode,
       showHiddenFiles: state.showHiddenFiles,
       perWorkspaceSettings: state.perWorkspaceSettings,
+      desktopFeatureFlags,
+      desktopFeatureFlagOverrides: state.desktopFeatureFlagOverrides ?? {},
       onboardingState: state.onboarding ?? DEFAULT_ONBOARDING_STATE,
       onboardingVisible: false,
       onboardingStep: "welcome",
@@ -495,13 +541,14 @@ export function buildCachedDesktopStateSeed(value: unknown): Partial<AppStoreDat
   }
 }
 
-export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "init" | "openSettings" | "closeSettings" | "setSettingsPage" | "setDeveloperMode" | "setShowHiddenFiles" | "setPerWorkspaceSettings" | "setUpdateState" | "checkForUpdates" | "quitAndInstallUpdate" | "toggleSidebar" | "toggleContextSidebar" | "setSidebarWidth" | "setContextSidebarWidth" | "setMessageBarHeight"> {
+export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "init" | "openSettings" | "closeSettings" | "setSettingsPage" | "setDeveloperMode" | "setShowHiddenFiles" | "setPerWorkspaceSettings" | "setDesktopFeatureFlagOverride" | "setUpdateState" | "checkForUpdates" | "quitAndInstallUpdate" | "toggleSidebar" | "toggleContextSidebar" | "setSidebarWidth" | "setContextSidebarWidth" | "setMessageBarHeight"> {
   return {
     init: async () => {
       set({ startupError: null, bootstrapPending: true });
       try {
         const state = hydratePersistedDesktopState(await loadState());
-        const ui = buildResolvedDesktopUiState(state.workspaces, state.threads, {
+        const desktopFeatureFlags = getDesktopFeatureFlags(state.desktopFeatureFlagOverrides);
+        const ui = buildResolvedDesktopUiState(state.workspaces, state.threads, desktopFeatureFlags, {
           selectedWorkspaceId: get().selectedWorkspaceId,
           selectedThreadId: get().selectedThreadId,
           pluginManagementWorkspaceId: get().pluginManagementWorkspaceId,
@@ -551,6 +598,8 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
           developerMode: state.developerMode,
           showHiddenFiles: state.showHiddenFiles,
           perWorkspaceSettings: state.perWorkspaceSettings,
+          desktopFeatureFlags,
+          desktopFeatureFlagOverrides: state.desktopFeatureFlagOverrides ?? {},
           updateState,
           ready: true,
           bootstrapPending: false,
@@ -676,7 +725,7 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
     openSettings: (page) => {
       set((s) => ({
         view: "settings",
-        settingsPage: normalizeSettingsPageId(page ?? s.settingsPage),
+        settingsPage: normalizeSettingsPageId(page ?? s.settingsPage, s.desktopFeatureFlags),
         lastNonSettingsView: s.view === "settings" ? s.lastNonSettingsView : s.view,
       }));
       syncDesktopStateCache(get);
@@ -692,7 +741,7 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
   
 
     setSettingsPage: (page) => {
-      set({ settingsPage: normalizeSettingsPageId(page) });
+      set((state) => ({ settingsPage: normalizeSettingsPageId(page, state.desktopFeatureFlags) }));
       syncDesktopStateCache(get);
     },
   
@@ -730,6 +779,7 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
             "userProfile",
             "defaultEnableMcp",
             "defaultBackupsEnabled",
+            "defaultFeatureFlags",
             "yolo",
           ];
           const patch: Record<string, unknown> = {};
@@ -755,6 +805,27 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
         }
       }
       void persistNow(get);
+    },
+
+    setDesktopFeatureFlagOverride: async (flagId, enabled) => {
+      const currentFeatureFlags = get().desktopFeatureFlags;
+      const currentOverrides = get().desktopFeatureFlagOverrides ?? {};
+      const nextOverrides = {
+        ...currentOverrides,
+        [flagId]: enabled,
+      };
+      const nextFeatureFlags = getDesktopFeatureFlags(nextOverrides);
+      set((state) => ({
+        desktopFeatureFlagOverrides: nextOverrides,
+        desktopFeatureFlags: nextFeatureFlags,
+        settingsPage: normalizeSettingsPageId(state.settingsPage, nextFeatureFlags),
+      }));
+      void persistNow(get);
+      if (flagId === "remoteAccess" && currentFeatureFlags.remoteAccess === true && enabled === false) {
+        await stopMobileRelay().catch(() => {
+          // Best-effort teardown: disabling the flag should not fail if the relay is already gone.
+        });
+      }
     },
 
     setUpdateState: (updateState) => set({ updateState }),

@@ -1,6 +1,10 @@
 # Lessons
 
+- For PR review work in this repo, always fetch the unresolved thread set first and verify each comment against current `HEAD` before editing; do not assume an open thread is still a real issue.
 - For plugin install flows in this repo, only synthesize default `.mcp.json` / `.app.json` paths when the file actually exists, require explicitly declared `skills` directories to exist on disk, and normalize local `.codex-plugin/plugin.json` inputs back to the plugin root before discovery.
+- When the user asks for desktop UI verification in this repo, prefer live Computer Use inspection of the running app in addition to local tests whenever the bridge is healthy.
+- For browser-shell desktop work in this repo, treat the web client as a single connected workspace shell: scope persisted browser state and warm-start cache by the actual server plus workspace path, and never leave file or workspace controls wired to no-op placeholders that make the UI look functional when it is not.
+- When the user calls out a settings toggle in this repo, use the shared `Switch` primitive for binary on/off controls and reserve `Checkbox` for checklist-style selection; button or checkbox semantics are the wrong accessibility contract for a toggle row.
 - For provider-facing MCP tool schemas, do not pass tuple-style JSON Schema arrays like `items: [{...}, {...}]` through unchanged; normalize schema-valued keywords to provider-safe object/boolean nodes before registering tools or OpenAI-compatible runtimes will reject the function definition at request build time.
 - For parsers that read tagged footer blocks from model output in this repo, never stop at the first matching tag when prompts can include earlier examples; parse the trailing footer and add a regression test for echoed format examples before shipping.
 - For MCP OAuth servers with `oauthMode: "auto"`, do not stop after emitting the browser challenge; the harness must continue the loopback callback through token exchange automatically and persist the result into the correct scope-specific `.cowork/auth/mcp-credentials.json` store.

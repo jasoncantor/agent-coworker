@@ -1,7 +1,7 @@
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 
-import { AlertTriangleIcon, LoaderCircleIcon, MessageSquareIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
+import { AlertTriangleIcon, LoaderCircleIcon, MessageSquareIcon, MousePointerClickIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import coworkIconSvg from "../../build/icon.icon/Assets/svgviewer-output.svg";
 
 import {
@@ -83,6 +83,9 @@ import { ActivityGroupCard } from "./chat/ActivityGroupCard";
 import { buildChatRenderItems } from "./chat/activityGroups";
 import { normalizeFeedForToolCards } from "./chat/toolCards/legacyToolLogs";
 import { ToolCard } from "./chat/toolCards/ToolCard";
+import { A2uiInlineCard } from "./chat/a2ui/A2uiInlineCard";
+import { A2uiSurfaceDock } from "./chat/a2ui/A2uiSurfaceDock";
+import { A2uiSurfaceHistoryRow } from "./chat/a2ui/A2uiSurfaceHistoryRow";
 
 type ChatViewContextValue = {
   developerMode: boolean;
@@ -123,6 +126,58 @@ export function countActiveChildAgents(agents: ThreadAgentSummary[]): number {
 
 export function filterFeedForDeveloperMode(feed: FeedItem[], developerMode: boolean): FeedItem[] {
   return developerMode ? feed : feed.filter((item) => item.kind !== "system" && item.kind !== "log");
+}
+
+export type A2uiActionMessage = {
+  surfaceId: string;
+  componentId: string;
+  eventType: string;
+  payload?: Record<string, unknown>;
+};
+
+export function parseA2uiActionMessage(text: string): A2uiActionMessage | null {
+  const lines = text.trim().split("\n");
+  if (lines.length < 4) return null;
+  const header = lines[0]?.match(/^\[a2ui\.action\] The user interacted with surface "(.+)"\.$/);
+  if (!header) return null;
+  if (!lines[1]?.startsWith("component: ") || !lines[2]?.startsWith("event: ")) {
+    return null;
+  }
+
+  let payload: Record<string, unknown> | undefined;
+  if (lines[3]?.startsWith("payload: ")) {
+    try {
+      const parsed = JSON.parse(lines[3].slice("payload: ".length));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        payload = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Best effort only.
+    }
+  }
+
+  return {
+    surfaceId: header[1]!,
+    componentId: lines[1].slice("component: ".length).trim(),
+    eventType: lines[2].slice("event: ".length).trim(),
+    ...(payload ? { payload } : {}),
+  };
+}
+
+export function summarizeA2uiActionMessage(action: A2uiActionMessage): string {
+  const prefix = action.eventType === "click"
+    ? "Clicked"
+    : action.eventType === "submit"
+      ? "Submitted"
+      : action.eventType === "change"
+        ? "Changed"
+        : `Triggered ${action.eventType} on`;
+  const payloadValue = action.payload?.value;
+  const valueSuffix =
+    typeof payloadValue === "string" || typeof payloadValue === "number" || typeof payloadValue === "boolean"
+      ? ` -> ${String(payloadValue)}`
+      : "";
+  return `${prefix} ${action.componentId}${valueSuffix}`;
 }
 
 export function formatSessionUsageHeadline(
@@ -412,6 +467,7 @@ const FeedRow = memo(function FeedRow(props: {
   item: FeedItem;
   citationUrlsByIndex?: ReadonlyMap<number, string>;
   citationSources?: CitationSource[];
+  isLatestUiSurface?: boolean;
 }) {
   const { developerMode } = useChatViewContext();
   const item = props.item;
@@ -421,6 +477,31 @@ const FeedRow = memo(function FeedRow(props: {
     && extractCitationUrlsFromAnnotations(item.annotations).size > 0;
 
   if (item.kind === "message") {
+    if (item.role === "user") {
+      const a2uiAction = parseA2uiActionMessage(item.text);
+      if (a2uiAction) {
+        return (
+          <div className="flex w-full justify-end">
+            <div
+              role="status"
+              className="inline-flex max-w-[32rem] items-center gap-2 rounded-full border border-border/45 bg-muted/25 py-1 pl-2.5 pr-3 text-xs text-foreground shadow-sm"
+              title={`Surface ${a2uiAction.surfaceId} • Event ${a2uiAction.eventType}`}
+            >
+              <span className="flex size-4 items-center justify-center rounded-full bg-primary/15 text-primary">
+                <MousePointerClickIcon className="size-2.5" />
+              </span>
+              <span className="truncate font-medium text-foreground/90">
+                {summarizeA2uiActionMessage(a2uiAction)}
+              </span>
+              <span className="truncate font-mono text-[10px] text-muted-foreground">
+                {a2uiAction.surfaceId}
+              </span>
+            </div>
+          </div>
+        );
+      }
+    }
+
     return (
       <Message from={item.role}>
         <MessageContent>
@@ -463,6 +544,12 @@ const FeedRow = memo(function FeedRow(props: {
         state={item.state}
       />
     );
+  }
+
+  if (item.kind === "ui_surface") {
+    return props.isLatestUiSurface
+      ? <A2uiInlineCard item={item} />
+      : <A2uiSurfaceHistoryRow item={item} />;
   }
 
   if (item.kind === "log") {
@@ -760,6 +847,15 @@ export function ChatView() {
     return merged;
   }, [inlineCitationSourcesByMessageId, overflowCitationSourcesByMessageId]);
   const renderItems = useMemo(() => buildChatRenderItems(visibleFeed), [visibleFeed]);
+  const latestUiSurfaceItemId = useMemo(() => {
+    for (let i = renderItems.length - 1; i >= 0; i--) {
+      const entry = renderItems[i];
+      if (entry && entry.kind === "feed-item" && entry.item.kind === "ui_surface" && !entry.item.deleted) {
+        return entry.item.id;
+      }
+    }
+    return null;
+  }, [renderItems]);
   const activeChildAgentCount = useMemo(
     () => countActiveChildAgents(rt?.agents ?? []),
     [rt?.agents],
@@ -1125,12 +1221,19 @@ export function ChatView() {
                     item={item.item}
                     citationUrlsByIndex={citationUrlsByMessageId.get(item.item.id)}
                     citationSources={citationSourcesByMessageId.get(item.item.id)}
+                    isLatestUiSurface={item.item.id === latestUiSurfaceItemId}
                   />
                 )
               )
             )}
           </ConversationContent>
         </Conversation>
+
+        {selectedThreadId ? (
+          <div className="shrink-0 bg-panel px-4">
+            <A2uiSurfaceDock threadId={selectedThreadId} />
+          </div>
+        ) : null}
 
         <div
           className="relative flex shrink-0 flex-col bg-panel px-4 pb-3 pt-2"

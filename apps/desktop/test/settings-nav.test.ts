@@ -25,6 +25,7 @@ const savedStates: any[] = [];
 let startWorkspaceServerCalls = 0;
 let agentSocketConnectCalls = 0;
 let remoteAccessEnabled = true;
+let stopMobileRelayCalls = 0;
 
 mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   appendTranscriptBatch: async () => {},
@@ -63,11 +64,36 @@ mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   getUpdateState: async () => MOCK_UPDATE_STATE,
   checkForUpdates: async () => {},
   quitAndInstallUpdate: async () => {},
-  getDesktopFeatureFlags: () => ({ remoteAccess: remoteAccessEnabled }),
+  getDesktopFeatureFlags: (featureOverrides) => ({
+    remoteAccess: typeof featureOverrides?.remoteAccess === "boolean" ? featureOverrides.remoteAccess : remoteAccessEnabled,
+    workspacePicker: typeof featureOverrides?.workspacePicker === "boolean" ? featureOverrides.workspacePicker : true,
+    workspaceLifecycle: typeof featureOverrides?.workspaceLifecycle === "boolean"
+      ? featureOverrides.workspaceLifecycle
+      : true,
+  }),
   onSystemAppearanceChanged: () => () => {},
   onMenuCommand: () => () => {},
   onUpdateStateChanged: () => () => {},
   isRemoteAccessEnabled: () => remoteAccessEnabled,
+  stopMobileRelay: async () => {
+    stopMobileRelayCalls += 1;
+    return {
+      status: "idle",
+      workspaceId: null,
+      workspacePath: null,
+      relaySource: "unavailable",
+      relaySourceMessage: null,
+      relayServiceStatus: "unknown",
+      relayServiceMessage: null,
+      relayServiceUpdatedAt: null,
+      relayUrl: null,
+      sessionId: null,
+      pairingPayload: null,
+      trustedPhoneDeviceId: null,
+      trustedPhoneFingerprint: null,
+      lastError: null,
+    };
+  },
 }));
 
 mock.module("../src/lib/agentSocket", () => ({
@@ -82,10 +108,16 @@ describe("settings nav (store)", () => {
     startWorkspaceServerCalls = 0;
     agentSocketConnectCalls = 0;
     remoteAccessEnabled = true;
+    stopMobileRelayCalls = 0;
     useAppStore.setState({
       view: "chat",
       lastNonSettingsView: "chat",
       settingsPage: "providers",
+      desktopFeatureFlags: {
+        remoteAccess: true,
+        workspacePicker: true,
+        workspaceLifecycle: true,
+      },
       notifications: [],
       workspaces: [],
       selectedWorkspaceId: null,
@@ -153,9 +185,35 @@ describe("settings nav (store)", () => {
 
   test("openSettings falls back when remote access is unavailable", () => {
     remoteAccessEnabled = false;
+    useAppStore.setState({
+      desktopFeatureFlags: {
+        remoteAccess: false,
+        workspacePicker: true,
+        workspaceLifecycle: true,
+      },
+    });
     useAppStore.getState().openSettings("remoteAccess");
     expect(useAppStore.getState().view).toBe("settings");
     expect(useAppStore.getState().settingsPage).toBe("providers");
+  });
+
+  test("disabling remote access tears down an active relay and falls back from the remote access page", async () => {
+    useAppStore.setState({
+      settingsPage: "remoteAccess",
+      desktopFeatureFlags: {
+        remoteAccess: true,
+        workspacePicker: true,
+        workspaceLifecycle: true,
+      },
+      desktopFeatureFlagOverrides: {},
+    });
+
+    await useAppStore.getState().setDesktopFeatureFlagOverride("remoteAccess", false);
+
+    expect(useAppStore.getState().desktopFeatureFlags.remoteAccess).toBe(false);
+    expect(useAppStore.getState().desktopFeatureFlagOverrides).toEqual({ remoteAccess: false });
+    expect(useAppStore.getState().settingsPage).toBe("providers");
+    expect(stopMobileRelayCalls).toBe(1);
   });
 
   test("setDeveloperMode updates developer mode state", () => {

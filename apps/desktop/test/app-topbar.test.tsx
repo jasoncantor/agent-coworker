@@ -76,6 +76,8 @@ describe("desktop app top bar", () => {
       const titleButton = container.querySelector('button[aria-label="Open thread details"]');
       const sidebarToggle = container.querySelector('button[aria-label="Hide sidebar"]');
       const contextToggle = container.querySelector('button[aria-label="Hide context"]');
+      const inlineSidebarToggle = container.querySelector(".app-topbar__inline-sidebar-toggle");
+      const rightToolbar = container.querySelector(".app-topbar__toolbar--right");
       const newChatButton = container.querySelector('button[aria-label="New Chat"]');
       const newChatReveal = newChatButton?.closest(".app-topbar__new-chat-reveal");
 
@@ -86,6 +88,9 @@ describe("desktop app top bar", () => {
       expect(sidebarFill?.className).toContain("border-border/70");
       expect(sidebarToggle).not.toBeNull();
       expect(sidebarToggle?.className).toContain("app-topbar__plain-icon-button");
+      expect(inlineSidebarToggle?.className).toContain("app-topbar__toolbar-layer");
+      expect(inlineSidebarToggle?.className).not.toContain("app-topbar__toolbar ");
+      expect(inlineSidebarToggle?.className).not.toContain("app-topbar__toolbar app-topbar__controls");
       expect(newChatButton).toBeNull();
       expect(newChatReveal).toBeUndefined();
       expect(titleShell).not.toBeNull();
@@ -99,7 +104,9 @@ describe("desktop app top bar", () => {
       expect(contextToggle).not.toBeNull();
       expect(contextToggle?.className).toContain("app-topbar__toolbar-button");
       expect(contextToggle?.className).toContain("app-topbar__plain-icon-button");
-      expect(contextToggle?.closest(".app-topbar__toolbar--right")?.className).toContain("inset-y-0");
+      expect(rightToolbar?.className).toContain("app-topbar__toolbar-layer");
+      expect(rightToolbar?.className).toContain("inset-y-0");
+      expect(rightToolbar?.className).not.toContain("app-topbar__toolbar ");
       expect(container.textContent).toContain("Busy");
 
       await act(async () => {
@@ -254,6 +261,7 @@ describe("desktop app top bar", () => {
       expect(container.querySelector(".app-sidebar-collapse-control")).toBeNull();
       expect(leftRail).not.toBeNull();
       expect(strip).not.toBeNull();
+      expect(strip?.className).toContain("app-topbar__toolbar-layer");
       expect(buttons).toHaveLength(2);
       expect(buttons[0]?.getAttribute("aria-label")).toBe("New Chat");
       expect(buttons[1]?.getAttribute("aria-label")).toBe("Show sidebar");

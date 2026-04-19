@@ -38,6 +38,8 @@ import {
   truncateTitle,
 } from "../store.helpers";
 import { hydrateTranscriptSnapshot } from "../transcriptHydration";
+import { seedDockFromFeed } from "../a2uiDockReducer";
+import { createDefaultA2uiDock } from "../types";
 import type {
   SessionSnapshot,
   SessionSnapshotFingerprint,
@@ -164,6 +166,11 @@ export async function hydrateThreadSelection(
             sessionUsage: snapshot.sessionUsage,
             lastTurnUsage: snapshot.lastTurnUsage,
             feed: snapshot.feed,
+            a2uiDock: seedDockFromFeed(
+              currentRuntime?.a2uiDock ?? createDefaultA2uiDock(),
+              snapshot.feed,
+              nowIso(),
+            ),
             hydrating: false,
             transcriptOnly: false,
             connected: currentRuntime?.connected ?? false,
@@ -362,20 +369,28 @@ export async function hydrateThreadSelection(
           clearThreadHydrationIfCurrent(requestId);
           return;
         }
-        set((state) => ({
-          threadRuntimeById: {
-            ...state.threadRuntimeById,
-            [threadId]: {
-              ...state.threadRuntimeById[threadId],
-              sessionUsage: snapshot.sessionUsage,
-              lastTurnUsage: snapshot.lastTurnUsage,
-              agents: snapshot.agents,
-              feed: snapshot.feed,
-              hydrating: false,
-              transcriptOnly: true,
+        set((state) => {
+          const currentRuntime = state.threadRuntimeById[threadId];
+          return {
+            threadRuntimeById: {
+              ...state.threadRuntimeById,
+              [threadId]: {
+                ...currentRuntime,
+                sessionUsage: snapshot.sessionUsage,
+                lastTurnUsage: snapshot.lastTurnUsage,
+                agents: snapshot.agents,
+                feed: snapshot.feed,
+                a2uiDock: seedDockFromFeed(
+                  currentRuntime?.a2uiDock ?? createDefaultA2uiDock(),
+                  snapshot.feed,
+                  nowIso(),
+                ),
+                hydrating: false,
+                transcriptOnly: true,
+              },
             },
-          },
-        }));
+          };
+        });
       }
     } catch (error) {
       if (!isSelectionCurrent(requestId)) {
@@ -430,7 +445,7 @@ export async function hydrateThreadSelection(
   clearThreadSelectionRequest(threadId, requestId);
 }
 
-export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "removeThread" | "deleteThreadHistory" | "renameThread" | "newThread" | "selectThread" | "reconnectThread" | "sendMessage" | "cancelThread" | "clearThreadUsageHardCap" | "setThreadModel" | "setComposerText" | "setInjectContext" | "answerAsk" | "answerApproval" | "dismissPrompt" | "loadAllThreadUsage"> {
+export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStoreActions, "removeThread" | "deleteThreadHistory" | "renameThread" | "newThread" | "selectThread" | "reconnectThread" | "sendMessage" | "cancelThread" | "clearThreadUsageHardCap" | "dispatchA2uiAction" | "setThreadModel" | "setComposerText" | "setInjectContext" | "answerAsk" | "answerApproval" | "dismissPrompt" | "loadAllThreadUsage"> {
   const waitForSelectionFrame = async () => {
     await new Promise<void>((resolve) => {
       if (typeof window === "undefined") {
@@ -538,6 +553,11 @@ export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStore
             sessionUsage: snapshot.sessionUsage,
             lastTurnUsage: snapshot.lastTurnUsage,
             feed: snapshot.feed,
+            a2uiDock: seedDockFromFeed(
+              currentRuntime?.a2uiDock ?? createDefaultA2uiDock(),
+              snapshot.feed,
+              nowIso(),
+            ),
             hydrating: false,
             transcriptOnly: false,
             connected: currentRuntime?.connected ?? false,
@@ -978,6 +998,35 @@ export function createThreadActions(set: StoreSet, get: StoreGet): Pick<AppStore
         sessionId: get().threadRuntimeById[threadId]?.sessionId,
         stopAtUsd: null,
       });
+    },
+
+    dispatchA2uiAction: async ({ threadId, surfaceId, componentId, eventType, payload }) => {
+      const thread = get().threads.find((t) => t.id === threadId);
+      if (!thread) return false;
+      const clientMessageId = makeId();
+      try {
+        const mod = await import("../store.helpers/jsonRpcSocket");
+        await mod.dispatchA2uiAction(get, set, thread.workspaceId, threadId, {
+          surfaceId,
+          componentId,
+          eventType,
+          ...(payload !== undefined ? { payload } : {}),
+          clientMessageId,
+        });
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        set((s) => ({
+          notifications: pushNotification(s.notifications, {
+            id: makeId(),
+            ts: nowIso(),
+            kind: "error",
+            title: "A2UI action failed",
+            detail: message,
+          }),
+        }));
+        return false;
+      }
     },
   
 
