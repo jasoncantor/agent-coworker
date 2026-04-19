@@ -95,7 +95,7 @@ export function SidebarResizer() {
 
   return (
     <div
-      className={cn("absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize", dragging && "bg-primary/20")}
+      className={cn("app-native-no-drag absolute right-0 top-0 z-20 h-full w-2 cursor-col-resize", dragging && "bg-primary/20")}
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize sidebar"

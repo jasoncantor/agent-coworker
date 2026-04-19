@@ -94,6 +94,10 @@ samp {
   -webkit-app-region: no-drag;
 }
 
+.app-native-no-drag {
+  -webkit-app-region: no-drag;
+}
+
 .app-topbar__toolbar-layer {
   z-index: 1;
 }
