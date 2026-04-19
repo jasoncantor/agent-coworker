@@ -47,6 +47,11 @@ export type A2uiActionValidation =
   | { ok: true; surfaceId: string; componentId: string; componentType: string }
   | { ok: false; error: string; code: "unknown_surface" | "surface_deleted" | "unknown_component" };
 
+type OverflowEvictionPlan = {
+  surfaces: A2uiSurfacesById;
+  evicted?: A2uiSurfaceState;
+};
+
 function findComponentType(root: unknown, componentId: string, depth = 0): string | null {
   if (depth > 64) return null;
   if (!root || typeof root !== "object") return null;
@@ -118,14 +123,13 @@ export class A2uiSurfaceManager {
   ): A2uiApplyResult {
     const kind = envelopeKind(envelope);
     const incomingSurfaceId = envelopeSurfaceId(envelope);
-    if (kind === "createSurface" && !this.surfaces[incomingSurfaceId]) {
-      this.evictIfOverflowing(now);
-    }
-    const result = applyEnvelope(this.surfaces, envelope, now);
-    this.surfaces = { ...result.surfaces };
+    const overflowPlan = kind === "createSurface" && !this.surfaces[incomingSurfaceId]
+      ? this.planOverflowEviction(this.surfaces, now)
+      : { surfaces: this.surfaces };
+    const result = applyEnvelope(overflowPlan.surfaces, envelope, now);
 
     const surfaceId = result.surfaceId;
-    const state = this.surfaces[surfaceId];
+    const state = result.surfaces[surfaceId];
 
     if (result.change === "noop" || !state) {
       return {
@@ -138,9 +142,6 @@ export class A2uiSurfaceManager {
 
     const serialized = safeSerializedLength(state);
     if (serialized > MAX_RESOLVED_SURFACE_BYTES) {
-      // Revert by removing the surface so state stays bounded, then report.
-      const { [surfaceId]: _removed, ...rest } = this.surfaces;
-      this.surfaces = rest;
       this.deps.log?.(
         `[a2ui] rejected surface ${surfaceId}: resolved state ${serialized}B exceeds ${MAX_RESOLVED_SURFACE_BYTES}B cap`,
       );
@@ -151,6 +152,13 @@ export class A2uiSurfaceManager {
       };
     }
 
+    this.surfaces = { ...result.surfaces };
+    if (overflowPlan.evicted) {
+      this.deps.log?.(
+        `[a2ui] evicting oldest surface ${overflowPlan.evicted.surfaceId} to stay under cap (${MAX_SURFACES_PER_SESSION})`,
+      );
+      this.deps.emit(this.resolvedEvent(overflowPlan.evicted, { changeKind: "deleteSurface" }));
+    }
     this.deps.emit(this.resolvedEvent(state, { ...meta, changeKind: kind }));
 
     return {
@@ -235,46 +243,49 @@ export class A2uiSurfaceManager {
     };
   }
 
-  private evictIfOverflowing(now: string) {
-    const ids = Object.keys(this.surfaces);
-    if (ids.length < MAX_SURFACES_PER_SESSION) return;
+  private planOverflowEviction(surfaces: A2uiSurfacesById, now: string): OverflowEvictionPlan {
+    const ids = Object.keys(surfaces);
+    if (ids.length < MAX_SURFACES_PER_SESSION) {
+      return { surfaces };
+    }
 
     const deletedIds = ids
-      .map((id) => this.surfaces[id]!)
+      .map((id) => surfaces[id]!)
       .filter((state) => state.deleted)
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
       .map((state) => state.surfaceId);
+    let nextSurfaces = surfaces;
     if (deletedIds.length > 0) {
-      let nextSurfaces = { ...this.surfaces };
+      nextSurfaces = { ...surfaces };
       while (Object.keys(nextSurfaces).length >= MAX_SURFACES_PER_SESSION && deletedIds.length > 0) {
         const deletedSurfaceId = deletedIds.shift()!;
         const { [deletedSurfaceId]: _pruned, ...rest } = nextSurfaces;
         nextSurfaces = rest;
       }
-      this.surfaces = nextSurfaces;
-      if (Object.keys(this.surfaces).length < MAX_SURFACES_PER_SESSION) {
-        return;
+      if (Object.keys(nextSurfaces).length < MAX_SURFACES_PER_SESSION) {
+        return { surfaces: nextSurfaces };
       }
     }
 
     // Evict oldest non-deleted surface.
-    const sorted = Object.keys(this.surfaces)
-      .map((id) => this.surfaces[id]!)
+    const sorted = Object.keys(nextSurfaces)
+      .map((id) => nextSurfaces[id]!)
       .filter((state) => !state.deleted)
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
     const victim = sorted[0];
-    if (!victim) return;
+    if (!victim) return { surfaces: nextSurfaces };
 
-    this.deps.log?.(`[a2ui] evicting oldest surface ${victim.surfaceId} to stay under cap (${MAX_SURFACES_PER_SESSION})`);
-    const next: A2uiSurfaceState = {
+    const evicted: A2uiSurfaceState = {
       ...victim,
       deleted: true,
       revision: victim.revision + 1,
       updatedAt: now,
     };
-    const { [victim.surfaceId]: _evicted, ...rest } = this.surfaces;
-    this.surfaces = rest;
-    this.deps.emit(this.resolvedEvent(next, { changeKind: "deleteSurface" }));
+    const { [victim.surfaceId]: _evicted, ...rest } = nextSurfaces;
+    return {
+      surfaces: rest,
+      evicted,
+    };
   }
 }
 

@@ -16,14 +16,14 @@ function createManager() {
   return { manager, events, logs };
 }
 
-function createEnvelope(surfaceId = "s1"): A2uiEnvelope {
+function createEnvelope(surfaceId = "s1", message = "hi"): A2uiEnvelope {
   return {
     version: "v0.9",
     createSurface: {
       surfaceId,
       catalogId: A2UI_BASIC_CATALOG_ID,
       root: { id: "root", type: "Column" },
-      dataModel: { message: "hi" },
+      dataModel: { message },
     },
   };
 }
@@ -186,6 +186,47 @@ describe("A2uiSurfaceManager", () => {
     expect(Object.keys(manager.getSurfaces())).toHaveLength(16);
     expect(manager.getSurfaces()).toHaveProperty("s1");
     expect(manager.getSurfaces().s16?.deleted).toBe(true);
+    expect(events.find((event) => event.type === "a2ui_surface" && event.surfaceId === "s1" && event.deleted)).toBeUndefined();
+  });
+
+  test("keeps the previous surface when an oversized update is rejected", () => {
+    const { manager, events } = createManager();
+    manager.applyEnvelope(createEnvelope("s1"));
+    events.length = 0;
+
+    const result = manager.applyEnvelope({
+      version: "v0.9",
+      updateDataModel: {
+        surfaceId: "s1",
+        path: "/message",
+        value: "x".repeat(300_000),
+      },
+    }, "2026-01-01T00:01:00.000Z");
+
+    expect(result.ok).toBe(false);
+    expect(manager.getSurfaces().s1?.revision).toBe(1);
+    expect((manager.getSurfaces().s1?.dataModel as { message: string }).message).toBe("hi");
+    expect(manager.validateAction({ surfaceId: "s1", componentId: "root" }).ok).toBe(true);
+    expect(events).toHaveLength(0);
+  });
+
+  test("does not evict another surface when an oversized create is rejected at the cap", () => {
+    const { manager, events } = createManager();
+    for (let index = 1; index <= 16; index += 1) {
+      const result = manager.applyEnvelope(createEnvelope(`s${index}`), `2026-01-01T00:00:${String(index).padStart(2, "0")}.000Z`);
+      expect(result.ok).toBe(true);
+    }
+    events.length = 0;
+
+    const result = manager.applyEnvelope(
+      createEnvelope("s17", "x".repeat(300_000)),
+      "2026-01-01T00:01:00.000Z",
+    );
+
+    expect(result.ok).toBe(false);
+    expect(Object.keys(manager.getSurfaces())).toHaveLength(16);
+    expect(manager.getSurfaces()).toHaveProperty("s1");
+    expect(manager.getSurfaces()).not.toHaveProperty("s17");
     expect(events.find((event) => event.type === "a2ui_surface" && event.surfaceId === "s1" && event.deleted)).toBeUndefined();
   });
 });
