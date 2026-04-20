@@ -28,6 +28,16 @@ const WORKSPACE_ITEM_CLASSNAME = "sidebar-workspace-item [&:not(:last-child)]:mb
 /** Matches `.sidebar-thread-region` transition duration in styles.css (fallback when transitionend does not fire). */
 const SIDEBAR_THREAD_REGION_DURATION_MS = 240;
 
+/** Tight spring so sibling cards track drag swaps; `layout="position"` avoids height cross-fade when rows differ (expanded threads). */
+const WORKSPACE_REORDER_LAYOUT_TRANSITION = {
+  layout: {
+    type: "spring" as const,
+    stiffness: 520,
+    damping: 38,
+    mass: 0.85,
+  },
+};
+
 type WorkspaceMoveDirection = "up" | "down";
 
 function usePrefersReducedMotion(): boolean {
@@ -221,7 +231,7 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
               ? "text-foreground hover:bg-foreground/[0.03]"
               : "text-foreground/78 hover:bg-foreground/[0.03] hover:text-foreground",
         )}
-        onPointerDown={reorderEnabled
+        onPointerDownCapture={reorderEnabled
           ? (event) => {
               if (event.button !== 0) {
                 return;
@@ -386,6 +396,8 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
       className={WORKSPACE_ITEM_CLASSNAME}
       dragControls={controls}
       dragListener={false}
+      layout="position"
+      transition={WORKSPACE_REORDER_LAYOUT_TRANSITION}
       value={workspace}
     >
       {content}
