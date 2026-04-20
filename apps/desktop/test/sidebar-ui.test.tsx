@@ -308,7 +308,7 @@ describe("desktop sidebar", () => {
     }
   });
 
-  test.serial("shows chat navigation and clear workspace scope labels in the sidebar", async () => {
+  test.serial("shows chat navigation controls and workspace cards in the sidebar", async () => {
     const harness = setupSidebarJsdom();
     let root: ReturnType<typeof createRoot> | null = null;
 
@@ -330,8 +330,7 @@ describe("desktop sidebar", () => {
 
       expect(container.textContent).toContain("New Chat");
       expect(container.textContent).toContain("Plugins");
-      expect(container.textContent).toContain("2 sessions");
-      expect(container.textContent).toContain("viewing plugins");
+      expect(container.textContent).toContain("Agent Coworker");
 
       const newChatButton = Array.from(container.querySelectorAll("button")).find((button) =>
         button.textContent?.includes("New Chat"),
@@ -562,8 +561,8 @@ describe("desktop sidebar", () => {
 
       const workspaceCards = Array.from(container.querySelectorAll(".sidebar-workspace-card"));
       expect(workspaceCards).toHaveLength(2);
-      expect(workspaceCards[0]?.textContent).not.toContain("viewing plugins");
-      expect(workspaceCards[1]?.textContent).toContain("viewing plugins");
+      expect(workspaceCards[0]?.className ?? "").not.toContain("bg-foreground/[0.05]");
+      expect(workspaceCards[1]?.className ?? "").toContain("bg-foreground/[0.05]");
 
       const firstWorkspaceButton = Array.from(container.querySelectorAll("button")).find((button) =>
         button.textContent?.includes("Agent Coworker"),

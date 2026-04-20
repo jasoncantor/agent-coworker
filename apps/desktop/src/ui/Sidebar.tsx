@@ -80,34 +80,8 @@ type SidebarWorkspaceItemProps = {
   threadRuntimeById: Record<string, ThreadRuntime | undefined>;
   visibleThreads: ThreadRecord[];
   workspace: WorkspaceRecord;
-  workspaceMeta: string;
   workspaceThreads: ThreadRecord[];
 };
-
-function formatWorkspaceMeta(opts: {
-  threadCount: number;
-  isActive: boolean;
-  view: "chat" | "skills" | "settings";
-  isCurrentThreadWorkspace: boolean;
-  isStarting: boolean;
-  hasError: boolean;
-}): string {
-  if (opts.hasError) return "Connection issue";
-  if (opts.isStarting) return "Starting workspace";
-
-  const sessionLabel = opts.threadCount === 1 ? "1 session" : `${opts.threadCount} sessions`;
-
-  if (opts.isActive && opts.view === "skills") {
-    return `${sessionLabel} · viewing plugins`;
-  }
-  if (opts.isCurrentThreadWorkspace) {
-    return `${sessionLabel} · current chat`;
-  }
-  if (opts.threadCount === 0) {
-    return "No sessions yet";
-  }
-  return sessionLabel;
-}
 
 const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
   active,
@@ -134,7 +108,6 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
   threadRuntimeById,
   visibleThreads,
   workspace,
-  workspaceMeta,
   workspaceThreads,
 }: SidebarWorkspaceItemProps) {
   const controls = useDragControls();
@@ -223,7 +196,7 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
     >
       <div
         className={cn(
-          "sidebar-workspace-card flex items-center gap-1 rounded-lg px-1 py-1",
+          "sidebar-workspace-card flex items-center gap-1 rounded-lg px-1 py-0.5",
           reorderEnabled && "sidebar-workspace-card--reorderable",
           emphasizeWorkspace
             ? "border-border/45 bg-foreground/[0.05] text-foreground"
@@ -263,7 +236,7 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
         </CollapsibleTrigger>
         <Button
           aria-keyshortcuts={reorderEnabled ? "Alt+ArrowUp Alt+ArrowDown Meta+ArrowUp Meta+ArrowDown" : undefined}
-          className="sidebar-lift flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1.5 text-left"
+          className="sidebar-lift flex h-auto min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left"
           onKeyDown={reorderEnabled
             ? (event) => {
                 if (!(event.altKey || event.metaKey)) {
@@ -281,11 +254,8 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
           type="button"
           variant="ghost"
         >
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-medium tracking-[-0.015em]">{workspace.name}</span>
-            <span className="mt-0.5 block truncate text-[11px] font-medium text-muted-foreground">
-              {workspaceMeta}
-            </span>
+          <span className="block min-w-0 flex-1 truncate text-[13px] font-medium tracking-[-0.015em]">
+            {workspace.name}
           </span>
         </Button>
       </div>
@@ -415,7 +385,6 @@ export const Sidebar = memo(function Sidebar() {
   const pluginManagementWorkspaceId = useAppStore((s) => s.pluginManagementWorkspaceId);
   const pluginManagementMode = useAppStore((s) => s.pluginManagementMode);
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
-  const workspaceRuntimeById = useAppStore((s) => s.workspaceRuntimeById);
   const threadRuntimeById = useAppStore((s) => s.threadRuntimeById);
   const desktopFeatures = useAppStore((s) => s.desktopFeatureFlags);
 
@@ -627,11 +596,7 @@ export const Sidebar = memo(function Sidebar() {
   const workspaceItems = visibleWorkspaces.map((workspace) => {
     const active = workspace.id === activeWorkspaceId;
     const expanded = expandedWorkspaceSections[workspace.id] ?? false;
-    const workspaceRuntime = workspaceRuntimeById[workspace.id];
     const workspaceThreads = threadsByWorkspaceId.get(workspace.id) ?? [];
-    const threadCount = workspaceThreads.length;
-    const isCurrentThreadWorkspace = selectedThreadId !== null
-      && workspaceThreads.some((thread) => thread.id === selectedThreadId);
     const emphasizeWorkspace = shouldEmphasizeWorkspaceRow(
       active,
       selectedThreadId,
@@ -643,14 +608,6 @@ export const Sidebar = memo(function Sidebar() {
       showAllThreads,
       MAX_VISIBLE_THREADS,
     );
-    const workspaceMeta = formatWorkspaceMeta({
-      threadCount,
-      isActive: active,
-      view,
-      isCurrentThreadWorkspace,
-      isStarting: workspaceRuntime?.starting === true,
-      hasError: workspaceRuntime?.error !== null && workspaceRuntime?.error !== undefined,
-    });
 
     return (
       <SidebarWorkspaceItem
@@ -686,7 +643,6 @@ export const Sidebar = memo(function Sidebar() {
         threadRuntimeById={threadRuntimeById}
         visibleThreads={visibleThreads}
         workspace={workspace}
-        workspaceMeta={workspaceMeta}
         workspaceThreads={workspaceThreads}
       />
     );
