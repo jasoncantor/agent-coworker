@@ -1,6 +1,8 @@
 import { Reorder, useDragControls } from "framer-motion";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from "react";
 
+import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion";
+
 import {
   ChevronRightIcon,
   FolderIcon,
@@ -39,21 +41,6 @@ const WORKSPACE_REORDER_LAYOUT_TRANSITION = {
 };
 
 type WorkspaceMoveDirection = "up" | "down";
-
-function usePrefersReducedMotion(): boolean {
-  const [prefers, setPrefers] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return;
-    }
-    const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setPrefers(mql.matches);
-    const handleChange = () => setPrefers(mql.matches);
-    mql.addEventListener("change", handleChange);
-    return () => mql.removeEventListener("change", handleChange);
-  }, []);
-  return prefers;
-}
 
 type SidebarWorkspaceItemProps = {
   active: boolean;
@@ -751,7 +738,7 @@ export const Sidebar = memo(function Sidebar() {
             view === "settings" && "bg-foreground/[0.055] text-foreground",
           )}
           type="button"
-          onClick={() => openSettings()}
+          onClick={() => void openSettings()}
         >
           <Settings2Icon className="h-4 w-4 text-muted-foreground" />
           Settings

@@ -68,7 +68,7 @@ import {
   normalizeDesktopFeatureFlagOverrides,
   resolveDesktopFeatureFlags,
   type DesktopFeatureFlagOverrides,
-} from "../src/lib/desktopFeatureFlags";
+} from "../../../src/shared/featureFlags";
 
 function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
   const parsed = schema.safeParse(value);

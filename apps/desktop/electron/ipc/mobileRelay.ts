@@ -9,7 +9,7 @@ import {
   mobileRelayBridgeStateSchema,
   mobileRelayStartInputSchema,
 } from "../../src/lib/desktopSchemas";
-import { resolveDesktopFeatureFlags } from "../../src/lib/desktopFeatureFlags";
+import { resolveDesktopFeatureFlags } from "../../../../src/shared/featureFlags";
 import type { DesktopIpcModuleContext } from "./types";
 
 const REMOTE_ACCESS_DISABLED_MESSAGE = "Remote access is disabled. Enable it in Settings -> Feature Flags.";

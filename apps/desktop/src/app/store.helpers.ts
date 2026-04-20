@@ -4,7 +4,7 @@ import type {
   DesktopFeatureFlagId,
   DesktopFeatureFlagOverrides,
   DesktopFeatureFlags,
-} from "../lib/desktopFeatureFlags";
+} from "../../../../src/shared/featureFlags";
 import { fallbackAuthMethods } from "../lib/providerDisplayNames";
 import type { MCPServerConfig, ProviderName, ServerEvent, TodoItem } from "../lib/wsProtocol";
 import { PROVIDER_NAMES } from "../lib/wsProtocol";

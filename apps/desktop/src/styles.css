@@ -122,6 +122,10 @@ samp {
   padding-left: 4.5rem;
 }
 
+.app-topbar__thread-anchor--win32-collapsed {
+  padding-left: 0.5rem;
+}
+
 .app-topbar__thread-button {
   min-width: 0;
   max-width: 100%;
@@ -148,6 +152,7 @@ samp {
   min-width: 0;
   font-size: 0.8rem;
   font-weight: 620;
+  line-height: 1;
   letter-spacing: -0.02em;
   color: var(--text-emphasis);
 }
@@ -156,6 +161,7 @@ samp {
   flex: 0 0 auto;
   font-size: 0.7rem;
   font-weight: 560;
+  line-height: 1;
 }
 
 .app-topbar__thread-subtitle {
@@ -163,6 +169,7 @@ samp {
   min-width: 0;
   font-size: 0.74rem;
   font-weight: 560;
+  line-height: 1;
   font-style: italic;
   color: var(--text-subtle);
 }

@@ -5,7 +5,7 @@ import {
   FEATURE_FLAG_DEFINITIONS,
   FEATURE_FLAG_IDS,
   type FeatureFlagId,
-} from "../../../lib/desktopFeatureFlags";
+} from "../../../../../../src/shared/featureFlags";
 
 export function FeatureFlagsPage() {
   const updateState = useAppStore((s) => s.updateState);

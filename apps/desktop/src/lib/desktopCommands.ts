@@ -14,7 +14,7 @@ import type {
   DesktopFeatureFlagId,
   DesktopFeatureFlagOverrides,
   DesktopFeatureFlags,
-} from "./desktopFeatureFlags";
+} from "../../../../src/shared/featureFlags";
 
 function getDesktopApi(): DesktopApi | undefined {
   return typeof window === "undefined" ? undefined : window.cowork;

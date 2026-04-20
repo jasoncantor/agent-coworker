@@ -20,11 +20,11 @@ import {
   renamePath,
   trashPath,
 } from "../../lib/desktopCommands";
-import type { DesktopFeatureFlags } from "../../lib/desktopFeatureFlags";
 import type { ChildModelRoutingMode } from "../../lib/wsProtocol";
 import { safeParseServerEvent, type ProviderName } from "../../lib/wsProtocol";
 import {
   normalizeDesktopFeatureFlagOverrides,
+  type DesktopFeatureFlags,
 } from "../../../../../src/shared/featureFlags";
 
 import {
