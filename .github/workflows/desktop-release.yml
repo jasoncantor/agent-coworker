@@ -351,6 +351,7 @@ jobs:
   smoke-windows-arm64:
     name: Smoke Windows ARM64 Desktop
     needs: package
+    if: ${{ always() && needs.package.result == 'success' }}
     runs-on: windows-11-arm
     timeout-minutes: 30
     steps:
@@ -440,10 +441,10 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     needs:
       - package
       - smoke-windows-arm64
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/') && needs.package.result == 'success' && needs.smoke-windows-arm64.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

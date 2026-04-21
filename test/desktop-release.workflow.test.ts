@@ -66,7 +66,10 @@ describe("desktop release workflow", () => {
 
   test("publishes release assets only after the ARM64 smoke job passes", () => {
     expect(workflow).toMatch(
-      /publish:[\s\S]*?needs:[\s\S]*?- package[\s\S]*?- smoke-windows-arm64/,
+      /smoke-windows-arm64:[\s\S]*?if: \$\{\{ always\(\) && needs\.package\.result == 'success' \}\}/,
+    );
+    expect(workflow).toMatch(
+      /publish:[\s\S]*?needs:[\s\S]*?- package[\s\S]*?- smoke-windows-arm64[\s\S]*?if: \$\{\{ always\(\) && startsWith\(github\.ref, 'refs\/tags\/'\) && needs\.package\.result == 'success' && needs\.smoke-windows-arm64\.result == 'success' \}\}/,
     );
     expect(workflow).toContain("- name: Collect release asset list");
     expect(workflow).toContain("files: ${{ steps.collect-release-assets.outputs.files }}");
