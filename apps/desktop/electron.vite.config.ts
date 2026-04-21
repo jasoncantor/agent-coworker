@@ -36,6 +36,8 @@ export default defineConfig({
       alias: coworkAlias,
     },
     build: {
+      sourcemap: false,
+      reportCompressedSize: false,
       outDir: "out/main",
       rollupOptions: {
         input: path.resolve(appRoot, "electron/main.ts"),
@@ -49,6 +51,8 @@ export default defineConfig({
       alias: coworkAlias,
     },
     build: {
+      sourcemap: false,
+      reportCompressedSize: false,
       // Sandboxed preloads cannot rely on arbitrary runtime requires from node_modules.
       // Bundle preload deps so the desktop bridge stays available at startup.
       externalizeDeps: false,
@@ -81,6 +85,8 @@ export default defineConfig({
       },
     },
     build: {
+      sourcemap: false,
+      reportCompressedSize: false,
       outDir: "out/renderer",
       rollupOptions: {
         input: path.resolve(appRoot, "index.html"),

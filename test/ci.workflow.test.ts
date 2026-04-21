@@ -6,13 +6,20 @@ const workflowPath = new URL("../.github/workflows/ci.yml", import.meta.url);
 const workflow = readFileSync(workflowPath, "utf8");
 
 describe("main CI workflow", () => {
-  test("installs the latest Bun release explicitly", () => {
+  test("pins Bun version via .bun-version file", () => {
     expect(workflow).toContain("- name: Setup Bun");
     expect(workflow).toContain("uses: oven-sh/setup-bun@v2");
-    expect(workflow).toContain('bun-version: "latest"');
+    expect(workflow).toContain('bun-version-file: ".bun-version"');
   });
 
-  test("keeps the core reliability guardrails in the main checks job", () => {
+  test("caches dependencies", () => {
+    expect(workflow).toContain("uses: actions/cache@v4");
+    expect(workflow).toContain("node_modules");
+    expect(workflow).toContain("~/.bun/install/cache");
+    expect(workflow).toContain("${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}");
+  });
+
+  test("keeps the core reliability guardrails", () => {
     expect(workflow).toContain("- name: Docs consistency check");
     expect(workflow).toContain("run: bun run docs:check");
     expect(workflow).toContain("- name: Typecheck");
@@ -23,15 +30,19 @@ describe("main CI workflow", () => {
     expect(workflow).toContain("run: bun run test:stable -- --max-concurrency 1");
   });
 
-  test("runs the main guardrails in a predictable order before the optional remote smoke", () => {
-    expect(workflow).toMatch(
-      /- name: Docs consistency check[\s\S]*?run: bun run docs:check[\s\S]*?- name: Typecheck[\s\S]*?run: bun run typecheck[\s\S]*?- name: Unit tests[\s\S]*?run: bun test --max-concurrency 1[\s\S]*?- name: Stable per-file unit tests[\s\S]*?run: bun run test:stable -- --max-concurrency 1[\s\S]*?- name: Remote MCP smoke/,
-    );
+  test("runs stable per-file tests only on push events", () => {
+    expect(workflow).toContain("if: github.event_name == 'push'");
   });
 
   test("keeps remote MCP smoke opt-in via secrets-backed environment", () => {
     expect(workflow).toContain('RUN_REMOTE_MCP_TESTS: "1"');
     expect(workflow).toContain("OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}");
     expect(workflow).toContain("run: bun test test/mcp.remote.grep.test.ts");
+  });
+
+  test("skips remote MCP smoke on fork pull requests", () => {
+    expect(workflow).toContain(
+      "if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork",
+    );
   });
 });

@@ -1,6 +1,7 @@
 appId: com.cowork.desktop
 productName: Cowork
 asar: true
+compression: maximum
 directories:
   output: release
 files:

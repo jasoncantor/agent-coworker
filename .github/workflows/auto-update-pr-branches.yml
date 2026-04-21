@@ -17,7 +17,7 @@ concurrency:
 jobs:
   sync-open-pr-branches:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     env:
       BASE_REF: main
       GH_TOKEN: ${{ github.token }}

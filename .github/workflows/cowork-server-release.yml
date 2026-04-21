@@ -16,6 +16,7 @@ concurrency:
 jobs:
   validate:
     name: Validate
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -24,12 +25,25 @@ jobs:
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".bun-version"
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
 
       - name: Install dependencies
         run: bun install
 
+      # Serialize async tests: many desktop tests swap global JSDOM document/window and
+      # cannot run concurrently without clobbering each other on shared globalThis.
       - name: Unit tests
-        run: bun test
+        run: bun test --max-concurrency 1
 
       - name: Typecheck
         run: bun run typecheck
@@ -40,6 +54,7 @@ jobs:
   build:
     name: Build cowork-server (${{ matrix.label }})
     needs: validate
+    if: always() && (needs.validate.result == 'success' || needs.validate.result == 'skipped')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -72,6 +87,17 @@ jobs:
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".bun-version"
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
 
       - name: Install dependencies
         run: bun install

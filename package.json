@@ -57,7 +57,7 @@
     "harness:run": "bun scripts/run_raw_agent_loops.ts --report-only",
     "test": "bun test",
     "test:stable": "bun scripts/run_tests_stable.ts",
-    "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p apps/desktop/tsconfig.json",
+    "clean": "rm -rf dist/ apps/desktop/out/ apps/desktop/release/ apps/desktop/resources/binaries/ .tsbuildinfo .tsbuildinfo-desktop",    "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p apps/desktop/tsconfig.json",
     "typecheck:desktop": "bunx tsc --noEmit -p apps/desktop/tsconfig.json"
   },
   "dependencies": {
@@ -70,7 +70,6 @@
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/sdk-node": "^0.212.0",
     "fast-glob": "^3.3.3",
-    "fuzzysort": "^3.1.0",
     "jsdom": "^28.1.0",
     "partial-json": "^0.1.7",
     "react": "^19.2.5",

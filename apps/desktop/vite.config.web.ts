@@ -104,6 +104,8 @@ export default defineConfig({
     },
   },
   build: {
+    sourcemap: false,
+    reportCompressedSize: false,
     outDir: "out/web",
     rollupOptions: {
       input: path.resolve(appRoot, "index.web.html"),

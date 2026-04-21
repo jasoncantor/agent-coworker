@@ -22,7 +22,9 @@
 
     /* Linting */
     "strict": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "incremental": true,
+    "tsBuildInfoFile": ".tsbuildinfo-desktop"
   },
   "include": ["src", "electron"]
 }

@@ -183,6 +183,8 @@ async function main() {
           "COWORK_DESKTOP_BUNDLE*",
           "--target",
           "bun",
+          "--minify",
+          "--sourcemap=none",
         ],
         {
           cwd: root,
@@ -213,6 +215,8 @@ async function main() {
         "COWORK_DESKTOP_BUNDLE*",
         "--target",
         "bun",
+        "--minify",
+        "--sourcemap=none",
       ];
       if (process.platform === "win32") {
         compileArgs.push("--windows-hide-console");

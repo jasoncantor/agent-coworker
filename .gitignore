@@ -44,3 +44,8 @@ __pycache__/
 .heroui-docs/
 /apps/mobile/dist-export
 /.omx
+
+# Desktop build outputs
+apps/desktop/release/
+apps/desktop/out/
+apps/desktop/out-web/

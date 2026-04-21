@@ -10,8 +10,9 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "types": ["bun-types"],
-    "noEmit": true
+    "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": ".tsbuildinfo"
   },
-  "include": ["src"],
-  "exclude": ["src/index.ts"]
+  "include": ["src"]
 }

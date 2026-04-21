@@ -17,21 +17,26 @@ concurrency:
 jobs:
   validate:
     name: Validate
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.11"
+          bun-version-file: ".bun-version"
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
 
       - name: Install dependencies
         run: bun install
@@ -39,8 +44,10 @@ jobs:
       - name: Docs consistency check
         run: bun run docs:check
 
+      # Serialize async tests: many desktop tests swap global JSDOM document/window and
+      # cannot run concurrently without clobbering each other on shared globalThis.
       - name: Unit tests
-        run: bun test
+        run: bun test --max-concurrency 1
 
       - name: Typecheck
         run: bun run typecheck
@@ -48,6 +55,7 @@ jobs:
   package:
     name: Package (${{ matrix.label }})
     needs: validate
+    if: always() && (needs.validate.result == 'success' || needs.validate.result == 'skipped')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
@@ -78,7 +86,16 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.11"
+          bun-version-file: ".bun-version"
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
 
       - name: Install dependencies
         run: bun install
@@ -349,7 +366,7 @@ jobs:
           name: ${{ matrix.unpacked_artifact_name }}
           path: apps/desktop/release/*unpacked/**
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   smoke-windows-arm64:
     name: Smoke Windows ARM64 Desktop

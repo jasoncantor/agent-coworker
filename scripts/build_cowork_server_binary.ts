@@ -81,7 +81,7 @@ async function main() {
     await fs.mkdir(serverEntrypointDir, { recursive: true });
 
     await runCommand(
-      ["bun", "build", entry, "--outfile", serverEntrypointPath, "--target", "bun"],
+      ["bun", "build", entry, "--outfile", serverEntrypointPath, "--target", "bun", "--minify", "--sourcemap=none"],
       {
         cwd: root,
         env: process.env,
@@ -118,7 +118,7 @@ async function main() {
   }
 
   await runCommand(
-    ["bun", "build", entry, "--compile", "--target", "bun", "--outfile", resolvedOutfile],
+    ["bun", "build", entry, "--compile", "--target", "bun", "--outfile", resolvedOutfile, "--minify", "--sourcemap=none"],
     {
       cwd: root,
       env: process.env,

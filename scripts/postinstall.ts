@@ -5,6 +5,11 @@ import { spawn } from "node:child_process";
 
 const APP_DIRS = ["apps/desktop", "apps/mobile"] as const;
 
+if (process.env.CI || process.env.SKIP_POSTINSTALL) {
+  console.log("[postinstall] skipping sub-app installs (CI/SKIP_POSTINSTALL set)");
+  process.exit(0);
+}
+
 function runBunInstall(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn("bun", args, {
