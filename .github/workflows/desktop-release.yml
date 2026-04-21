@@ -203,46 +203,31 @@ jobs:
 
           bun run desktop:build -- --publish never --${{ matrix.build_arch }}
 
-      - name: Verify Windows ARM64 installer sidecar payload
+      - name: Build Windows ARM64 unpacked desktop directory
+        if: ${{ runner.os == 'Windows' && matrix.build_arch == 'arm64' }}
+        shell: pwsh
+        env:
+          COWORK_BUILD_PLATFORM: win32
+          COWORK_BUILD_ARCH: arm64
+        run: |
+          bun run --cwd apps/desktop build:dir -- --arm64
+
+      - name: Verify Windows ARM64 unpacked sidecar payload
         if: ${{ runner.os == 'Windows' && matrix.build_arch == 'arm64' }}
         shell: pwsh
         run: |
-          $installer = Get-ChildItem "apps/desktop/release/*-win-arm64.exe" |
+          $manifest = Get-ChildItem "apps/desktop/release" -Recurse -Filter "cowork-server-manifest.json" -File |
+            Where-Object { $_.FullName -match "\\win-arm64-unpacked\\resources\\binaries\\" } |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
 
-          if (-not $installer) {
-            throw "No packaged .exe installer found for arch arm64 under apps/desktop/release"
-          }
-
-          $installRoot = Join-Path $env:RUNNER_TEMP "desktop-installer-arm64-smoke"
-          if (Test-Path $installRoot) {
-            Remove-Item $installRoot -Recurse -Force
-          }
-
-          $installProcess = Start-Process -FilePath $installer.FullName -ArgumentList "/S", "/D=$installRoot" -PassThru -Wait
-          if ($installProcess.ExitCode -ne 0) {
-            throw "ARM64 installer exited with code $($installProcess.ExitCode)"
-          }
-
-          $manifest = Get-ChildItem $installRoot -Recurse -Filter "cowork-server-manifest.json" -File |
-            Sort-Object FullName |
-            Select-Object -First 1
-
           if (-not $manifest) {
-            if (Test-Path $installRoot) {
-              Write-Host "Installer tree under $installRoot:"
-              Get-ChildItem $installRoot -Recurse -Force |
-                Select-Object -First 50 -ExpandProperty FullName |
-                ForEach-Object { Write-Host $_ }
-            }
-
-            throw "ARM64 installer did not install cowork-server-manifest.json under $installRoot"
+            throw "ARM64 unpacked desktop directory did not include cowork-server-manifest.json under win-arm64-unpacked/resources/binaries"
           }
 
           $sidecarRoot = Split-Path $manifest.FullName -Parent
           if ($sidecarRoot -notmatch "[\\\\/]resources[\\\\/]binaries$") {
-            throw "ARM64 installer manifest was found outside resources\\binaries: $sidecarRoot"
+            throw "ARM64 unpacked manifest was found outside resources\\binaries: $sidecarRoot"
           }
 
           $requiredPaths = @(
@@ -259,7 +244,7 @@ jobs:
           $manifestJson = Get-Content $manifest.FullName -Raw | ConvertFrom-Json
 
           if ($manifestJson.launch.kind -ne "bun" -or $manifestJson.launch.runtime -ne "bun.exe" -or $manifestJson.launch.entrypoint -ne "server/index.js") {
-            throw "ARM64 installer sidecar manifest does not point at the expected Bun runtime payload"
+            throw "ARM64 unpacked sidecar manifest does not point at the expected Bun runtime payload"
           }
 
       - name: Verify macOS signing and notarization
@@ -337,15 +322,6 @@ jobs:
           } else {
             Write-Host "WIN_CSC_LINK/WIN_CSC_KEY_PASSWORD not configured; publishing unsigned installer plus updater metadata."
           }
-
-      - name: Build Windows ARM64 unpacked desktop directory
-        if: ${{ runner.os == 'Windows' && matrix.build_arch == 'arm64' }}
-        shell: pwsh
-        env:
-          COWORK_BUILD_PLATFORM: win32
-          COWORK_BUILD_ARCH: arm64
-        run: |
-          bun run --cwd apps/desktop build:dir -- --arm64
 
       - name: Upload macOS desktop artifacts
         if: ${{ runner.os == 'macOS' }}

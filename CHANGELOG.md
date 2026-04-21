@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 0.1.46 - 2026-04-21
+
+### Fixed
+
+- **Windows ARM64 desktop release gating** — Stopped using a silent
+  installer execution on x64 GitHub runners as the release blocker for
+  ARM64 sidecar validation. The release workflow now verifies the
+  unpacked ARM64 desktop bundle directly and still requires the native
+  `windows-11-arm` smoke run before publish, avoiding false negatives
+  while keeping ARM64 packaged-sidecar coverage in the release lane.
+
 ## 0.1.45 - 2026-04-20
 
 ### Added
