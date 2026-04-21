@@ -203,7 +203,6 @@ let loadedState: any = {
 };
 let loadStateError: Error | null = null;
 let remoteAccessEnabled = true;
-let packagedApp = false;
 
 const MOCK_SYSTEM_APPEARANCE = {
   platform: "linux",
@@ -263,7 +262,6 @@ mock.module("../src/lib/desktopCommands", () => createDesktopCommandsMock({
   getSystemAppearance: async () => MOCK_SYSTEM_APPEARANCE,
   setWindowAppearance: async () => MOCK_SYSTEM_APPEARANCE,
   getUpdateState: async () => MOCK_UPDATE_STATE,
-  isPackagedDesktopApp: () => packagedApp,
   getDesktopFeatureFlags: (featureOverrides) => ({
     remoteAccess: typeof featureOverrides?.remoteAccess === "boolean" ? featureOverrides.remoteAccess : remoteAccessEnabled,
     workspacePicker: typeof featureOverrides?.workspacePicker === "boolean" ? featureOverrides.workspacePicker : true,
@@ -374,7 +372,6 @@ describe("desktop bootstrap cache", () => {
     installWindowMock();
     loadStateError = null;
     remoteAccessEnabled = true;
-    packagedApp = false;
     RUNTIME.sessionSnapshots.clear();
     loadedState = {
       ...loadedState,
@@ -468,8 +465,7 @@ describe("desktop bootstrap cache", () => {
     expect(seed?.settingsPage).toBe("remoteAccess");
   });
 
-  test("buildCachedDesktopStateSeed remaps feature flags page during packaged startup", () => {
-    packagedApp = true;
+  test("buildCachedDesktopStateSeed preserves the feature flags page during packaged startup", () => {
     const seed = buildCachedDesktopStateSeed({
       ...cachedState,
       ui: {
@@ -481,7 +477,7 @@ describe("desktop bootstrap cache", () => {
     });
 
     expect(seed?.view).toBe("settings");
-    expect(seed?.settingsPage).toBe("providers");
+    expect(seed?.settingsPage).toBe("featureFlags");
   });
 
   test("buildCachedDesktopStateSeed accepts legacy cached payloads", () => {

@@ -200,7 +200,7 @@ describe("settings nav (store)", () => {
     expect(useAppStore.getState().settingsPage).toBe("providers");
   });
 
-  test("openSettings falls back from feature flags when running a packaged build", () => {
+  test("openSettings keeps feature flags available in packaged builds", () => {
     useAppStore.setState({
       updateState: {
         ...useAppStore.getState().updateState,
@@ -209,7 +209,7 @@ describe("settings nav (store)", () => {
     });
     useAppStore.getState().openSettings("featureFlags");
     expect(useAppStore.getState().view).toBe("settings");
-    expect(useAppStore.getState().settingsPage).toBe("providers");
+    expect(useAppStore.getState().settingsPage).toBe("featureFlags");
   });
 
   test("disabling remote access tears down an active relay and falls back from the remote access page", async () => {
@@ -232,7 +232,29 @@ describe("settings nav (store)", () => {
     expect(stopMobileRelayCalls).toBe(1);
   });
 
-  test("setDesktopFeatureFlagOverride is a no-op in packaged builds", async () => {
+  test("setDesktopFeatureFlagOverride preserves supported flags in packaged builds", async () => {
+    useAppStore.setState({
+      updateState: {
+        ...useAppStore.getState().updateState,
+        packaged: true,
+      },
+      desktopFeatureFlags: {
+        remoteAccess: false,
+        workspacePicker: true,
+        workspaceLifecycle: true,
+        a2ui: false,
+      },
+      desktopFeatureFlagOverrides: {},
+    });
+
+    await useAppStore.getState().setDesktopFeatureFlagOverride("a2ui", true);
+
+    expect(useAppStore.getState().desktopFeatureFlagOverrides).toEqual({ a2ui: true });
+    expect(useAppStore.getState().desktopFeatureFlags.a2ui).toBe(true);
+    expect(savedStates.length).toBeGreaterThan(0);
+  });
+
+  test("setDesktopFeatureFlagOverride keeps forced-off flags blocked in packaged builds", async () => {
     const priorSaved = savedStates.length;
     useAppStore.setState({
       updateState: {
@@ -245,12 +267,12 @@ describe("settings nav (store)", () => {
         workspaceLifecycle: true,
         a2ui: false,
       },
-      desktopFeatureFlagOverrides: { remoteAccess: true },
+      desktopFeatureFlagOverrides: { remoteAccess: false },
     });
 
     await useAppStore.getState().setDesktopFeatureFlagOverride("remoteAccess", true);
 
-    expect(useAppStore.getState().desktopFeatureFlagOverrides).toEqual({ remoteAccess: true });
+    expect(useAppStore.getState().desktopFeatureFlagOverrides).toEqual({ remoteAccess: false });
     expect(savedStates.length).toBe(priorSaved);
   });
 

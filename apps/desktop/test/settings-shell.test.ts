@@ -11,11 +11,9 @@ describe("settings shell", () => {
     expect(pageIds).toContain("featureFlags");
   });
 
-  test("hides the feature flags nav entry in packaged (installable) builds", () => {
-    const pageIds = getSettingsGroups(true, { showFeatureFlags: false }).flatMap((group) =>
-      group.pages.map((page) => page.id),
-    );
-    expect(pageIds).not.toContain("featureFlags");
+  test("keeps the feature flags nav entry in packaged (installable) builds", () => {
+    const pageIds = getSettingsGroups(true).flatMap((group) => group.pages.map((page) => page.id));
+    expect(pageIds).toContain("featureFlags");
     expect(pageIds).toContain("developer");
   });
 

@@ -19,7 +19,7 @@ describe("resolveFeatureFlags", () => {
     expect(flags.a2ui).toBe(true);
   });
 
-  test("ignores persisted overrides in packaged (production) builds", () => {
+  test("preserves supported persisted overrides in packaged (production) builds", () => {
     const flags = resolveFeatureFlags({
       isPackaged: true,
       overrides: {
@@ -30,9 +30,9 @@ describe("resolveFeatureFlags", () => {
       },
     });
     expect(flags.remoteAccess).toBe(false);
-    expect(flags.workspacePicker).toBe(true);
-    expect(flags.workspaceLifecycle).toBe(true);
-    expect(flags.a2ui).toBe(false);
+    expect(flags.workspacePicker).toBe(false);
+    expect(flags.workspaceLifecycle).toBe(false);
+    expect(flags.a2ui).toBe(true);
   });
 
   test("unpackaged: persisted override wins over env for remote access (last write)", () => {

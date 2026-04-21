@@ -74,7 +74,6 @@ function normalizeBooleanOverride(value: unknown): boolean | undefined {
 export type ResolveFeatureFlagsOptions = {
   isPackaged: boolean;
   env?: Record<string, string | undefined>;
-  /** Ignored when `isPackaged` is true so dev-time persisted overrides never affect installable builds. */
   overrides?: FeatureFlagOverrides | null;
 };
 
@@ -96,14 +95,12 @@ export function resolveFeatureFlags(options: ResolveFeatureFlagsOptions): Featur
     }
   }
 
-  if (!options.isPackaged) {
-    const overrides = normalizeFeatureFlagOverrides(options.overrides);
-    if (overrides) {
-      for (const flagId of FEATURE_FLAG_IDS) {
-        const override = normalizeBooleanOverride(overrides[flagId]);
-        if (override !== undefined) {
-          values[flagId] = override;
-        }
+  const overrides = normalizeFeatureFlagOverrides(options.overrides);
+  if (overrides) {
+    for (const flagId of FEATURE_FLAG_IDS) {
+      const override = normalizeBooleanOverride(overrides[flagId]);
+      if (override !== undefined) {
+        values[flagId] = override;
       }
     }
   }
