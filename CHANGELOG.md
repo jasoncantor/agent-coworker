@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 0.1.45 - 2026-04-20
+
 ### Added
 
 - **A2UI (Agent-to-UI) generative UI** — End-to-end support for
@@ -38,6 +40,60 @@ All notable changes to this project will be documented in this file.
     supported components, Functions subset, and interaction contract for
     the agent. Full protocol reference in `docs/websocket-protocol.md`
     and architecture notes in `docs/a2ui.md`.
+
+- **Desktop file preview modal** — In-app preview for workspace files
+  accessible from chat markdown links. Supports code files with syntax
+  highlighting and Word documents (DOCX) rendered with native page
+  chrome, inline (no nested iframe scrollbars), and full opacity on all
+  platforms. HTML is sanitized, in-flight reads can be aborted, and
+  Office lockfiles are hidden.
+
+- **Persistent settings shell** — Desktop settings now use a persistent
+  shell with shared chrome context, platform-appropriate caption reserves,
+  native sidebar resize interaction, and full-width edge-to-edge
+  navigation buttons.
+
+- **Full desktop browser mode** — Expose a complete desktop browser
+  surface with collapsible shell controls anchored to the topbar.
+
+- **Workspace reordering** — Drag-and-drop and keyboard-driven workspace
+  reordering in the desktop sidebar.
+
+- **Design skill docs** — Bundled `skills/design-taste-frontend/SKILL.md`
+  and `skills/high-end-visual-design/SKILL.md` for premium UI/UX
+  guidance.
+
+### Changed
+
+- **Desktop palette** — Retuned to warm olive tones with improved
+  settings navigation contrast, visible switch off-state thumbs, and
+  proper checkbox checked/unchecked distinction.
+
+- **Typography** — Bundled IBM Plex Sans and Mono fonts for consistent
+  cross-platform rendering.
+
+- **Fireworks tool schemas** — Relaxed JSON Schema constraints for
+  Fireworks tool calling compatibility, with fallback budgeting for
+  provider-safe schema variants.
+
+### Fixed
+
+- **Memory leaks & backpressure** — Fixed critical memory leaks and
+  WebSocket backpressure issues; added consolidation endpoints for
+  long-running sessions.
+
+- **Desktop chat stalls** — Prevented silent chat stalls before runs
+  start and eliminated false-success exits in web desktop mode.
+
+- **A2UI review follow-ups** — Preserved surfaces across rejected
+  overflow envelopes, enforced envelope byte caps, aligned Google A2UI
+  sessions with bounded surface state, and hardened web desktop preview
+  server pipes.
+
+### Docs
+
+- `docs/a2ui.md` — Phase 2/3 architecture, component table, Functions
+  subset, and roadmap follow-ups.
 
 ## 0.1.44 - 2026-04-15
 
