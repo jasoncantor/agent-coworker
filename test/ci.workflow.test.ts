@@ -6,6 +6,12 @@ const workflowPath = new URL("../.github/workflows/ci.yml", import.meta.url);
 const workflow = readFileSync(workflowPath, "utf8");
 
 describe("main CI workflow", () => {
+  test("installs the latest Bun release explicitly", () => {
+    expect(workflow).toContain("- name: Setup Bun");
+    expect(workflow).toContain("uses: oven-sh/setup-bun@v2");
+    expect(workflow).toContain('bun-version: "latest"');
+  });
+
   test("keeps the core reliability guardrails in the main checks job", () => {
     expect(workflow).toContain("- name: Docs consistency check");
     expect(workflow).toContain("run: bun run docs:check");

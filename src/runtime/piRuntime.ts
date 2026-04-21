@@ -745,6 +745,7 @@ export function toolMapToPiTools(
   tools: RuntimeRunTurnParams["tools"],
   provider?: ProviderName,
 ): Array<Record<string, unknown>> {
+  const schemaBudgetState = { totalBytes: 0 };
   return Object.entries(tools).flatMap(([name, def]) => {
     const toolRecord = asRecord(def);
     if (!toolRecord) return [];
@@ -752,7 +753,7 @@ export function toolMapToPiTools(
     return [{
       name,
       description: asNonEmptyString(toolRecord.description) ?? name,
-      parameters: toPiJsonSchema(toolRecord.inputSchema, provider),
+      parameters: toPiJsonSchema(toolRecord.inputSchema, provider, schemaBudgetState),
     }];
   });
 }
