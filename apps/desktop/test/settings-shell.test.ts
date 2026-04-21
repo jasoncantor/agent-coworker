@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { useAppStore } from "../src/app/store";
 import { SettingsShell, getSettingsGroups } from "../src/ui/settings/SettingsShell";
 
 describe("settings shell", () => {
@@ -12,9 +13,30 @@ describe("settings shell", () => {
   });
 
   test("keeps the feature flags nav entry in packaged (installable) builds", () => {
-    const pageIds = getSettingsGroups(true).flatMap((group) => group.pages.map((page) => page.id));
-    expect(pageIds).toContain("featureFlags");
-    expect(pageIds).toContain("developer");
+    const previousState = useAppStore.getState();
+    useAppStore.setState({
+      ...previousState,
+      settingsPage: "featureFlags",
+      desktopFeatureFlags: {
+        remoteAccess: false,
+        workspacePicker: true,
+        workspaceLifecycle: true,
+        a2ui: false,
+      },
+      updateState: {
+        ...previousState.updateState,
+        packaged: true,
+      },
+    });
+
+    try {
+      const markup = renderToStaticMarkup(createElement(SettingsShell));
+      expect(markup).toContain("Feature flags");
+      expect(markup).toContain("Developer");
+      expect(markup).not.toContain("Remote access");
+    } finally {
+      useAppStore.setState(previousState);
+    }
   });
 
   test("hides remote access when the feature is disabled", () => {
