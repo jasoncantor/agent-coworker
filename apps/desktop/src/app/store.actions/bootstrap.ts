@@ -936,15 +936,22 @@ export function createBootstrapActions(set: StoreSet, get: StoreGet): Pick<AppSt
     },
 
     setUpdateState: (updateState) => {
-      set((state) => ({
-        updateState,
-        settingsPage: normalizeSettingsPageId(
+      let settingsPageChanged = false;
+      set((state) => {
+        const nextSettingsPage = normalizeSettingsPageId(
           state.settingsPage,
           state.desktopFeatureFlags,
           updateState.packaged,
-        ),
-      }));
-      syncDesktopStateCache(get);
+        );
+        settingsPageChanged = nextSettingsPage !== state.settingsPage;
+        return {
+          updateState,
+          settingsPage: nextSettingsPage,
+        };
+      });
+      if (settingsPageChanged) {
+        syncDesktopStateCache(get);
+      }
     },
 
     checkForUpdates: async () => {
