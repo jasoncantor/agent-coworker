@@ -9,7 +9,7 @@ import {
   resolveDynamicString,
   setByPointer,
   splitPointer,
-} from "../../src/shared/a2ui/expressions";
+} from "../../src/experimental/a2ui/expressions";
 
 describe("splitPointer", () => {
   test("splits plain pointers", () => {

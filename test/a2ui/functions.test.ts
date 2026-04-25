@@ -4,7 +4,7 @@ import {
   evaluateA2uiFunction,
   isA2uiFunctionCall,
   resolveDynamicWithFunctions,
-} from "../../src/shared/a2ui/functions";
+} from "../../src/experimental/a2ui/functions";
 
 describe("isA2uiFunctionCall", () => {
   test("detects a function call object", () => {

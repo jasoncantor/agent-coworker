@@ -2,7 +2,7 @@ import { ExpandIcon, SparklesIcon, Trash2Icon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { memo, useCallback, useMemo } from "react";
 
-import { isBasicCatalogId } from "../../../../../../src/shared/a2ui/component";
+import { isBasicCatalogId } from "../../../../../../src/experimental/a2ui/component";
 import { useAppStore } from "../../../app/store";
 import type { FeedItem } from "../../../app/types";
 import { cn } from "../../../lib/utils";

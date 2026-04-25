@@ -42,9 +42,7 @@ const userProfileSchema = z
   .passthrough();
 
 const workspaceFeatureFlagOverridesSchema = z
-  .object({
-    a2ui: z.boolean().optional(),
-  })
+  .object({})
   .passthrough();
 
 const providerOptionsLocationSchema = z

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 import { getAiCoworkerPaths } from "./connect";
+import { isA2uiExperimentEnabled } from "./experimental/a2ui/flags";
 import { normalizeChildRoutingConfig } from "./models/childModelRouting";
 import {
   getResolvedModelMetadataSync,
@@ -653,7 +654,8 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     asBoolean(builtInDefaults.includeRawChunks) ??
     true;
 
-  const enableA2ui = resolvedWorkspaceA2ui ?? false;
+  const a2uiExperimentEnabled = isA2uiExperimentEnabled(env);
+  const enableA2ui = a2uiExperimentEnabled ? (resolvedWorkspaceA2ui ?? false) : undefined;
 
   const backupsEnabled =
     asBoolean(env.AGENT_BACKUPS_ENABLED) ??
@@ -761,13 +763,14 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     enableMemory,
     memoryRequireApproval,
     includeRawChunks,
-    enableA2ui,
+    experimentalFeatures: { a2ui: a2uiExperimentEnabled },
+    ...(enableA2ui !== undefined ? { enableA2ui } : {}),
     backupsEnabled,
     observabilityEnabled,
     observability,
     harness,
     command,
-    ...(resolvedWorkspaceA2ui !== undefined
+    ...(a2uiExperimentEnabled && resolvedWorkspaceA2ui !== undefined
       ? {
           featureFlags: {
             workspace: {

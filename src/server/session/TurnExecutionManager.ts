@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { z } from "zod";
+import { resolveExperimentalA2uiConfig } from "../../experimental/a2ui/flags";
 import { supportsImageInput } from "../../models/registry";
 import type { TurnUsage } from "../../session/costTracker";
 import type { AgentExecutionState } from "../../shared/agents";
@@ -817,7 +818,7 @@ export class TurnExecutionManager {
         abortSignal: this.context.state.abortController?.signal,
         includeRawChunks,
         costTracker: this.context.state.costTracker ?? undefined,
-        ...(this.context.state.config.enableA2ui === true && this.deps.getA2uiSurfaceManager
+        ...(resolveExperimentalA2uiConfig(this.context.state.config) && this.deps.getA2uiSurfaceManager
           ? {
               applyA2uiEnvelope: (
                 envelope: unknown,

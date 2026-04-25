@@ -96,7 +96,7 @@ export type SessionConfigState = {
   observabilityEnabled: boolean;
   backupsEnabled: boolean;
   defaultBackupsEnabled: boolean;
-  enableA2ui: boolean;
+  enableA2ui?: boolean;
   enableMemory: boolean;
   memoryRequireApproval: boolean;
   preferredChildModel: string;
@@ -113,8 +113,8 @@ export type SessionConfigState = {
     work: string;
     details: string;
   };
-  featureFlags: {
-    workspace: WorkspaceFeatureFlags;
+  featureFlags?: {
+    workspace?: WorkspaceFeatureFlags;
   };
 };
 

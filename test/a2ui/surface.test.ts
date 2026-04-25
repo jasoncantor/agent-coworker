@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { A2UI_BASIC_CATALOG_ID } from "../../src/shared/a2ui/component";
-import type { A2uiEnvelope } from "../../src/shared/a2ui/protocol";
+import { A2UI_BASIC_CATALOG_ID } from "../../src/experimental/a2ui/component";
+import type { A2uiEnvelope } from "../../src/experimental/a2ui/protocol";
 import {
   type A2uiSurfaceState,
   type A2uiSurfacesById,
   applyEnvelope,
   createEmptySurfaces,
-} from "../../src/shared/a2ui/surface";
+} from "../../src/experimental/a2ui/surface";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 

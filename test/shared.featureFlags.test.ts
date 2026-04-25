@@ -6,6 +6,7 @@ describe("resolveFeatureFlags", () => {
   test("applies persisted overrides in unpackaged (dev) builds", () => {
     const flags = resolveFeatureFlags({
       isPackaged: false,
+      env: { COWORK_EXPERIMENTAL_A2UI: "1" },
       overrides: {
         remoteAccess: true,
         workspacePicker: false,
@@ -22,6 +23,7 @@ describe("resolveFeatureFlags", () => {
   test("preserves supported persisted overrides in packaged (production) builds", () => {
     const flags = resolveFeatureFlags({
       isPackaged: true,
+      env: { COWORK_EXPERIMENTAL_A2UI: "1" },
       overrides: {
         remoteAccess: true,
         workspacePicker: false,
@@ -42,6 +44,14 @@ describe("resolveFeatureFlags", () => {
       overrides: { remoteAccess: false },
     });
     expect(flags.remoteAccess).toBe(false);
+  });
+
+  test("a2ui overrides are ignored outside the experiment", () => {
+    const flags = resolveFeatureFlags({
+      isPackaged: false,
+      overrides: { a2ui: true },
+    });
+    expect(flags.a2ui).toBe(false);
   });
 
   test("packaged forced-off still wins over env for remote access", () => {

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { isA2uiExperimentEnabled } from "../../experimental/a2ui/flags";
 import type { OpenAiCompatibleProviderOptionsByProvider } from "../../shared/openaiCompatibleOptions";
 import {
   EDITABLE_PROVIDER_OPTIONS_PROVIDER_NAMES,
@@ -80,10 +81,15 @@ export function withWorkspaceA2uiFeatureFlags(
 }
 
 export function resolveWorkspaceA2ui(
-  config: Pick<AgentConfig, "featureFlags" | "enableA2ui">,
+  config: Pick<AgentConfig, "featureFlags" | "enableA2ui" | "experimentalFeatures">,
 ): boolean {
+  if (!isA2uiExperimentEnabled() && config.experimentalFeatures?.a2ui !== true) return false;
   const workspaceFlag = config.featureFlags?.workspace?.a2ui;
   return typeof workspaceFlag === "boolean" ? workspaceFlag : (config.enableA2ui ?? false);
+}
+
+function isA2uiExperimentActive(config?: Pick<AgentConfig, "experimentalFeatures">): boolean {
+  return config?.experimentalFeatures?.a2ui === true || isA2uiExperimentEnabled();
 }
 
 export function mergeRuntimeProviderOptions(
@@ -132,9 +138,15 @@ export async function persistProjectConfigPatch(
   projectAgentDir: string,
   patch: ProjectConfigPatch,
   runtimeProviderOptions?: AgentConfig["providerOptions"],
+  opts: { a2uiExperimentEnabled?: boolean } = {},
 ): Promise<void> {
+  const a2uiExperimentEnabled =
+    opts.a2uiExperimentEnabled === true || isA2uiExperimentEnabled();
   const entries = Object.entries(patch).filter(
-    ([key, value]) => key !== "clearToolOutputOverflowChars" && value !== undefined,
+    ([key, value]) =>
+      key !== "clearToolOutputOverflowChars" &&
+      value !== undefined &&
+      (a2uiExperimentEnabled || (key !== "enableA2ui" && key !== "featureFlags")),
   );
   const shouldClearToolOutputOverflowChars = patch.clearToolOutputOverflowChars === true;
   if (entries.length === 0 && !shouldClearToolOutputOverflowChars) return;
@@ -214,8 +226,13 @@ export function mergeConfigPatch(config: AgentConfig, patch: ProjectConfigPatch)
   const {
     clearToolOutputOverflowChars: _clearToolOutputOverflowChars,
     enableA2ui: legacyEnableA2uiPatch,
-    ...configPatch
+    featureFlags: featureFlagsPatch,
+    ...configPatchBase
   } = patch;
+  const a2uiExperimentEnabled = isA2uiExperimentActive(config);
+  const configPatch = a2uiExperimentEnabled
+    ? { ...configPatchBase, ...(featureFlagsPatch !== undefined ? { featureFlags: featureFlagsPatch } : {}) }
+    : configPatchBase;
   const next: AgentConfig = { ...config, ...configPatch };
   if (patch.provider !== undefined && patch.provider !== config.provider) {
     next.runtime = defaultRuntimeNameForProvider(patch.provider);
@@ -245,12 +262,15 @@ export function mergeConfigPatch(config: AgentConfig, patch: ProjectConfigPatch)
       ...patch.userProfile,
     };
   }
-  const patchedWorkspaceA2ui = readWorkspaceA2uiFlag(patch.featureFlags?.workspace);
-  const nextWorkspaceA2ui =
-    legacyEnableA2uiPatch ??
-    patchedWorkspaceA2ui ??
-    config.featureFlags?.workspace?.a2ui ??
-    config.enableA2ui;
+  const patchedWorkspaceA2ui = a2uiExperimentEnabled
+    ? readWorkspaceA2uiFlag(featureFlagsPatch?.workspace)
+    : undefined;
+  const nextWorkspaceA2ui = a2uiExperimentEnabled
+    ? (legacyEnableA2uiPatch ??
+      patchedWorkspaceA2ui ??
+      config.featureFlags?.workspace?.a2ui ??
+      config.enableA2ui)
+    : undefined;
   if (nextWorkspaceA2ui !== undefined) {
     next.featureFlags = withWorkspaceA2uiFeatureFlags(config.featureFlags, nextWorkspaceA2ui);
     next.enableA2ui = nextWorkspaceA2ui;

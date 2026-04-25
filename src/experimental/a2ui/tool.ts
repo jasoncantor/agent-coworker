@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-import { A2UI_PROTOCOL_VERSION, describeSupportedComponents } from "../shared/a2ui";
-import type { ToolContext } from "./context";
-import { defineTool } from "./defineTool";
+import type { ToolContext } from "../../tools/context";
+import { defineTool } from "../../tools/defineTool";
+import { A2UI_PROTOCOL_VERSION, describeSupportedComponents } from "./index";
 
 /**
  * Envelope input schema. We keep this intentionally permissive so that agents

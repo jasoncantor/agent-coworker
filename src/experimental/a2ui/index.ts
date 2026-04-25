@@ -25,6 +25,18 @@ export {
   isA2uiFunctionCall,
   resolveDynamicWithFunctions,
 } from "./functions";
+export {
+  A2UI_EXPERIMENT_ENV,
+  isA2uiExperimentEnabled,
+  resolveExperimentalA2uiConfig,
+} from "./flags";
+export type {
+  A2uiActionValidation,
+  A2uiApplyMeta,
+  A2uiApplyResult,
+  A2uiSurfaceManagerDeps,
+} from "./SurfaceManager";
+export { A2uiSurfaceManager } from "./SurfaceManager";
 export type {
   A2uiComponent,
   A2uiCreateSurface,
@@ -46,3 +58,11 @@ export {
 } from "./protocol";
 export type { A2uiSurfaceState, A2uiSurfacesById, ApplyEnvelopeResult } from "./surface";
 export { applyEnvelope, createEmptySurfaces, toSerializable } from "./surface";
+export {
+  a2uiActionDispatchRequestSchema,
+  a2uiActionDispatchResultSchema,
+  formatA2uiActionDeliveryText,
+  jsonRpcA2uiRequestSchemas,
+  jsonRpcA2uiResultSchemas,
+} from "./schema";
+export { createA2uiTool } from "./tool";

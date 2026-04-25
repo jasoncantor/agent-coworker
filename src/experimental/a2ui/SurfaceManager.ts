@@ -1,17 +1,19 @@
+import type { SessionEvent } from "../../server/protocol";
 import {
   A2UI_PROTOCOL_VERSION,
   type A2uiEnvelope,
   type A2uiEnvelopeKind,
+  envelopeKind,
+  envelopeSurfaceId,
+  parseA2uiEnvelope,
+} from "./protocol";
+import {
   type A2uiSurfaceState,
   type A2uiSurfacesById,
   type ApplyEnvelopeResult,
   applyEnvelope,
   createEmptySurfaces,
-  envelopeKind,
-  envelopeSurfaceId,
-  parseA2uiEnvelope,
-} from "../../shared/a2ui";
-import type { SessionEvent } from "../protocol";
+} from "./surface";
 
 /**
  * Upper bound on distinct surfaces held per session. When exceeded, the

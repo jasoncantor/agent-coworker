@@ -3,6 +3,7 @@ import type { runTurn as runTurnFn } from "../../agent";
 import { loadConfig } from "../../config";
 import type { connectProvider as connectModelProvider, getAiCoworkerPaths } from "../../connect";
 import { getAiCoworkerPaths as getAiCoworkerPathsDefault } from "../../connect";
+import { isA2uiExperimentEnabled } from "../../experimental/a2ui/flags";
 import type { emitObservabilityEvent as emitObservabilityEventFn } from "../../observability/otel";
 import type {
   loadAgentPrompt as loadAgentPromptFn,
@@ -12,7 +13,7 @@ import { ensureDefaultGlobalSkillsReady } from "../../skills/defaultGlobalSkills
 import type { AgentConfig } from "../../types";
 import { decodeJsonRpcMessage } from "../jsonrpc/decodeJsonRpcMessage";
 import { buildJsonRpcErrorResponse, buildJsonRpcResultResponse } from "../jsonrpc/protocol";
-import { createJsonRpcRequestRouter } from "../jsonrpc/routes";
+import { createJsonRpcRequestRouter, type JsonRpcRouteContext } from "../jsonrpc/routes";
 import {
   buildControlSessionStateEvents,
   buildJsonRpcThreadFromRecord,
@@ -161,6 +162,7 @@ export async function createAgentServerRuntime(
   let skillMutationBus: SkillMutationBus;
   const registry = new SessionRegistry({
     config,
+    env,
     system,
     discoveredSkills,
     yolo: opts.yolo,
@@ -248,7 +250,7 @@ export async function createAgentServerRuntime(
     extractTextInput: extractJsonRpcTextInput,
   });
 
-  const jsonRpcRequestRouter = createJsonRpcRequestRouter({
+  const jsonRpcRouteContext: JsonRpcRouteContext = {
     getConfig: () => config,
     research,
     threads: {
@@ -301,6 +303,12 @@ export async function createAgentServerRuntime(
       buildControlSessionStateEvents,
       isSessionError: isJsonRpcSessionError,
     },
+  };
+  const experimentalHandlers = isA2uiExperimentEnabled(env)
+    ? (await import("../../experimental/a2ui/routes")).createA2uiRouteHandlers(jsonRpcRouteContext)
+    : undefined;
+  const jsonRpcRequestRouter = createJsonRpcRequestRouter(jsonRpcRouteContext, {
+    ...(experimentalHandlers ? { experimentalHandlers } : {}),
   });
 
   const routeJsonRpcRequest = async (ws: StartServerSocket, message: JsonRpcRequest) => {

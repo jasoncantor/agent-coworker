@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resolveExperimentalA2uiConfig } from "./experimental/a2ui/flags";
 import { MemoryStore } from "./memoryStore";
 import { getChildAgentModelInfo, listChildAgentModelsWithInfo } from "./models/childAgentModelInfo";
 import { parseChildModelRef } from "./models/childModelRouting";
@@ -306,10 +307,7 @@ function renderA2uiSpecificPrompt(prompt: string, enabled: boolean): string {
 }
 
 function isA2uiEnabled(config: Pick<AgentConfig, "enableA2ui" | "featureFlags">): boolean {
-  if (typeof config.featureFlags?.workspace?.a2ui === "boolean") {
-    return config.featureFlags.workspace.a2ui;
-  }
-  return config.enableA2ui ?? false;
+  return resolveExperimentalA2uiConfig(config);
 }
 
 function configuredCodexWebSearchMode(

@@ -3,23 +3,23 @@
 `agent-coworker` implements the
 [A2UI v0.9 protocol](https://a2ui.org/specification/v0.9-a2ui/) for agents to
 render rich UI surfaces back to the user, rather than settling for plain
-Markdown. This document is the single source of truth for the feature — the
-protocol integration, the new tool, the desktop renderer, and the security
-rules.
+Markdown. This document covers the experimental module. A2UI is intentionally
+outside the default harness path and is only active when
+`COWORK_EXPERIMENTAL_A2UI=1`.
 
 ## Status
 
-- **Phase 1 (shipped):** read-only rendering of A2UI v0.9 surfaces inside
+- **Phase 1 (experimental):** read-only rendering of A2UI v0.9 surfaces inside
   the desktop main chat view. Agents emit envelopes via a new `a2ui` tool;
   the harness folds them into a resolved surface and broadcasts events over
   the WebSocket protocol. The desktop app renders the v0.9 basic catalog.
-- **Phase 2 (shipped):** round-trip interactions. Button clicks, TextField
+- **Phase 2 (experimental):** round-trip interactions. Button clicks, TextField
   submits (on Enter) / blur changes, and Checkbox toggles are dispatched
   over the new `cowork/session/a2ui/action` JSON-RPC method. The harness
   validates the action against the current surface, synthesizes a
   structured user/steer message, and hands it to the running turn (or
   starts a new one).
-- **Phase 3 (shipped):**
+- **Phase 3 (experimental):**
   - Extended basic-catalog components: `TextArea`, `Select`, `Link`,
     `ProgressBar`, `Badge`, `Table`.
   - Client-side v0.9 **Functions** subset: `if`, `not`, `eq`, `neq`, `and`,
@@ -34,27 +34,25 @@ rules.
     this pass — interactive dispatch will follow when the mobile client
     adopts `cowork/session/a2ui/action`.
 
-The feature is exposed as a normal built-in tool (not provider-specific), but
-it is **disabled by default** until explicitly enabled.
+The feature is not part of the default JSON-RPC schema, default route table, or
+default public session config.
 
 ## Configuring the feature
 
-Desktop and headless flows use different toggles:
+The experiment requires the environment gate first:
 
-- **Desktop app:** use **Settings → Feature Flags → Generative UI (A2UI)**.
-  This is one global desktop flag shared across all workspaces. The desktop
-  pushes the value into each active workspace harness via
-  `cowork/session/defaults/apply` (`config.featureFlags.workspace.a2ui`).
-- **Headless CLI/server:** set `enableA2ui` in config or
-  `AGENT_ENABLE_A2UI=true|false` in the environment:
+```sh
+COWORK_EXPERIMENTAL_A2UI=1 bun run serve
+```
+
+Then enable A2UI for the workspace/session through config:
 
 ```json
-// ~/.agent/config.json  OR  .agent/config.json  OR  config/defaults.json
 { "enableA2ui": true }
 ```
 
-When enabled, the `a2ui` tool is registered on the model toolbelt and
-supported clients render emitted surfaces inline.
+When both are true, the `a2ui` tool is registered, the experimental action
+route is loaded, and supported clients render emitted surfaces inline.
 
 ## Architecture
 
@@ -65,20 +63,19 @@ agent model
 TurnExecutionManager (src/server/session/TurnExecutionManager.ts)
    │  ctx.applyA2uiEnvelope(envelope)
    ▼
-A2uiSurfaceManager (src/server/session/A2uiSurfaceManager.ts)
-   │  applyEnvelope() — pure reducer from src/shared/a2ui
+src/experimental/a2ui/SurfaceManager.ts
+   │  applyEnvelope() — pure reducer from src/experimental/a2ui
    │  emit "a2ui_surface" SessionEvent
    ▼
 Event fan-out:
-   • JSON-RPC projector → cowork/session/a2ui/surface
-                        → item/started + item/completed (uiSurface)
+   • JSON-RPC projector → item/started + item/completed (uiSurface)
    • Session snapshot   → feed item kind "ui_surface"
    • Persistence        → part of the session's feed, survives reload
    ▼
 Desktop A2uiSurfaceCard (apps/desktop/src/ui/chat/a2ui/)
 ```
 
-The reducer (`src/shared/a2ui/surface.ts`) is pure TypeScript with no React,
+The reducer (`src/experimental/a2ui/surface.ts`) is pure TypeScript with no React,
 zod side-effects, or server-only dependencies, so the same module can be
 reused by any alternative UI (mobile, web, CLI) in the future.
 
@@ -86,13 +83,13 @@ reused by any alternative UI (mobile, web, CLI) in the future.
 
 | Concern | File |
 |---|---|
-| Envelope zod schema + parser | `src/shared/a2ui/protocol.ts` |
-| Pure reducer (`applyEnvelope`) | `src/shared/a2ui/surface.ts` |
-| Sandboxed binding / `formatString` | `src/shared/a2ui/expressions.ts` |
-| Supported basic-catalog types | `src/shared/a2ui/component.ts` |
-| Session-scoped manager | `src/server/session/A2uiSurfaceManager.ts` |
-| `a2ui` tool | `src/tools/a2ui.ts` |
-| SessionEvent type | `src/server/protocol.ts` (look for `a2ui_surface`) |
+| Envelope zod schema + parser | `src/experimental/a2ui/protocol.ts` |
+| Pure reducer (`applyEnvelope`) | `src/experimental/a2ui/surface.ts` |
+| Sandboxed binding / `formatString` | `src/experimental/a2ui/expressions.ts` |
+| Supported basic-catalog types | `src/experimental/a2ui/component.ts` |
+| Session-scoped manager | `src/experimental/a2ui/SurfaceManager.ts` |
+| `a2ui` tool | `src/experimental/a2ui/tool.ts` |
+| Experimental JSON-RPC action route | `src/experimental/a2ui/routes.ts` |
 | Projection into session feed | `src/server/projection/conversationProjection.ts` |
 | JSON-RPC notification routing | `src/server/jsonrpc/notificationProjector.ts` |
 | Feed item variant | `src/shared/sessionSnapshot.ts` |
@@ -101,11 +98,11 @@ reused by any alternative UI (mobile, web, CLI) in the future.
 
 ## Server → client event shape
 
-See [`docs/websocket-protocol.md#a2ui_surface`](./websocket-protocol.md#a2ui_surface) for the canonical event shape. On the JSON-RPC transport the harness also projects the event as a `uiSurface` ProjectedItem in the `item/started` / `item/completed` stream so thin clients don't need bespoke plumbing.
+See [`docs/websocket-protocol.md#a2ui_surface-experimental`](./websocket-protocol.md#a2ui_surface-experimental) for the event shape. On the JSON-RPC transport the experimental module projects the event as a `uiSurface` ProjectedItem in the `item/started` / `item/completed` stream.
 
 ## Client → server action shape (Phase 2)
 
-Clients dispatch a JSON-RPC request to `cowork/session/a2ui/action`:
+When `COWORK_EXPERIMENTAL_A2UI=1` is set, clients may dispatch a JSON-RPC request to `cowork/session/a2ui/action`:
 
 ```json
 {
@@ -120,7 +117,7 @@ Clients dispatch a JSON-RPC request to `cowork/session/a2ui/action`:
 }
 ```
 
-The harness validates the action against the live surface state, then either delivers it as a steer to the running turn or starts a new turn carrying the action as the user message. See `docs/websocket-protocol.md` for the full reference and delivery semantics.
+The harness validates the action against the live surface state, then either delivers it as a steer to the running turn or starts a new turn carrying the action as the user message.
 
 The desktop app wires this up automatically for Button, TextField, and Checkbox. The agent sees a structured user/steer message beginning with `[a2ui.action]` and can reply with another `a2ui` tool call to update the surface.
 
@@ -132,7 +129,7 @@ The desktop app wires this up automatically for Button, TextField, and Checkbox.
 2. **Restricted image schemes.** `Image.src` values are only honored when
    they are `http:`, `https:`, or `data:` URLs. Anything else falls back to
    a muted placeholder.
-3. **Sandboxed bindings.** The expression evaluator (`src/shared/a2ui/expressions.ts`)
+3. **Sandboxed bindings.** The expression evaluator (`src/experimental/a2ui/expressions.ts`)
    only supports JSON-pointer lookups and `${...}` template interpolation.
    Arbitrary JS (`new Function`, arithmetic, property access) is not
    supported. Unknown tokens render as empty string.
@@ -140,9 +137,9 @@ The desktop app wires this up automatically for Button, TextField, and Checkbox.
    and each session may hold at most 16 active surfaces (the oldest
    non-deleted surface is evicted when that cap is exceeded). Envelopes
    over 128 KB are rejected at parse time.
-5. **Config gate.** If the effective A2UI setting is disabled (desktop global
-   flag or headless `enableA2ui`/`AGENT_ENABLE_A2UI`), the tool is not
-   registered and no A2UI events are emitted.
+5. **Experiment gate.** If `COWORK_EXPERIMENTAL_A2UI=1` is not set, the tool,
+   route, session config fields, and A2UI event path stay out of the default
+   harness surface.
 
 ## Testing
 

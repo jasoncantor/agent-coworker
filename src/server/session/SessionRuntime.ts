@@ -13,8 +13,7 @@ import type { SessionConfigPatch } from "../protocol";
 import type { FileAttachment, OrderedInputPart } from "../jsonrpc/routes/shared";
 import type { AgentSession } from "./AgentSession";
 import type { PendingPromptReplayEvent } from "./InteractionManager";
-import type { SeededSessionContext } from "./SessionContext";
-import type { A2uiSurfaceManager } from "./A2uiSurfaceManager";
+import type { ExperimentalA2uiManager, SeededSessionContext } from "./SessionContext";
 
 export class SessionSnapshotService {
   constructor(private readonly session: AgentSession) {}
@@ -539,7 +538,7 @@ export class SessionA2uiService {
   validateAction(opts: {
     surfaceId: string;
     componentId: string;
-  }): ReturnType<A2uiSurfaceManager["validateAction"]> {
+  }): ReturnType<ExperimentalA2uiManager["validateAction"]> {
     return this.session.validateA2uiAction(opts);
   }
 }

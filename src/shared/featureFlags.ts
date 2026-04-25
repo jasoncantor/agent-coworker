@@ -17,6 +17,7 @@ export type FeatureFlagDefinition = {
   description: string;
   defaultEnabled: boolean;
   envOverride?: string;
+  experimentalEnv?: string;
   packagedAvailability?: "normal" | "forced-off";
   restartRequired?: boolean;
 };
@@ -56,6 +57,7 @@ export const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlagId, FeatureFlagDefiniti
     label: "Generative UI (A2UI)",
     description: "Enable A2UI surfaces and action routing across all workspaces.",
     defaultEnabled: false,
+    experimentalEnv: "COWORK_EXPERIMENTAL_A2UI",
   },
 };
 
@@ -103,6 +105,9 @@ export function resolveFeatureFlags(options: ResolveFeatureFlagsOptions): Featur
         values[flagId] = envOverride;
       }
     }
+    if (definition.experimentalEnv && options.env?.[definition.experimentalEnv] !== "1") {
+      values[flagId] = false;
+    }
   }
 
   const overrides = normalizeFeatureFlagOverrides(options.overrides);
@@ -110,7 +115,10 @@ export function resolveFeatureFlags(options: ResolveFeatureFlagsOptions): Featur
     for (const flagId of FEATURE_FLAG_IDS) {
       const override = normalizeBooleanOverride(overrides[flagId]);
       if (override !== undefined) {
-        values[flagId] = override;
+        const definition = FEATURE_FLAG_DEFINITIONS[flagId];
+        if (!definition.experimentalEnv || options.env?.[definition.experimentalEnv] === "1") {
+          values[flagId] = override;
+        }
       }
     }
   }

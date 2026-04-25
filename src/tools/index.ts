@@ -4,8 +4,8 @@ import {
   getCodexWebSearchBackendFromProviderOptions,
   getGoogleNativeWebSearchFromProviderOptions,
 } from "../shared/openaiCompatibleOptions";
+import { resolveExperimentalA2uiConfig } from "../experimental/a2ui/flags";
 import type { AgentConfig } from "../types";
-import { createA2uiTool } from "./a2ui";
 import { createAskTool } from "./ask";
 import { createBashTool } from "./bash";
 import type { ToolContext } from "./context";
@@ -120,8 +120,12 @@ export function createTools(ctx: ToolContext): Record<string, any> {
     notebookEdit: createNotebookEditTool(ctx),
     skill: createSkillTool(ctx),
     ...((ctx.config.enableMemory ?? true) ? { memory: createMemoryTool(ctx) } : {}),
-    ...(ctx.config.enableA2ui === true && ctx.applyA2uiEnvelope
-      ? { a2ui: createA2uiTool(ctx) }
+    ...(resolveExperimentalA2uiConfig(ctx.config) && ctx.applyA2uiEnvelope
+      ? {
+          a2ui: (
+            require("../experimental/a2ui/tool") as typeof import("../experimental/a2ui/tool")
+          ).createA2uiTool(ctx),
+        }
       : {}),
     usage: createUsageTool(ctx),
   };

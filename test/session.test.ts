@@ -6,6 +6,10 @@ import * as REAL_AGENT from "../src/agent";
 import { defaultSupportedModel, getSupportedModel } from "../src/models/registry";
 import { __internal as observabilityRuntimeInternal } from "../src/observability/runtime";
 import { createRuntime } from "../src/runtime";
+import {
+  createExperimentalA2uiSurfaceManager,
+  deriveA2uiSurfacesFromSnapshot,
+} from "../src/experimental/a2ui/sessionAdapter";
 import { ASK_SKIP_TOKEN, type SessionEvent } from "../src/server/protocol";
 import type { SessionInfoState } from "../src/server/session/SessionContext";
 import type {
@@ -37,6 +41,28 @@ mock.module("../src/agent", () => ({
   ...REAL_AGENT,
   runTurn: mockRunTurn,
 }));
+
+async function withEnv<T>(
+  key: string,
+  value: string | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previous = process.env[key];
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = previous;
+    }
+  }
+}
 
 const mockConnectModelProvider = mock(
   async (_opts: any): Promise<any> => ({
@@ -657,39 +683,43 @@ describe("AgentSession", () => {
     });
 
     test("setConfig refreshes the cached system prompt when the A2UI feature flag changes", async () => {
-      const persistProjectConfigPatchImpl = mock(async () => {});
-      const loadSystemPromptWithSkillsImpl = mock(async (config: AgentConfig) => ({
-        prompt: `prompt:a2ui-${String(config.enableA2ui ?? false)}`,
-        discoveredSkills: [{ name: "ui-skill", description: "UI skill" }],
-      }));
-      const { session } = makeSession({
-        persistProjectConfigPatchImpl,
-        loadSystemPromptWithSkillsImpl,
-        system: "prompt:a2ui-false",
-      });
+      await withEnv("COWORK_EXPERIMENTAL_A2UI", "1", async () => {
+        const persistProjectConfigPatchImpl = mock(async () => {});
+        const loadSystemPromptWithSkillsImpl = mock(async (config: AgentConfig) => ({
+          prompt: `prompt:a2ui-${String(config.enableA2ui ?? false)}`,
+          discoveredSkills: [{ name: "ui-skill", description: "UI skill" }],
+        }));
+        const { session } = makeSession({
+          persistProjectConfigPatchImpl,
+          loadSystemPromptWithSkillsImpl,
+          system: "prompt:a2ui-false",
+        });
 
-      await session.setConfig({
-        featureFlags: {
-          workspace: {
-            a2ui: true,
+        await session.setConfig({
+          featureFlags: {
+            workspace: {
+              a2ui: true,
+            },
           },
-        },
-      });
-      await session.sendUserMessage("hello");
+        });
+        await session.sendUserMessage("hello");
 
-      expect(loadSystemPromptWithSkillsImpl).toHaveBeenCalledTimes(1);
-      expect(persistProjectConfigPatchImpl).toHaveBeenCalledWith({
-        featureFlags: {
-          workspace: {
-            a2ui: true,
+        expect(loadSystemPromptWithSkillsImpl).toHaveBeenCalledTimes(1);
+        expect(persistProjectConfigPatchImpl).toHaveBeenCalledWith({
+          featureFlags: {
+            workspace: {
+              a2ui: true,
+            },
           },
-        },
-      });
+        });
 
-      const runTurnArgs = mockRunTurn.mock.calls.at(-1)?.[0] as any;
-      expect(runTurnArgs.system).toBe("prompt:a2ui-true");
-      expect(runTurnArgs.discoveredSkills).toEqual([{ name: "ui-skill", description: "UI skill" }]);
-      expect(session.getSessionConfigEvent().config.enableA2ui).toBe(true);
+        const runTurnArgs = mockRunTurn.mock.calls.at(-1)?.[0] as any;
+        expect(runTurnArgs.system).toBe("prompt:a2ui-true");
+        expect(runTurnArgs.discoveredSkills).toEqual([
+          { name: "ui-skill", description: "UI skill" },
+        ]);
+        expect(session.getSessionConfigEvent().config.enableA2ui).toBe(true);
+      });
     });
 
     test("upsertMemory refreshes the cached system prompt for later turns", async () => {
@@ -988,7 +1018,7 @@ describe("AgentSession", () => {
       expect(evt.config.observabilityEnabled).toBe(false);
       expect(evt.config.backupsEnabled).toBe(true);
       expect(evt.config.defaultBackupsEnabled).toBe(true);
-      expect(evt.config.enableA2ui).toBe(false);
+      expect(evt.config.enableA2ui).toBeUndefined();
       expect(evt.config.toolOutputOverflowChars).toBe(25000);
       expect("defaultToolOutputOverflowChars" in evt.config).toBe(false);
       expect(evt.config.preferredChildModel).toBe("gemini-3-flash-preview");
@@ -6591,6 +6621,8 @@ describe("AgentSession", () => {
         emit,
         sessionBackupFactory: makeSessionBackupFactory(),
         getProviderStatusesImpl: async () => [],
+        createA2uiSurfaceManagerImpl: createExperimentalA2uiSurfaceManager,
+        deriveA2uiSurfacesFromSnapshotImpl: deriveA2uiSurfacesFromSnapshot,
       });
 
       expect(session.validateA2uiAction({ surfaceId: "surface-1", componentId: "buy" })).toEqual({

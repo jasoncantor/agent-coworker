@@ -143,6 +143,34 @@ export type SessionRuntimeState = {
   costTracker: SessionCostTracker | null;
 };
 
+export type ExperimentalA2uiManager = {
+  applyUnknown: (
+    value: unknown,
+    meta?: { reason?: string; toolCallId?: string },
+  ) => {
+    ok: boolean;
+    surfaceId?: string;
+    change?: "created" | "updated" | "deleted" | "noop";
+    error?: string;
+    warning?: string;
+  };
+  validateAction: (opts: { surfaceId: string; componentId: string }) =>
+    | { ok: true; surfaceId: string; componentId: string; componentType: string }
+    | {
+        ok: false;
+        error: string;
+        code: "unknown_surface" | "surface_deleted" | "unknown_component";
+      };
+  hydrate: (surfaces: unknown) => void;
+  reset: () => void;
+};
+
+export type ExperimentalA2uiManagerFactory = (deps: {
+  sessionId: string;
+  emit: (evt: SessionEvent) => void;
+  log?: (line: string) => void;
+}) => ExperimentalA2uiManager;
+
 export type SessionDependencies = {
   connectProviderImpl: typeof connectModelProvider;
   getAiCoworkerPathsImpl: typeof getAiCoworkerPaths;
@@ -241,6 +269,8 @@ export type SessionDependencies = {
     sourceSessionId: string;
     allWorkspaces?: boolean;
   }) => Promise<void>;
+  createA2uiSurfaceManagerImpl?: ExperimentalA2uiManagerFactory;
+  deriveA2uiSurfacesFromSnapshotImpl?: (snapshot: SessionSnapshot | null | undefined) => unknown;
 };
 
 export type SessionContext = {

@@ -1,13 +1,15 @@
-import type { SessionEvent } from "../../protocol";
-import { JSONRPC_ERROR_CODES } from "../protocol";
-import { formatA2uiActionDeliveryText, jsonRpcA2uiRequestSchemas } from "../schema.a2ui";
-
+import type { SessionEvent } from "../../server/protocol";
+import { JSONRPC_ERROR_CODES } from "../../server/jsonrpc/protocol";
 import {
   captureBindingOutcome,
   type JsonRpcSessionError,
   sendSessionMutationError,
-} from "./outcomes";
-import type { JsonRpcRequestHandlerMap, JsonRpcRouteContext } from "./types";
+} from "../../server/jsonrpc/routes/outcomes";
+import type {
+  JsonRpcRequestHandlerMap,
+  JsonRpcRouteContext,
+} from "../../server/jsonrpc/routes/types";
+import { formatA2uiActionDeliveryText, jsonRpcA2uiRequestSchemas } from "./schema";
 
 type JsonRpcTurnStartOutcome =
   | Extract<SessionEvent, { type: "session_busy" }>

@@ -1,14 +1,14 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Fragment, useState } from "react";
-import { isSupportedBasicComponentType } from "../../../../../../src/shared/a2ui/component";
+import { isSupportedBasicComponentType } from "../../../../../../src/experimental/a2ui/component";
 import {
   formatString,
   resolveDynamic,
   resolveDynamicBoolean,
   resolveDynamicString,
   stringifyDynamic,
-} from "../../../../../../src/shared/a2ui/expressions";
-import { resolveDynamicWithFunctions } from "../../../../../../src/shared/a2ui/functions";
+} from "../../../../../../src/experimental/a2ui/expressions";
+import { resolveDynamicWithFunctions } from "../../../../../../src/experimental/a2ui/functions";
 import { cn } from "../../../lib/utils";
 
 /**

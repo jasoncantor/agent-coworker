@@ -1066,6 +1066,8 @@ describe("loadSystemPrompt", () => {
   });
 
   test("injects A2UI enabled guidance into the system prompt", async () => {
+    const previous = process.env.COWORK_EXPERIMENTAL_A2UI;
+    process.env.COWORK_EXPERIMENTAL_A2UI = "1";
     const config = makeConfig({
       enableA2ui: false,
       featureFlags: {
@@ -1076,9 +1078,17 @@ describe("loadSystemPrompt", () => {
       skillsDirs: ["/nonexistent/skills"],
     });
 
-    const prompt = await loadSystemPrompt(config);
-    expect(prompt).toContain("## A2UI Enabled");
-    expect(prompt).toContain("You may call the `a2ui` tool");
+    try {
+      const prompt = await loadSystemPrompt(config);
+      expect(prompt).toContain("## A2UI Enabled");
+      expect(prompt).toContain("You may call the `a2ui` tool");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.COWORK_EXPERIMENTAL_A2UI;
+      } else {
+        process.env.COWORK_EXPERIMENTAL_A2UI = previous;
+      }
+    }
   });
 
   test("injects A2UI disabled guidance and hides the a2ui skill when disabled", async () => {

@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { z } from "zod";
 
+import { resolveExperimentalA2uiConfig } from "../experimental/a2ui/flags";
 import { discoverSkillsForConfig, stripSkillFrontMatter } from "../skills";
 import type { ToolContext } from "./context";
 import { defineTool } from "./defineTool";
@@ -44,10 +45,7 @@ async function readIfExists(p: string): Promise<string | null> {
 }
 
 export function createSkillTool(ctx: ToolContext) {
-  const a2uiEnabled =
-    typeof ctx.config.featureFlags?.workspace?.a2ui === "boolean"
-      ? ctx.config.featureFlags.workspace.a2ui
-      : (ctx.config.enableA2ui ?? false);
+  const a2uiEnabled = resolveExperimentalA2uiConfig(ctx.config);
   const skills = (ctx.availableSkills ?? []).filter(
     (skill) => a2uiEnabled || skill.name !== "a2ui",
   );

@@ -5,13 +5,13 @@ import { useAppTheme } from "@/theme/use-app-theme";
 import {
   isBasicCatalogId,
   isSupportedBasicComponentType,
-} from "../../../../../src/shared/a2ui/component";
+} from "../../../../../src/experimental/a2ui/component";
 import {
   resolveDynamicBoolean,
   resolveDynamicString,
   stringifyDynamic,
-} from "../../../../../src/shared/a2ui/expressions";
-import { resolveDynamicWithFunctions } from "../../../../../src/shared/a2ui/functions";
+} from "../../../../../src/experimental/a2ui/expressions";
+import { resolveDynamicWithFunctions } from "../../../../../src/experimental/a2ui/functions";
 
 type UiSurfaceItem = Extract<SessionFeedItem, { kind: "ui_surface" }>;
 

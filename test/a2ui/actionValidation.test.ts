@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { formatA2uiActionDeliveryText } from "../../src/server/jsonrpc/schema.a2ui";
+import { formatA2uiActionDeliveryText } from "../../src/experimental/a2ui";
 import type { SessionEvent } from "../../src/server/protocol";
-import { A2uiSurfaceManager } from "../../src/server/session/A2uiSurfaceManager";
-import type { A2uiEnvelope } from "../../src/shared/a2ui";
-import { A2UI_BASIC_CATALOG_ID } from "../../src/shared/a2ui/component";
+import { A2uiSurfaceManager, type A2uiEnvelope } from "../../src/experimental/a2ui";
+import { A2UI_BASIC_CATALOG_ID } from "../../src/experimental/a2ui/component";
 
 function seededManager() {
   const events: SessionEvent[] = [];

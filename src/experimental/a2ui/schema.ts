@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { nonEmptyTrimmedStringSchema } from "./schema.shared";
+import { nonEmptyTrimmedStringSchema } from "../../server/jsonrpc/schema.shared";
 
 /**
  * Schemas for the A2UI Phase 2 action channel.

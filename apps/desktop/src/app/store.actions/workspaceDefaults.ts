@@ -578,7 +578,7 @@ export function createWorkspaceDefaultsActions(
           ...(providerOptions ? { providerOptions } : {}),
           ...(userName !== undefined ? { userName } : {}),
           ...(userProfile !== undefined ? { userProfile } : {}),
-          a2uiEnabled: globalA2uiEnabled,
+          ...(globalA2uiEnabled ? { a2uiEnabled: true } : {}),
         },
       });
       if (!message || message.type !== "apply_session_defaults") {
@@ -740,7 +740,7 @@ export function createWorkspaceDefaultsActions(
                 ...(providerOptions ? { providerOptions } : {}),
                 ...(userName !== undefined ? { userName } : {}),
                 ...(userProfile !== undefined ? { userProfile } : {}),
-                a2uiEnabled: globalA2uiEnabled,
+                ...(globalA2uiEnabled ? { a2uiEnabled: true } : {}),
               },
             })
           : null;

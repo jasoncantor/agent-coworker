@@ -5,7 +5,7 @@ import {
   envelopeKind,
   envelopeSurfaceId,
   parseA2uiEnvelope,
-} from "../../src/shared/a2ui/protocol";
+} from "../../src/experimental/a2ui/protocol";
 
 describe("parseA2uiEnvelope", () => {
   test("accepts a minimal createSurface envelope", () => {

@@ -3298,30 +3298,32 @@ describe("skill tool", () => {
   });
 
   test("loads the a2ui skill when the workspace A2UI feature flag is enabled", async () => {
-    const dir = await tmpDir();
-    const skillDir = path.join(dir, "skills", "a2ui");
-    await fs.mkdir(skillDir, { recursive: true });
-    await fs.writeFile(
-      path.join(skillDir, "SKILL.md"),
-      skillDoc("a2ui", "A2UI helper skill.", "# A2UI Skill\nProtocol guidance."),
-      "utf-8",
-    );
+    await withEnv("COWORK_EXPERIMENTAL_A2UI", "1", async () => {
+      const dir = await tmpDir();
+      const skillDir = path.join(dir, "skills", "a2ui");
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(
+        path.join(skillDir, "SKILL.md"),
+        skillDoc("a2ui", "A2UI helper skill.", "# A2UI Skill\nProtocol guidance."),
+        "utf-8",
+      );
 
-    const config = makeConfig(dir, {
-      skillsDirs: [path.join(dir, "skills")],
-      enableA2ui: false,
-      featureFlags: {
-        workspace: {
-          a2ui: true,
+      const config = makeConfig(dir, {
+        skillsDirs: [path.join(dir, "skills")],
+        enableA2ui: false,
+        featureFlags: {
+          workspace: {
+            a2ui: true,
+          },
         },
-      },
-    });
-    const ctx = makeCtx(dir);
-    ctx.config = config;
+      });
+      const ctx = makeCtx(dir);
+      ctx.config = config;
 
-    const t: any = createSkillTool(ctx);
-    const res: string = await t.execute({ skillName: "a2ui" });
-    expect(res).toContain("Protocol guidance.");
+      const t: any = createSkillTool(ctx);
+      const res: string = await t.execute({ skillName: "a2ui" });
+      expect(res).toContain("Protocol guidance.");
+    });
   });
 
   test("appends deck-workspace hygiene guidance to slides skill loads", async () => {
@@ -3715,37 +3717,41 @@ describe("createTools", () => {
   });
 
   test("includes a2ui for non-google providers when enabled", async () => {
-    const dir = await tmpDir();
-    const tools = createTools(
-      makeCtx(dir, {
-        config: makeConfig(dir, {
-          provider: "openai",
-          model: "gpt-5.2",
-          preferredChildModel: "gpt-5.2",
-          enableA2ui: true,
+    await withEnv("COWORK_EXPERIMENTAL_A2UI", "1", async () => {
+      const dir = await tmpDir();
+      const tools = createTools(
+        makeCtx(dir, {
+          config: makeConfig(dir, {
+            provider: "openai",
+            model: "gpt-5.2",
+            preferredChildModel: "gpt-5.2",
+            enableA2ui: true,
+          }),
+          applyA2uiEnvelope: () => ({ ok: true, surfaceId: "surface-1", change: "created" }),
         }),
-        applyA2uiEnvelope: () => ({ ok: true, surfaceId: "surface-1", change: "created" }),
-      }),
-    );
+      );
 
-    expect(tools).toHaveProperty("a2ui");
+      expect(tools).toHaveProperty("a2ui");
+    });
   });
 
   test("includes a2ui for google when enabled", async () => {
-    const dir = await tmpDir();
-    const tools = createTools(
-      makeCtx(dir, {
-        config: makeConfig(dir, {
-          provider: "google",
-          model: "gemini-3-flash-preview",
-          preferredChildModel: "gemini-3-flash-preview",
-          enableA2ui: true,
+    await withEnv("COWORK_EXPERIMENTAL_A2UI", "1", async () => {
+      const dir = await tmpDir();
+      const tools = createTools(
+        makeCtx(dir, {
+          config: makeConfig(dir, {
+            provider: "google",
+            model: "gemini-3-flash-preview",
+            preferredChildModel: "gemini-3-flash-preview",
+            enableA2ui: true,
+          }),
+          applyA2uiEnvelope: () => ({ ok: true, surfaceId: "surface-1", change: "created" }),
         }),
-        applyA2uiEnvelope: () => ({ ok: true, surfaceId: "surface-1", change: "created" }),
-      }),
-    );
+      );
 
-    expect(tools).toHaveProperty("a2ui");
+      expect(tools).toHaveProperty("a2ui");
+    });
   });
 
   test("omits a2ui when explicitly disabled", async () => {

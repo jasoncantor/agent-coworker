@@ -113,7 +113,7 @@ export type WorkspaceFeatureFlagOverrides = {
 };
 
 export type WorkspaceFeatureFlags = {
-  a2ui: boolean;
+  a2ui?: boolean;
 };
 
 export interface AgentConfig {
@@ -193,9 +193,14 @@ export interface AgentConfig {
    */
   includeRawChunks?: boolean;
 
+  /** Internal experiment gates resolved from environment. Not persisted. */
+  experimentalFeatures?: {
+    a2ui?: boolean;
+  };
+
   /**
-   * Whether the A2UI (Agent-to-UI) generative-UI tool is exposed to the model
-   * and associated protocol events are emitted. Defaults to true.
+   * Experimental A2UI (Agent-to-UI) generative-UI opt-in. Only honored when
+   * COWORK_EXPERIMENTAL_A2UI=1.
    */
   enableA2ui?: boolean;
 

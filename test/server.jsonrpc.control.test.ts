@@ -712,7 +712,7 @@ describe("server JSON-RPC control methods", () => {
       expect(stateResponse.result.events[0]?.config?.model).toBe("gpt-5.4");
       expect(stateResponse.result.events[0]?.config?.workingDirectory).toBe(targetWorkspace);
       expect(stateResponse.result.events[1]?.enableMcp).toBe(false);
-      expect(stateResponse.result.events[2]?.config?.enableA2ui).toBe(false);
+      expect(stateResponse.result.events[2]?.config?.enableA2ui).toBeUndefined();
       expect(stateResponse.result.events[2]?.config?.enableMemory).toBe(false);
 
       const defaultsResponse = await rpc.request("cowork/session/defaults/apply", {
@@ -731,7 +731,7 @@ describe("server JSON-RPC control methods", () => {
       const targetConfig = JSON.parse(
         await fs.readFile(`${targetWorkspace}/.agent/config.json`, "utf-8"),
       );
-      expect(targetConfig.featureFlags?.workspace?.a2ui).toBe(true);
+      expect(targetConfig.featureFlags?.workspace?.a2ui).toBeUndefined();
       expect(targetConfig.enableMemory).toBe(true);
       await expect(fs.readFile(`${serverRoot}/.agent/config.json`, "utf-8")).rejects.toBeDefined();
 
@@ -758,7 +758,9 @@ describe("server JSON-RPC control methods", () => {
       )}\n`,
     );
 
-    const { server, url } = await startAgentServer(serverOpts(workspace));
+    const { server, url } = await startAgentServer(
+      serverOpts(workspace, { env: { COWORK_EXPERIMENTAL_A2UI: "1" } }),
+    );
 
     try {
       const rpc = await connectJsonRpc(url);

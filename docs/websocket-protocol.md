@@ -153,7 +153,6 @@ Currently implemented `cowork/*` methods include:
   - `cowork/session/file/upload`
   - `cowork/session/delete`
   - `cowork/session/agent/inspect`
-  - `cowork/session/a2ui/action`
 - provider controls
   - `cowork/provider/catalog/read`
   - `cowork/provider/authMethods/read`
@@ -329,28 +328,6 @@ Sockets subscribed with `research/subscribe` can receive:
   - params: `{ researchId, research }`
 - `research/failed`
   - params: `{ researchId, status: "failed" | "cancelled", error }`
-
-`cowork/session/a2ui/action` forwards a user interaction on an A2UI surface (Phase 2) to the running agent. Clients dispatch it when a user clicks a `Button`, submits a `TextField`, or toggles a `Checkbox` inside an A2UI surface.
-
-Request params:
-
-```ts
-{
-  threadId: string;
-  surfaceId: string;
-  componentId: string;
-  eventType: string;            // e.g. "click", "submit", "change"
-  payload?: Record<string, unknown>;
-  clientMessageId?: string;
-}
-```
-
-The harness validates that the surface exists, is not deleted, and contains `componentId`. If validation fails the server replies with a JSON-RPC invalidParams error. On success the harness synthesizes a structured user message and delivers it:
-
-- If a turn is already running, the action is delivered as a steer against that turn, and the result carries `delivery: "delivered-as-steer"` and the active `turnId`.
-- Otherwise, the harness starts a new turn carrying the action text as the user message, and the result carries `delivery: "delivered-as-turn"` and the new `turnId`.
-
-The synthesized text is deterministic and human-readable (starts with `[a2ui.action] The user interacted with surface "<id>".`) so the agent can respond with further `a2ui` tool calls or plain text.
 
 ### Core JSON-RPC notifications currently available
 
@@ -2434,11 +2411,11 @@ When non-null, `context` contains all [HarnessContextPayload](#harnesscontextpay
 
 ---
 
-### a2ui_surface
+### a2ui_surface (experimental)
 
 Resolved generative-UI surface state emitted when the agent calls the `a2ui` tool. Published after every envelope application and carries the post-reduction snapshot (not the raw envelope).
 
-This event is emitted only when the harness has A2UI enabled. A2UI is on by default, but any config layer can disable it with `"enableA2ui": false`, and the environment can override it with `AGENT_ENABLE_A2UI=false`. Clients can safely ignore the event when they do not implement an A2UI renderer.
+This event is not part of the default protocol surface. It is available only when the server is started with `COWORK_EXPERIMENTAL_A2UI=1` and the effective session config enables A2UI.
 
 ```json
 {
@@ -2477,9 +2454,9 @@ This event is emitted only when the harness has A2UI enabled. A2UI is on by defa
 | `dataModel` | `unknown \| undefined` | Current JSON data model the component tree reads via `{ path, ... }` bindings. |
 | `updatedAt` | `string` | ISO 8601 of the last fold. |
 
-On the JSON-RPC transport, the harness also projects the event into the standard `item/started` + `item/completed` notifications as a `uiSurface` ProjectedItem, and additionally emits a dedicated `cowork/session/a2ui/surface` notification carrying the raw event shape above. Thin clients can consume either; the ProjectedItem path keeps the surface in sync with the session feed.
+On the JSON-RPC transport, the experimental module projects the event into the standard `item/started` + `item/completed` notifications as a `uiSurface` ProjectedItem. Thin clients can ignore that item type unless they opt into A2UI rendering.
 
-See [`src/shared/a2ui`](../src/shared/a2ui) for the envelope schema, reducer, and binding evaluator, and [`skills/a2ui/SKILL.md`](../skills/a2ui/SKILL.md) for the agent-facing guide.
+See [`src/experimental/a2ui`](../src/experimental/a2ui) for the envelope schema, reducer, and binding evaluator, and [`skills/a2ui/SKILL.md`](../skills/a2ui/SKILL.md) for the agent-facing guide.
 
 ---
 
@@ -2967,7 +2944,6 @@ Current runtime config. Sent on connection and after `set_config`.
     "observabilityEnabled": true,
     "backupsEnabled": true,
     "defaultBackupsEnabled": true,
-    "enableA2ui": true,
     "toolOutputOverflowChars": 25000,
     "defaultToolOutputOverflowChars": 25000,
     "preferredChildModel": "gpt-5.4",
@@ -3021,7 +2997,6 @@ Current runtime config. Sent on connection and after `set_config`.
 | `config.observabilityEnabled` | `boolean` | Whether observability is enabled |
 | `config.backupsEnabled` | `boolean` | Whether backups are enabled for the live session after applying any session-scoped override |
 | `config.defaultBackupsEnabled` | `boolean` | The persisted workspace backup default from the harness/core config, before any live session override is applied |
-| `config.enableA2ui` | `boolean` | Whether A2UI generative UI is enabled for the session/workspace default and therefore exposed in the model prompt/tool contract |
 | `config.toolOutputOverflowChars` | `number \| null` | Effective character threshold for when oversized tool outputs start spilling into `.ModelScratchpad`; `null` disables spill files. Spill results still keep a fixed inline preview (currently the first 5,000 characters). |
 | `config.defaultToolOutputOverflowChars` | `number \| null` | Persisted workspace overflow default when explicitly configured; omitted when the session is inheriting the built-in or user-level default |
 | `config.preferredChildModel` | `string` | Normalized same-provider fallback model identifier used for legacy/default suggestion state |
@@ -3035,9 +3010,6 @@ Current runtime config. Sent on connection and after `set_config`.
 | `config.userProfile.instructions` | `string` | Effective profile instructions |
 | `config.userProfile.work` | `string` | Effective profile work/job context |
 | `config.userProfile.details` | `string` | Effective profile details |
-| `config.featureFlags` | `object` | Effective workspace-scoped feature-flag state |
-| `config.featureFlags.workspace` | `object` | Effective workspace feature flags |
-| `config.featureFlags.workspace.a2ui` | `boolean` | Effective A2UI feature-flag state for this workspace |
 | `config.providerOptions.openai.reasoningEffort` | `"none" \| "low" \| "medium" \| "high" \| "xhigh"` | Current editable OpenAI reasoning effort |
 | `config.providerOptions.openai.reasoningSummary` | `"auto" \| "concise" \| "detailed"` | Current editable OpenAI reasoning summary |
 | `config.providerOptions.openai.textVerbosity` | `"low" \| "medium" \| "high"` | Current editable OpenAI verbosity |

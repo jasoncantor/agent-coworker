@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { JSONRPC_ERROR_CODES } from "../../src/server/jsonrpc/protocol";
+import { jsonRpcRequestSchemas } from "../../src/server/jsonrpc/schema";
 import {
   createJsonRpcRequestRouter,
   type JsonRpcRouteContext,
 } from "../../src/server/jsonrpc/routes";
 import type { SessionEvent } from "../../src/server/protocol";
+import { createA2uiRouteHandlers } from "../../src/experimental/a2ui/routes";
 
 type SessionMock = {
   id: string;
@@ -38,7 +40,11 @@ function createRuntime(session: SessionMock) {
   };
 }
 
-function createHarness(opts: { session?: SessionMock; activeTurnId?: string | null }) {
+function createHarness(opts: {
+  session?: SessionMock;
+  activeTurnId?: string | null;
+  experimental?: boolean;
+}) {
   const sent: any[] = [];
   const session: SessionMock = opts.session ?? {
     id: "t1",
@@ -148,7 +154,12 @@ function createHarness(opts: { session?: SessionMock; activeTurnId?: string | nu
     capturedTurnId = turnId;
   };
 
-  const router = createJsonRpcRequestRouter(context);
+  const router =
+    opts.experimental === false
+      ? createJsonRpcRequestRouter(context)
+      : createJsonRpcRequestRouter(context, {
+          experimentalHandlers: createA2uiRouteHandlers(context),
+        });
   return {
     router,
     sent,
@@ -160,6 +171,31 @@ function createHarness(opts: { session?: SessionMock; activeTurnId?: string | nu
 }
 
 describe("cowork/session/a2ui/action route", () => {
+  test("is absent from the default JSON-RPC schema bundle", () => {
+    expect(jsonRpcRequestSchemas).not.toHaveProperty("cowork/session/a2ui/action");
+  });
+
+  test("is not registered on the default router", async () => {
+    const h = createHarness({ activeTurnId: null, experimental: false });
+    await h.router(
+      {} as any,
+      {
+        id: 0,
+        method: "cowork/session/a2ui/action",
+        params: {
+          threadId: "t1",
+          surfaceId: "s1",
+          componentId: "buy",
+          eventType: "click",
+        },
+      } as any,
+    );
+
+    expect(h.sent).toHaveLength(1);
+    const reply: any = h.sent[0];
+    expect(reply.error.code).toBe(JSONRPC_ERROR_CODES.methodNotFound);
+  });
+
   test("delivers as a new turn when no turn is active", async () => {
     const h = createHarness({ activeTurnId: null });
     await h.router(

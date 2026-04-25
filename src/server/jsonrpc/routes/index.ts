@@ -1,6 +1,5 @@
 import { JSONRPC_ERROR_CODES } from "../protocol";
 
-import { createA2uiRouteHandlers } from "./a2ui";
 import { createAgentRouteHandlers } from "./agents";
 import { createMcpRouteHandlers } from "./mcp";
 import { createMemoryRouteHandlers } from "./memory";
@@ -17,7 +16,10 @@ import { createWorkspaceBackupRouteHandlers } from "./workspaceBackups";
 
 export type { JsonRpcRequestHandler, JsonRpcRequestHandlerMap, JsonRpcRouteContext } from "./types";
 
-export function createJsonRpcRequestRouter(context: JsonRpcRouteContext): JsonRpcRequestHandler {
+export function createJsonRpcRequestRouter(
+  context: JsonRpcRouteContext,
+  opts: { experimentalHandlers?: JsonRpcRequestHandlerMap } = {},
+): JsonRpcRequestHandler {
   const handlers: JsonRpcRequestHandlerMap = {
     ...createThreadRouteHandlers(context),
     ...createTurnRouteHandlers(context),
@@ -31,7 +33,7 @@ export function createJsonRpcRequestRouter(context: JsonRpcRouteContext): JsonRp
     ...createMemoryRouteHandlers(context),
     ...createWorkspaceBackupRouteHandlers(context),
     ...createWorkspaceRouteHandlers(context),
-    ...createA2uiRouteHandlers(context),
+    ...(opts.experimentalHandlers ?? {}),
   };
 
   return async (ws, message) => {

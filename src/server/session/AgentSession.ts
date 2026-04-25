@@ -13,7 +13,6 @@ import {
   type SessionUsageSnapshot,
   type TurnUsage,
 } from "../../session/costTracker";
-import type { A2uiComponent, A2uiSurfaceState, A2uiSurfacesById } from "../../shared/a2ui";
 import type {
   AgentContextMode,
   AgentInspectResult,
@@ -41,7 +40,6 @@ import type { PersistedSessionMutation, PersistedSessionRecord, SessionDb } from
 import { type PersistedSessionSnapshot, writePersistedSessionSnapshot } from "../sessionStore";
 import type { generateSessionTitle } from "../sessionTitleService";
 import { DEFAULT_SESSION_TITLE } from "../sessionTitleService";
-import { A2uiSurfaceManager } from "./A2uiSurfaceManager";
 import { HistoryManager } from "./HistoryManager";
 import { InteractionManager, type PendingPromptReplayEvent } from "./InteractionManager";
 import { McpManager } from "./McpManager";
@@ -51,6 +49,7 @@ import { ProviderCatalogManager } from "./ProviderCatalogManager";
 import { SessionAdminManager } from "./SessionAdminManager";
 import { SessionBackupController } from "./SessionBackupController";
 import type {
+  ExperimentalA2uiManager,
   HydratedSessionState,
   PersistedModelSelection,
   PersistedProjectConfigPatch,
@@ -328,33 +327,6 @@ function shouldReplayDisconnectedEvent(evt: SessionEvent): boolean {
   return DISCONNECTED_REPLAY_EVENT_TYPES.has(evt.type);
 }
 
-function deriveA2uiSurfacesFromSnapshot(
-  snapshot: SessionSnapshot | null | undefined,
-): A2uiSurfacesById | undefined {
-  if (!snapshot) return undefined;
-
-  const surfaces: Record<string, A2uiSurfaceState> = {};
-  for (const item of snapshot.feed) {
-    if (item.kind !== "ui_surface") continue;
-    const existing = surfaces[item.surfaceId];
-    if (existing && existing.revision > item.revision) {
-      continue;
-    }
-    surfaces[item.surfaceId] = {
-      surfaceId: item.surfaceId,
-      catalogId: item.catalogId,
-      ...(item.theme ? { theme: structuredClone(item.theme) } : {}),
-      ...(item.root ? { root: structuredClone(item.root) as A2uiComponent } : {}),
-      ...(item.dataModel !== undefined ? { dataModel: structuredClone(item.dataModel) } : {}),
-      revision: item.revision,
-      updatedAt: item.ts,
-      deleted: item.deleted,
-    };
-  }
-
-  return Object.keys(surfaces).length > 0 ? surfaces : undefined;
-}
-
 export class AgentSession {
   readonly id: string;
 
@@ -372,7 +344,7 @@ export class AgentSession {
   private providerAuthManager: ProviderAuthManager | null = null;
   private providerCatalogManager: ProviderCatalogManager | null = null;
   private turnExecutionManager: TurnExecutionManager | null = null;
-  private a2uiSurfaceManager: A2uiSurfaceManager | null = null;
+  private a2uiSurfaceManager: ExperimentalA2uiManager | null = null;
   private skillManager: SkillManager | null = null;
   private readonly metadataManager: SessionMetadataManager;
   private adminManager: SessionAdminManager | null = null;
@@ -424,6 +396,8 @@ export class AgentSession {
     buildLegacySessionSnapshotImpl?: SessionDependencies["buildLegacySessionSnapshotImpl"];
     getSkillMutationBlockReasonImpl?: SessionDependencies["getSkillMutationBlockReasonImpl"];
     refreshSkillsAcrossWorkspaceSessionsImpl?: SessionDependencies["refreshSkillsAcrossWorkspaceSessionsImpl"];
+    createA2uiSurfaceManagerImpl?: SessionDependencies["createA2uiSurfaceManagerImpl"];
+    deriveA2uiSurfacesFromSnapshotImpl?: SessionDependencies["deriveA2uiSurfacesFromSnapshotImpl"];
     hydratedState?: HydratedSessionState;
     initialSessionSnapshot?: SessionSnapshot;
     initialLastEventSeq?: number;
@@ -570,6 +544,8 @@ export class AgentSession {
       buildLegacySessionSnapshotImpl: opts.buildLegacySessionSnapshotImpl,
       getSkillMutationBlockReasonImpl: opts.getSkillMutationBlockReasonImpl,
       refreshSkillsAcrossWorkspaceSessionsImpl: opts.refreshSkillsAcrossWorkspaceSessionsImpl,
+      createA2uiSurfaceManagerImpl: opts.createA2uiSurfaceManagerImpl,
+      deriveA2uiSurfacesFromSnapshotImpl: opts.deriveA2uiSurfacesFromSnapshotImpl,
     };
 
     if (seededHarnessContext) {
@@ -729,21 +705,29 @@ export class AgentSession {
         metadataManager: this.metadataManager,
         backupController: this.backupController,
         flushPendingExternalSkillRefresh: async () => await this.flushPendingExternalSkillRefresh(),
-        getA2uiSurfaceManager: () => this.getA2uiSurfaceManager(),
+        ...(this.deps.createA2uiSurfaceManagerImpl
+          ? { getA2uiSurfaceManager: () => this.getA2uiSurfaceManager() }
+          : {}),
       });
     }
     return this.turnExecutionManager;
   }
 
-  private getA2uiSurfaceManager(): A2uiSurfaceManager {
+  private getA2uiSurfaceManager(): ExperimentalA2uiManager {
+    const createManager = this.deps.createA2uiSurfaceManagerImpl;
+    if (!createManager) {
+      throw new Error("A2UI is not enabled for this session.");
+    }
     if (!this.a2uiSurfaceManager) {
-      this.a2uiSurfaceManager = new A2uiSurfaceManager({
+      this.a2uiSurfaceManager = createManager({
         sessionId: this.id,
         emit: (evt) => this.context.emit(evt),
         log: (line) => this.context.emit({ type: "log", sessionId: this.id, line }),
       });
       this.a2uiSurfaceManager.hydrate(
-        deriveA2uiSurfacesFromSnapshot(this.sessionSnapshotProjector.getSnapshot()),
+        this.deps.deriveA2uiSurfacesFromSnapshotImpl?.(
+          this.sessionSnapshotProjector.getSnapshot(),
+        ),
       );
     }
     return this.a2uiSurfaceManager;
@@ -844,6 +828,8 @@ export class AgentSession {
     deleteWorkspaceBackupCheckpointImpl?: SessionDependencies["deleteWorkspaceBackupCheckpointImpl"];
     deleteWorkspaceBackupEntryImpl?: SessionDependencies["deleteWorkspaceBackupEntryImpl"];
     getWorkspaceBackupDeltaImpl?: SessionDependencies["getWorkspaceBackupDeltaImpl"];
+    createA2uiSurfaceManagerImpl?: SessionDependencies["createA2uiSurfaceManagerImpl"];
+    deriveA2uiSurfacesFromSnapshotImpl?: SessionDependencies["deriveA2uiSurfacesFromSnapshotImpl"];
     initialSessionSnapshot?: SessionSnapshot | null;
   }): AgentSession {
     const { persisted } = opts;
@@ -936,6 +922,8 @@ export class AgentSession {
       deleteWorkspaceBackupCheckpointImpl: opts.deleteWorkspaceBackupCheckpointImpl,
       deleteWorkspaceBackupEntryImpl: opts.deleteWorkspaceBackupEntryImpl,
       getWorkspaceBackupDeltaImpl: opts.getWorkspaceBackupDeltaImpl,
+      createA2uiSurfaceManagerImpl: opts.createA2uiSurfaceManagerImpl,
+      deriveA2uiSurfacesFromSnapshotImpl: opts.deriveA2uiSurfacesFromSnapshotImpl,
       ...(opts.initialSessionSnapshot
         ? { initialSessionSnapshot: opts.initialSessionSnapshot }
         : {}),
@@ -1841,7 +1829,7 @@ export class AgentSession {
   validateA2uiAction(opts: {
     surfaceId: string;
     componentId: string;
-  }): ReturnType<A2uiSurfaceManager["validateAction"]> {
+  }): ReturnType<ExperimentalA2uiManager["validateAction"]> {
     return this.getA2uiSurfaceManager().validateAction(opts);
   }
 

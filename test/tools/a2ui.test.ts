@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createA2uiTool } from "../../src/tools/a2ui";
+import { createA2uiTool } from "../../src/experimental/a2ui";
 import type { ToolContext } from "../../src/tools/context";
 import type { AgentConfig } from "../../src/types";
 

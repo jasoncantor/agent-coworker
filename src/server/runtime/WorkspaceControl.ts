@@ -1,4 +1,5 @@
 import { loadConfig } from "../../config";
+import { isA2uiExperimentEnabled } from "../../experimental/a2ui/flags";
 import { pickEditableOpenAiCompatibleProviderOptions } from "../../shared/openaiCompatibleOptions";
 import { effectiveToolOutputOverflowChars } from "../../shared/toolOutputOverflow";
 import type { AgentConfig } from "../../types";
@@ -152,6 +153,7 @@ export class WorkspaceControl {
     const toolOutputOverflowChars = effectiveToolOutputOverflowChars(
       controlConfig.toolOutputOverflowChars,
     );
+    const a2uiExperimentEnabled = isA2uiExperimentEnabled(this.options.env);
     const workspaceA2ui = resolveWorkspaceA2ui(controlConfig);
     const preferredChildModelRef =
       controlConfig.preferredChildModelRef ??
@@ -185,7 +187,7 @@ export class WorkspaceControl {
           observabilityEnabled: controlConfig.observabilityEnabled ?? false,
           backupsEnabled: defaultBackupsEnabled,
           defaultBackupsEnabled,
-          enableA2ui: workspaceA2ui,
+          ...(a2uiExperimentEnabled ? { enableA2ui: workspaceA2ui } : {}),
           enableMemory: controlConfig.enableMemory ?? true,
           memoryRequireApproval: controlConfig.memoryRequireApproval ?? false,
           preferredChildModel: controlConfig.preferredChildModel,
@@ -204,11 +206,15 @@ export class WorkspaceControl {
             work: controlConfig.userProfile?.work ?? "",
             details: controlConfig.userProfile?.details ?? "",
           },
-          featureFlags: {
-            workspace: {
-              a2ui: workspaceA2ui,
-            },
-          },
+          ...(a2uiExperimentEnabled
+            ? {
+                featureFlags: {
+                  workspace: {
+                    a2ui: workspaceA2ui,
+                  },
+                },
+              }
+            : {}),
         },
       },
     ];

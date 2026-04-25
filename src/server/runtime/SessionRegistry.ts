@@ -3,6 +3,7 @@ import type { connectProvider as connectModelProvider, getAiCoworkerPaths } from
 import type { loadAgentPrompt as loadAgentPromptFn } from "../../prompt";
 import { getProviderCatalog } from "../../providers/connectionCatalog";
 import type { SessionKind } from "../../shared/agents";
+import { isA2uiExperimentEnabled } from "../../experimental/a2ui/flags";
 import type { AgentConfig } from "../../types";
 import { defaultRuntimeNameForProvider } from "../../types";
 import { resolveAuthHomeDir } from "../../utils/authHome";
@@ -29,6 +30,8 @@ import type { ThreadJournal } from "./ThreadJournal";
 let agentSessionModule: typeof import("../session/AgentSession") | null = null;
 let sessionSnapshotProjectorModule: typeof import("../session/SessionSnapshotProjector") | null =
   null;
+let a2uiSessionAdapterModule: typeof import("../../experimental/a2ui/sessionAdapter") | null =
+  null;
 
 const loadAgentSessionModule = (): typeof import("../session/AgentSession") => {
   agentSessionModule ??=
@@ -43,8 +46,16 @@ const loadSessionSnapshotProjectorModule =
     return sessionSnapshotProjectorModule;
   };
 
+const loadA2uiSessionAdapterModule =
+  (): typeof import("../../experimental/a2ui/sessionAdapter") => {
+    a2uiSessionAdapterModule ??=
+      require("../../experimental/a2ui/sessionAdapter") as typeof import("../../experimental/a2ui/sessionAdapter");
+    return a2uiSessionAdapterModule;
+  };
+
 export type SessionRegistryOptions = {
   config: AgentConfig;
+  env: Record<string, string | undefined>;
   system: string;
   discoveredSkills: Array<{ name: string; description: string }>;
   yolo?: boolean;
@@ -280,6 +291,9 @@ export class SessionRegistry {
         }
       }
     };
+    const a2uiSessionAdapter = isA2uiExperimentEnabled(this.options.env)
+      ? loadA2uiSessionAdapterModule()
+      : null;
 
     return {
       discoveredSkills: this.options.discoveredSkills,
@@ -294,6 +308,7 @@ export class SessionRegistry {
                 currentConfig.projectAgentDir,
                 selection,
                 currentConfig.providerOptions,
+                { a2uiExperimentEnabled: currentConfig.experimentalFeatures?.a2ui === true },
               );
               currentConfig = mergeConfigPatch(currentConfig, selection);
               syncConfig(currentConfig);
@@ -306,6 +321,7 @@ export class SessionRegistry {
                 currentConfig.projectAgentDir,
                 patch,
                 currentConfig.providerOptions,
+                { a2uiExperimentEnabled: currentConfig.experimentalFeatures?.a2ui === true },
               );
               currentConfig = mergeConfigPatch(currentConfig, patch);
               syncConfig(currentConfig);
@@ -402,6 +418,14 @@ export class SessionRegistry {
         return "Skill mutations are blocked while another session in this workspace is running.";
       },
       refreshSkillsAcrossWorkspaceSessionsImpl: this.options.refreshSkillsAcrossWorkspaceSessions,
+      ...(a2uiSessionAdapter
+        ? {
+            createA2uiSurfaceManagerImpl:
+              a2uiSessionAdapter.createExperimentalA2uiSurfaceManager,
+            deriveA2uiSurfacesFromSnapshotImpl:
+              a2uiSessionAdapter.deriveA2uiSurfacesFromSnapshot,
+          }
+        : {}),
     };
   }
 

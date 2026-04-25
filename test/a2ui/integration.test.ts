@@ -1,14 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { createConversationProjection } from "../../src/server/projection/conversationProjection";
 import type { SessionEvent } from "../../src/server/protocol";
-import { A2uiSurfaceManager } from "../../src/server/session/A2uiSurfaceManager";
+import { A2uiSurfaceManager, createA2uiTool } from "../../src/experimental/a2ui";
 import type { ProjectedItem } from "../../src/shared/projectedItems";
 import {
   applyProjectedItemCompleted,
   applyProjectedItemStarted,
 } from "../../src/shared/projectedItems";
 import type { SessionFeedItem } from "../../src/shared/sessionSnapshot";
-import { createA2uiTool } from "../../src/tools/a2ui";
 import type { ToolContext } from "../../src/tools/context";
 import type { AgentConfig } from "../../src/types";
 

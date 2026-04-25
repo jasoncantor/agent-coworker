@@ -9,7 +9,7 @@ import {
 import type { CSSProperties } from "react";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 
-import { isBasicCatalogId } from "../../../../../../src/shared/a2ui/component";
+import { isBasicCatalogId } from "../../../../../../src/experimental/a2ui/component";
 import { useAppStore } from "../../../app/store";
 import type { A2uiSurfaceRevision, A2uiThreadDock } from "../../../app/types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
