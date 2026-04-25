@@ -1016,8 +1016,8 @@ describe("AgentSession", () => {
       expect(evt.type).toBe("session_config");
       expect(evt.config.yolo).toBe(false);
       expect(evt.config.observabilityEnabled).toBe(false);
-      expect(evt.config.backupsEnabled).toBe(true);
-      expect(evt.config.defaultBackupsEnabled).toBe(true);
+      expect(evt.config.backupsEnabled).toBe(false);
+      expect(evt.config.defaultBackupsEnabled).toBe(false);
       expect(evt.config.enableA2ui).toBeUndefined();
       expect(evt.config.toolOutputOverflowChars).toBe(25000);
       expect("defaultToolOutputOverflowChars" in evt.config).toBe(false);
@@ -1078,7 +1078,7 @@ describe("AgentSession", () => {
       await session.setConfig({
         preferredChildModel: "gemini-3.1-pro-preview",
         observabilityEnabled: true,
-        backupsEnabled: false,
+        backupsEnabled: true,
         toolOutputOverflowChars: null,
         maxSteps: 25,
       });
@@ -1087,8 +1087,8 @@ describe("AgentSession", () => {
       expect(cfgEvt).toBeDefined();
       expect(cfgEvt.config.preferredChildModel).toBe("gemini-3.1-pro-preview");
       expect(cfgEvt.config.observabilityEnabled).toBe(true);
-      expect(cfgEvt.config.backupsEnabled).toBe(false);
-      expect(cfgEvt.config.defaultBackupsEnabled).toBe(false);
+      expect(cfgEvt.config.backupsEnabled).toBe(true);
+      expect(cfgEvt.config.defaultBackupsEnabled).toBe(true);
       expect(cfgEvt.config.toolOutputOverflowChars).toBeNull();
       expect(cfgEvt.config.defaultToolOutputOverflowChars).toBeNull();
       expect(cfgEvt.config.maxSteps).toBe(25);
@@ -1102,7 +1102,7 @@ describe("AgentSession", () => {
         preferredChildModelRef: "google:gemini-3.1-pro-preview",
         allowedChildModelRefs: [],
         observabilityEnabled: true,
-        backupsEnabled: false,
+        backupsEnabled: true,
         toolOutputOverflowChars: null,
       });
     });
@@ -1284,7 +1284,12 @@ describe("AgentSession", () => {
     });
 
     test("session_config keeps the persisted backup default separate from a live override", async () => {
-      const { session, events } = makeSession();
+      const { session, events } = makeSession({
+        config: {
+          ...makeConfig("/tmp/test-session"),
+          backupsEnabled: true,
+        },
+      });
 
       await session.setBackupsEnabledOverride(false);
 
@@ -1339,7 +1344,13 @@ describe("AgentSession", () => {
 
     test("setConfig clears a live backup override even when the persisted default is unchanged", async () => {
       const persistProjectConfigPatchImpl = mock(async () => {});
-      const { session, events } = makeSession({ persistProjectConfigPatchImpl });
+      const { session, events } = makeSession({
+        config: {
+          ...makeConfig("/tmp/test-session"),
+          backupsEnabled: true,
+        },
+        persistProjectConfigPatchImpl,
+      });
 
       await session.setBackupsEnabledOverride(false);
       events.length = 0;
@@ -2005,7 +2016,7 @@ describe("AgentSession", () => {
         model: "gpt-5.2",
         enableMcp: false,
         config: {
-          backupsEnabled: false,
+          backupsEnabled: true,
           preferredChildModel: "gpt-5-mini",
         },
       });
@@ -2019,7 +2030,7 @@ describe("AgentSession", () => {
         childModelRoutingMode: "same-provider",
         preferredChildModelRef: "openai:gpt-5-mini",
         allowedChildModelRefs: [],
-        backupsEnabled: false,
+        backupsEnabled: true,
         enableMcp: false,
       });
 
@@ -5351,8 +5362,28 @@ describe("AgentSession", () => {
   });
 
   describe("session backups", () => {
-    test("getSessionBackupState emits a session_backup_state event", async () => {
+    test("getSessionBackupState reports disabled by default", async () => {
       const { session, events } = makeSession();
+      await session.getSessionBackupState();
+
+      const evt = events.find((e) => e.type === "session_backup_state");
+      expect(evt).toBeDefined();
+      if (evt && evt.type === "session_backup_state") {
+        expect(evt.reason).toBe("requested");
+        expect(evt.backup.status).toBe("disabled");
+        expect(evt.backup.backupDirectory).toBeNull();
+        expect(evt.backup.checkpoints).toEqual([]);
+      }
+    });
+
+    test("enabled sessions emit a ready session_backup_state event", async () => {
+      const dir = path.join(os.tmpdir(), `session-backups-enabled-${Date.now()}`);
+      const { session, events } = makeSession({
+        config: {
+          ...makeConfig(dir),
+          backupsEnabled: true,
+        },
+      });
       await session.getSessionBackupState();
 
       const evt = events.find((e) => e.type === "session_backup_state");
@@ -5385,8 +5416,23 @@ describe("AgentSession", () => {
       }
     });
 
-    test("sendUserMessage emits auto checkpoint state after completion", async () => {
+    test("sendUserMessage does not emit auto checkpoint state when backups are disabled", async () => {
       const { session, events } = makeSession();
+      await session.sendUserMessage("do not checkpoint me");
+
+      expect(
+        events.some((e) => e.type === "session_backup_state" && e.reason === "auto_checkpoint"),
+      ).toBe(false);
+    });
+
+    test("sendUserMessage emits auto checkpoint state after completion when backups are enabled", async () => {
+      const dir = path.join(os.tmpdir(), `session-backups-auto-${Date.now()}`);
+      const { session, events } = makeSession({
+        config: {
+          ...makeConfig(dir),
+          backupsEnabled: true,
+        },
+      });
       await session.sendUserMessage("checkpoint me");
       for (let i = 0; i < 40; i += 1) {
         if (events.some((e) => e.type === "session_backup_state" && e.reason === "auto_checkpoint"))
@@ -5409,7 +5455,13 @@ describe("AgentSession", () => {
     });
 
     test("createManualSessionCheckpoint emits manual checkpoint state", async () => {
-      const { session, events } = makeSession();
+      const dir = path.join(os.tmpdir(), `session-backups-manual-${Date.now()}`);
+      const { session, events } = makeSession({
+        config: {
+          ...makeConfig(dir),
+          backupsEnabled: true,
+        },
+      });
       await session.createManualSessionCheckpoint();
 
       const manual = events.find(
@@ -5480,7 +5532,13 @@ describe("AgentSession", () => {
         },
       );
 
-      const { session, events } = makeSession({ sessionBackupFactory: backupFactory });
+      const { session, events } = makeSession({
+        config: {
+          ...makeConfig("/tmp/test-session"),
+          backupsEnabled: true,
+        },
+        sessionBackupFactory: backupFactory,
+      });
       await session.createManualSessionCheckpoint();
       await session.restoreSessionBackup();
       await session.restoreSessionBackup("cp-0001");
@@ -5495,7 +5553,12 @@ describe("AgentSession", () => {
     });
 
     test("deleteSessionCheckpoint emits error when checkpoint does not exist", async () => {
-      const { session, events } = makeSession();
+      const { session, events } = makeSession({
+        config: {
+          ...makeConfig("/tmp/test-session"),
+          backupsEnabled: true,
+        },
+      });
       await session.deleteSessionCheckpoint("does-not-exist");
 
       const err = events.find((e) => e.type === "error");
@@ -5506,7 +5569,12 @@ describe("AgentSession", () => {
     });
 
     test("manual checkpoint requests are serialized", async () => {
-      const { session, events } = makeSession();
+      const { session, events } = makeSession({
+        config: {
+          ...makeConfig("/tmp/test-session"),
+          backupsEnabled: true,
+        },
+      });
 
       await Promise.all([
         session.createManualSessionCheckpoint(),

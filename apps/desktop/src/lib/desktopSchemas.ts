@@ -283,7 +283,7 @@ const persistedWorkspaceSchema = z
       z.boolean(),
     ),
     defaultBackupsEnabled: z.preprocess(
-      (value) => (typeof value === "boolean" ? value : true),
+      (value) => (typeof value === "boolean" ? value : false),
       z.boolean(),
     ),
     yolo: z.preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean()),

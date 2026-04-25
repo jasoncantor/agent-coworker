@@ -97,7 +97,7 @@ export function createWorkspaceActions(
         defaultPreferredChildModelRef: `google:${defaultModelForProvider("google")}`,
         defaultAllowedChildModelRefs: [],
         defaultEnableMcp: true,
-        defaultBackupsEnabled: true,
+        defaultBackupsEnabled: false,
         yolo: false,
       };
 

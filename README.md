@@ -16,7 +16,7 @@ Cowork takes the opposite approach:
 - Sessions are persistent, resumable objects backed by SQLite, not just transient chat tabs.
 - Tool execution happens server-side with command approvals and explicit `--yolo` escape hatches.
 - Providers are first-class integrations with auth methods, connection status, and per-session model configuration.
-- Skills, MCP servers, subagents, and checkpointed workspace backups are part of the core system, not afterthought plugins.
+- Skills, MCP servers, and subagents are part of the core system, not afterthought plugins.
 
 ## Highlights
 
@@ -24,7 +24,7 @@ Cowork takes the opposite approach:
 - Local-first workflow: your repo stays on your machine; external calls only happen through the providers and tools you configure.
 - Server-side tools for shell, files, search, fetch, notebook edits, memory, task tracking, and subagent delegation.
 - Persistent session history in `~/.cowork/sessions.db`, with resume support across restarts.
-- Session backup and checkpoint APIs for restoring a workspace to its original or checkpointed state.
+- Opt-in workspace backup APIs for manual recovery snapshots when git-native checkpointing is not available.
 - Layered skills and MCP configuration for project, user, global, and built-in capabilities.
 - Provider catalog, auth, and status flows for Google, OpenAI, Anthropic, Bedrock, Together, Fireworks, NVIDIA, LM Studio, Baseten, and `codex-cli`.
 - Harness and observability hooks for repeatable runs, traces, and artifact capture.
@@ -162,7 +162,7 @@ The WebSocket protocol is documented in [docs/websocket-protocol.md](https://git
 - provider catalog, auth methods, auth callbacks, logout, and status
 - MCP server CRUD, validation, and auth
 - session listing, deletion, title changes, pagination, and file uploads
-- backup/checkpoint/restore flows
+- opt-in backup/checkpoint/restore flows
 - subagent creation and persistent subagent session management
 - observability and harness context
 
@@ -177,7 +177,7 @@ CLI / Desktop / Custom Client
                 v
      agent-coworker server runtime
   sessions | auth | MCP | persistence
-  tools    | streaming | checkpoints
+  tools    | streaming | opt-in backups
                 |
                 v
       model runtimes and tool execution
@@ -240,14 +240,15 @@ Persistence is a core feature, not a convenience cache.
 
 - Canonical session storage lives in `~/.cowork/sessions.db`.
 - Legacy JSON session snapshots are import-only compatibility data.
-- Backup artifacts live under `~/.cowork/session-backups`.
+- Opt-in backup artifacts live under `~/.cowork/session-backups`.
 - Desktop transcript JSONL files are a renderer cache, not the source of truth.
 
 Safety model:
 
 - risky tool actions go through approval flows
 - `--yolo` disables command approvals when you explicitly want that behavior
-- sessions can be checkpointed and restored through the protocol
+- git workspaces should use git-native checkpoints (`git diff`, `git stash`, and `git worktree`) by default
+- advanced backup APIs can be enabled for manual recovery snapshots, especially in non-git workspaces
 
 For the full storage model, see [docs/session-storage-architecture.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/session-storage-architecture.md).
 
@@ -278,7 +279,7 @@ Notes:
 | --- | --- |
 | `src/agent.ts` | Core agent turn logic (`createRunTurn()` factory) |
 | `src/config.ts` | Three-tier config loading and deep merge |
-| `src/server/` | WebSocket server, JSON-RPC routes, session orchestration, persistence, backup |
+| `src/server/` | WebSocket server, JSON-RPC routes, session orchestration, persistence, opt-in backup |
 | `src/server/session/` | `AgentSession` facade and focused managers (`TurnExecutionManager`, `HistoryManager`, etc.) |
 | `src/server/jsonrpc/` | JSON-RPC transport, schemas, routes, event/journal projectors |
 | `src/cli/` | CLI REPL and command parsing |

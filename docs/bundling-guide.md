@@ -291,7 +291,7 @@ Clients can modify session config at runtime via `set_config`:
 }
 ```
 
-See `SessionConfigPatch` in `src/server/protocol.ts` for all available fields.
+`backupsEnabled` is opt-in and should usually stay off for git workspaces that can use `git diff`, `git stash`, and `git worktree` for checkpointing. See `SessionConfigPatch` in `src/server/protocol.ts` for all available fields.
 
 ## Server Lifecycle Management
 

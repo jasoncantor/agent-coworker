@@ -662,7 +662,7 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     asBoolean(projectConfig.backupsEnabled) ??
     asBoolean(userConfig.backupsEnabled) ??
     asBoolean(builtInDefaults.backupsEnabled) ??
-    true;
+    false;
 
   const mergedObservability = parseLayer(observabilityLayerSchema, merged.observability, {});
   const observabilityEnabled =

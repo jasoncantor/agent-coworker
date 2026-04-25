@@ -98,7 +98,7 @@ export default function WorkspaceGeneralScreen() {
   const routingMode = controlSnapshot?.sessionConfig?.childModelRoutingMode ?? "same-provider";
   const backupsEnabled =
     controlSnapshot?.sessionConfig?.backupsEnabled === undefined
-      ? true
+      ? false
       : controlSnapshot.sessionConfig.backupsEnabled === true;
   const enableMcp =
     controlSnapshot?.settings?.enableMcp === undefined
@@ -229,7 +229,7 @@ export default function WorkspaceGeneralScreen() {
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={{ color: theme.text, fontSize: 15, fontWeight: "700" }}>Backup</Text>
               <Text style={{ color: theme.textSecondary, fontSize: 13 }}>
-                Keep automatic workspace backups enabled for this workspace.
+                Enable opt-in workspace recovery snapshots for this workspace.
               </Text>
             </View>
             <Switch

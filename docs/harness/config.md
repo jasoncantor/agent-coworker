@@ -36,11 +36,13 @@ Notes:
 - `AGENT_ENABLE_MEMORY` or `enableMemory`
 - `AGENT_MEMORY_REQUIRE_APPROVAL` or `memoryRequireApproval`
 - `AGENT_INCLUDE_RAW_CHUNKS` or `includeRawChunks`
-- `AGENT_BACKUPS_ENABLED` or `backupsEnabled`
+- `AGENT_BACKUPS_ENABLED` or `backupsEnabled` (defaults to `false`; enables advanced backup APIs)
 - `AGENT_MODEL_MAX_RETRIES` or `modelSettings.maxRetries`
 - `toolOutputOverflowChars`
 - `providerOptions`
 - `command`
+
+Backups are opt-in and are not part of the default chat hot path. For git workspaces, prefer git-native checkpointing with `git diff`, `git stash`, and `git worktree`. Enable `backupsEnabled` only when a workspace needs Cowork-managed manual recovery snapshots, such as non-git projects.
 
 ## Child-Agent Routing
 

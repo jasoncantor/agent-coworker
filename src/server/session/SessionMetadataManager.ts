@@ -231,7 +231,7 @@ export class SessionMetadataManager {
       baseYolo !== nextYolo ||
       baseMaxSteps !== nextMaxSteps ||
       (baseConfig.observabilityEnabled ?? false) !== (nextConfig.observabilityEnabled ?? false) ||
-      (baseConfig.backupsEnabled ?? true) !== (nextConfig.backupsEnabled ?? true) ||
+      (baseConfig.backupsEnabled ?? false) !== (nextConfig.backupsEnabled ?? false) ||
       (isA2uiExperimentActive(baseConfig) &&
         (baseConfig.enableA2ui ?? false) !== (nextConfig.enableA2ui ?? false)) ||
       (baseConfig.enableMemory ?? true) !== (nextConfig.enableMemory ?? true) ||
@@ -284,7 +284,7 @@ export class SessionMetadataManager {
     const providerOptions = pickEditableOpenAiCompatibleProviderOptions(
       this.context.state.config.providerOptions,
     );
-    const defaultBackupsEnabled = this.context.state.config.backupsEnabled ?? true;
+    const defaultBackupsEnabled = this.context.state.config.backupsEnabled ?? false;
     const backupsEnabled = this.context.state.backupsEnabledOverride ?? defaultBackupsEnabled;
     const defaultToolOutputOverflowChars =
       this.context.state.config.projectConfigOverrides?.toolOutputOverflowChars;
@@ -496,7 +496,7 @@ export class SessionMetadataManager {
       }
     }
 
-    const defaultBackupsEnabled = baseConfig.backupsEnabled ?? true;
+    const defaultBackupsEnabled = baseConfig.backupsEnabled ?? false;
     const nextConfig = this.buildNextConfig(patch, normalizedChildRouting, baseConfig);
     const nextYolo = patch.yolo ?? baseYolo;
     const nextMaxSteps = patch.maxSteps ?? baseMaxSteps;

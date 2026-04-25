@@ -8,7 +8,7 @@ Cowork supports one live WebSocket protocol on `/ws`: JSON-RPC-lite. The canonic
 
 - URL: `ws://127.0.0.1:{port}/ws`
 - Session resume: `?resumeSessionId=<sessionId>`
-- Current protocol version: `7.30`
+- Current protocol version: `7.31`
 - WebSocket protocol mode: `jsonrpc`
 
 ## Protocol negotiation
@@ -198,7 +198,7 @@ Currently implemented `cowork/*` methods include:
   - `cowork/memory/list`
   - `cowork/memory/upsert`
   - `cowork/memory/delete`
-- workspace backup controls
+- advanced workspace backup controls (registered by default, active only when `backupsEnabled` is true)
   - `cowork/backups/workspace/read`
   - `cowork/backups/workspace/delta/read`
   - `cowork/backups/workspace/checkpoint`
@@ -218,7 +218,7 @@ The desktop JSON-RPC path now uses this namespace so one workspace connection ca
 - memories
 
 `cowork/plugins/read`, `cowork/plugins/enable`, and `cowork/plugins/disable` accept an optional `scope` field (`workspace` or `user`) so callers can address a specific installed copy when the same plugin id exists in both scopes.
-- workspace backups
+- opt-in workspace backups
 
 `thread/list` and workspace-scoped `cowork/*` control methods now default omitted `cwd` to the sidecar/server working directory. Mobile and other remote clients no longer need to know a host filesystem path just to list threads or read workspace control state.
 
@@ -422,6 +422,12 @@ The remainder of this document describes the JSON-RPC method and notification pa
 - [Session event payload shapes](#session-event-payload-shapes)
 
 ## Protocol v7 Notes
+
+Changes in `7.31`:
+
+- Workspace/session backups now default to disabled and are treated as advanced opt-in APIs.
+- `cowork/backups/workspace/*` methods remain registered for compatibility, but return a `backup_error` when `backupsEnabled` is false instead of initializing backup state or scanning backup directories.
+- Automatic post-turn checkpoints are skipped unless backups are enabled. Git workspaces should use git-native checkpointing (`git diff`, `git stash`, `git worktree`) by default.
 
 Changes in `7.28`:
 
@@ -955,6 +961,8 @@ Represents whether a managed installation can be refreshed from its recorded ori
 | `metadata` | `Record<string, string>` | No | Optional key-value metadata (all values must be strings) |
 
 ### SessionBackupPublicState
+
+Backups are opt-in. In git workspaces, clients and agents should prefer git-native checkpointing with `git diff`, `git stash`, and `git worktree`. Cowork-managed backups are an advanced fallback for manual recovery snapshots, especially in non-git workspaces.
 
 ```json
 {
@@ -2207,7 +2215,7 @@ Update-check result for a managed installation.
 
 ### session_backup_state
 
-Backup/checkpoint state. Sent in response to backup operations and after automatic checkpoints.
+Backup/checkpoint state. Sent in response to backup operations and after automatic checkpoints when `backupsEnabled` is true. When backups are disabled, explicit backup-state requests report `status: "disabled"` and automatic checkpoints are skipped.
 
 ```json
 {
@@ -2245,12 +2253,13 @@ Backup/checkpoint state. Sent in response to backup operations and after automat
 Notes:
 - New backups seed `cp-0001` immediately from the session-start snapshot with `trigger: "initial"`.
 - When backups are turned off for a live session, `backup.status` is `"disabled"` and both `backupDirectory` and `checkpoints` are empty.
+- Workspace backup JSON-RPC methods remain registered for compatibility. If `backupsEnabled` is false, they return a `backup_error` instead of initializing backup state or scanning backup directories.
 
 ---
 
 ### workspace_backups
 
-Workspace-scoped backup snapshot for the control session's current `workingDirectory`.
+Workspace-scoped backup snapshot for the control session's current `workingDirectory`. This event is only produced by the advanced backup APIs when `backupsEnabled` is true.
 
 ```json
 {
@@ -2942,8 +2951,8 @@ Current runtime config. Sent on connection and after `set_config`.
   "config": {
     "yolo": false,
     "observabilityEnabled": true,
-    "backupsEnabled": true,
-    "defaultBackupsEnabled": true,
+    "backupsEnabled": false,
+    "defaultBackupsEnabled": false,
     "toolOutputOverflowChars": 25000,
     "defaultToolOutputOverflowChars": 25000,
     "preferredChildModel": "gpt-5.4",
@@ -2995,8 +3004,8 @@ Current runtime config. Sent on connection and after `set_config`.
 | `sessionId` | `string` | Session identifier |
 | `config.yolo` | `boolean` | Whether all commands are auto-approved |
 | `config.observabilityEnabled` | `boolean` | Whether observability is enabled |
-| `config.backupsEnabled` | `boolean` | Whether backups are enabled for the live session after applying any session-scoped override |
-| `config.defaultBackupsEnabled` | `boolean` | The persisted workspace backup default from the harness/core config, before any live session override is applied |
+| `config.backupsEnabled` | `boolean` | Whether advanced backups are enabled for the live session after applying any session-scoped override. Defaults to `false`. |
+| `config.defaultBackupsEnabled` | `boolean` | The persisted workspace backup default from the harness/core config, before any live session override is applied. Defaults to `false`. |
 | `config.toolOutputOverflowChars` | `number \| null` | Effective character threshold for when oversized tool outputs start spilling into `.ModelScratchpad`; `null` disables spill files. Spill results still keep a fixed inline preview (currently the first 5,000 characters). |
 | `config.defaultToolOutputOverflowChars` | `number \| null` | Persisted workspace overflow default when explicitly configured; omitted when the session is inheriting the built-in or user-level default |
 | `config.preferredChildModel` | `string` | Normalized same-provider fallback model identifier used for legacy/default suggestion state |

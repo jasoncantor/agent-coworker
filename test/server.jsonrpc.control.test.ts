@@ -84,6 +84,14 @@ async function connectJsonRpc(url: string) {
   };
 }
 
+async function enableProjectBackups(cwd: string): Promise<void> {
+  await fs.mkdir(path.join(cwd, ".agent"), { recursive: true });
+  await fs.writeFile(
+    path.join(cwd, ".agent", "config.json"),
+    `${JSON.stringify({ backupsEnabled: true })}\n`,
+  );
+}
+
 describe("server JSON-RPC control methods", () => {
   test("provider auth authorize returns the emitted session error instead of timing out", async () => {
     const tmpDir = await makeTmpProject();
@@ -668,7 +676,7 @@ describe("server JSON-RPC control methods", () => {
       expect(configUpdated.config.provider).toBe("google");
       expect(configUpdated.config.workingDirectory).toBe(tmpDir);
       expect(sessionSettings.enableMcp).toBe(true);
-      expect(sessionConfig.config.defaultBackupsEnabled).toBe(true);
+      expect(sessionConfig.config.defaultBackupsEnabled).toBe(false);
       rpc.close();
     } finally {
       await stopTestServer(server);
@@ -1047,6 +1055,7 @@ describe("server JSON-RPC control methods", () => {
 
   test("workspace backups read returns a session-event workspace_backups event payload", async () => {
     const tmpDir = await makeTmpProject();
+    await enableProjectBackups(tmpDir);
     const { server, url } = await startAgentServer(serverOpts(tmpDir));
 
     try {
@@ -1058,6 +1067,24 @@ describe("server JSON-RPC control methods", () => {
       expect(response.result.event.type).toBe("workspace_backups");
       expect(response.result.event.workspacePath).toBe(tmpDir);
       expect(Array.isArray(response.result.event.backups)).toBe(true);
+      rpc.close();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  test("workspace backups read returns a disabled error when backups are off", async () => {
+    const tmpDir = await makeTmpProject();
+    const { server, url } = await startAgentServer(serverOpts(tmpDir));
+
+    try {
+      const rpc = await connectJsonRpc(url);
+      const response = await rpc.request("cowork/backups/workspace/read", {
+        cwd: tmpDir,
+      });
+
+      expect(response.error.message).toContain("Workspace backup APIs are disabled");
+      expect(response.result).toBeUndefined();
       rpc.close();
     } finally {
       await stopTestServer(server);
@@ -1233,6 +1260,7 @@ describe("server JSON-RPC control methods", () => {
       };
 
       const tmpDir = await makeTmpProject();
+      await enableProjectBackups(tmpDir);
       const { server, url } = await startAgentServer(serverOpts(tmpDir));
 
       try {
@@ -1414,7 +1442,7 @@ describe("server JSON-RPC control methods", () => {
       });
 
       expect(response.result.event.type).toBe("session_config");
-      expect(response.result.event.config.defaultBackupsEnabled).toBe(true);
+      expect(response.result.event.config.defaultBackupsEnabled).toBe(false);
       rpc.close();
     } finally {
       await stopTestServer(server);

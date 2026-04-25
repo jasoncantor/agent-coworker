@@ -1054,7 +1054,7 @@ describe("server JSON-RPC flows", () => {
         model: "gemini-3-flash-preview",
         enableMcp: false,
         config: {
-          backupsEnabled: false,
+          backupsEnabled: true,
         },
       });
 
@@ -1076,7 +1076,7 @@ describe("server JSON-RPC flows", () => {
       expect(sessionSettings.params.sessionId).toBe(started.result.thread.id);
       expect(sessionSettings.params.enableMcp).toBe(false);
       expect(sessionConfig.params.sessionId).toBe(started.result.thread.id);
-      expect(sessionConfig.params.config.backupsEnabled).toBe(false);
+      expect(sessionConfig.params.config.backupsEnabled).toBe(true);
 
       rpc.close();
     } finally {

@@ -115,6 +115,7 @@ Git-specific rules:
 - Only commit when the user explicitly asks.
 - Never use --no-edit with git rebase (not a valid option).
 - Pass commit messages via heredoc for proper formatting.
+- For checkpointing in git workspaces, prefer git-native tools (`git diff`, `git stash`, `git worktree`) instead of Cowork backup APIs. In non-git workspaces, use explicit manual workspace snapshots only when backups are enabled by configuration.
 
 ### read
 Read a file from the filesystem. Returns line-numbered text for text files and visual content for supported images.

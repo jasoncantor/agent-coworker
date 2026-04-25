@@ -1266,7 +1266,7 @@ export function WorkspacesPage() {
   ).trim();
   const allowedChildModelRefs = ws?.defaultAllowedChildModelRefs ?? [];
   const enableMcp = ws?.defaultEnableMcp ?? true;
-  const backupsEnabled = ws?.defaultBackupsEnabled ?? true;
+  const backupsEnabled = ws?.defaultBackupsEnabled ?? false;
   const yolo = ws?.yolo ?? false;
 
   const modelSelectorVisibility = useMemo<CatalogVisibilityOptions>(
@@ -1488,7 +1488,7 @@ export function WorkspacesPage() {
                   <div>
                     <div className="text-sm font-medium">Workspace backups</div>
                     <div className="text-xs text-muted-foreground">
-                      Persist a default backup policy for new sessions in this workspace.
+                      Opt into Cowork-managed recovery snapshots for sessions in this workspace.
                     </div>
                   </div>
                   <ToggleChip

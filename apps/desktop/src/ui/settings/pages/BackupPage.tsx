@@ -124,6 +124,7 @@ type BackupSidebarProps = {
   selectedTargetSessionId: string | null;
   selectedCheckpointId: string | null;
   loading: boolean;
+  backupsEnabled: boolean;
   onSelectEntry: (targetSessionId: string) => void;
   onSelectCheckpoint: (targetSessionId: string, checkpointId: string) => void;
   onRefresh?: () => void;
@@ -134,6 +135,7 @@ function BackupSidebar({
   selectedTargetSessionId,
   selectedCheckpointId,
   loading,
+  backupsEnabled,
   onSelectEntry,
   onSelectCheckpoint,
   onRefresh,
@@ -150,7 +152,7 @@ function BackupSidebar({
           size="icon"
           className="h-8 w-8"
           onClick={() => onRefresh?.()}
-          disabled={loading}
+          disabled={loading || !backupsEnabled}
         >
           <RefreshCwIcon
             className={cn("h-4 w-4 text-muted-foreground", loading ? "animate-spin" : "")}
@@ -163,8 +165,9 @@ function BackupSidebar({
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
             <ArchiveIcon className="h-8 w-8 mb-3 text-muted-foreground/30" />
             <p className="text-sm text-muted-foreground">
-              No backups yet. Backups appear after Cowork creates recovery snapshots for a session
-              in this workspace.
+              {backupsEnabled
+                ? "No backups yet. Backups appear after Cowork creates recovery snapshots for a session in this workspace."
+                : "Backups are off by default. Enable them to use advanced recovery snapshots for this workspace."}
             </p>
           </div>
         ) : null}
@@ -647,6 +650,8 @@ export function BackupPage(props: BackupPageProps = {}) {
       : workspace
         ? (workspaceRuntimeById[workspace.id] ?? null)
         : null;
+  const workspaceBackupsEnabled =
+    props.onRefresh !== undefined || runtime?.controlSessionConfig?.backupsEnabled === true;
 
   const refreshBackups =
     props.onRefresh ??
@@ -699,13 +704,14 @@ export function BackupPage(props: BackupPageProps = {}) {
       void props.onRefresh();
       return;
     }
+    if (!workspaceBackupsEnabled) return;
     void requestWorkspaceBackupsFromStore(workspace.id);
   });
 
   useEffect(() => {
     if (!workspace?.id || !runtime?.controlSessionId) return;
     runInitialRefresh();
-  }, [workspace?.id, runtime?.controlSessionId]);
+  }, [workspace?.id, runtime?.controlSessionId, workspaceBackupsEnabled]);
 
   const entries = runtime?.workspaceBackups ?? [];
   const sortedEntries = sortByUpdated(entries);
@@ -856,6 +862,7 @@ export function BackupPage(props: BackupPageProps = {}) {
           selectedTargetSessionId={selectedTargetSessionId}
           selectedCheckpointId={selectedCheckpointId}
           loading={loading}
+          backupsEnabled={workspaceBackupsEnabled}
           onSelectEntry={(id) => {
             setSelectedTargetSessionId(id);
             setSelectedCheckpointId(null);
@@ -864,7 +871,7 @@ export function BackupPage(props: BackupPageProps = {}) {
             setSelectedTargetSessionId(entryId);
             setSelectedCheckpointId(cpId);
           }}
-          onRefresh={() => void refreshBackups?.()}
+          onRefresh={workspaceBackupsEnabled ? () => void refreshBackups?.() : undefined}
         />
 
         {/* Content Area */}
@@ -875,8 +882,8 @@ export function BackupPage(props: BackupPageProps = {}) {
               <div className="space-y-2 max-w-sm">
                 <p className="text-sm font-medium text-foreground">Select a backup to inspect</p>
                 <p className="text-xs">
-                  Cowork creates recovery snapshots when you chat. Select a session to view its
-                  checkpoints, or select a checkpoint to see what files changed.
+                  Enable backups to use advanced recovery snapshots. When enabled, select a session
+                  to view checkpoints or inspect changed files.
                 </p>
               </div>
             </div>

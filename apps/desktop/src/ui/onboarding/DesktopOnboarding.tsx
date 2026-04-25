@@ -625,7 +625,7 @@ function DefaultsStep({ onContinue, onBack }: { onContinue: () => void; onBack: 
   const provider = workspace?.defaultProvider ?? "google";
   const model = workspace?.defaultModel ?? "";
   const enableMcp = workspace?.defaultEnableMcp ?? true;
-  const backupsEnabled = workspace?.defaultBackupsEnabled ?? true;
+  const backupsEnabled = workspace?.defaultBackupsEnabled ?? false;
 
   const modelSelectorVisibility = useMemo<CatalogVisibilityOptions>(
     () => ({
@@ -781,7 +781,7 @@ function DefaultsStep({ onContinue, onBack }: { onContinue: () => void; onBack: 
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-sm font-medium">Backups</div>
-            <div className="text-xs text-muted-foreground">Automatic file change backups.</div>
+            <div className="text-xs text-muted-foreground">Opt-in recovery snapshots.</div>
           </div>
           <Button
             variant={backupsEnabled ? "default" : "outline"}

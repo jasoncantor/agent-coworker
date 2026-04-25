@@ -147,7 +147,7 @@ export class WorkspaceControl {
     const providerOptions = pickEditableOpenAiCompatibleProviderOptions(
       controlConfig.providerOptions,
     );
-    const defaultBackupsEnabled = controlConfig.backupsEnabled ?? true;
+    const defaultBackupsEnabled = controlConfig.backupsEnabled ?? false;
     const defaultToolOutputOverflowChars =
       controlConfig.projectConfigOverrides?.toolOutputOverflowChars;
     const toolOutputOverflowChars = effectiveToolOutputOverflowChars(

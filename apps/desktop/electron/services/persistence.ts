@@ -246,7 +246,8 @@ async function sanitizeWorkspaces(value: unknown): Promise<WorkspaceRecord[]> {
         ? normalizeWorkspaceUserProfile(item.userProfile as Partial<WorkspaceUserProfile>)
         : undefined,
       defaultEnableMcp: typeof item.defaultEnableMcp === "boolean" ? item.defaultEnableMcp : true,
-      defaultBackupsEnabled: typeof item.defaultBackupsEnabled === "boolean" ? item.defaultBackupsEnabled : true,
+      defaultBackupsEnabled:
+        typeof item.defaultBackupsEnabled === "boolean" ? item.defaultBackupsEnabled : false,
       yolo: typeof item.yolo === "boolean" ? item.yolo : false,
     });
     seenWorkspaceIds.add(id);

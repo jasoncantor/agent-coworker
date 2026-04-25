@@ -640,6 +640,14 @@ export class SessionAdminManager {
       this.context.emitError("validation_failed", "backup", `Only root sessions can ${label}`);
       return;
     }
+    if (!this.getBackupsEnabled()) {
+      this.context.emitError(
+        "backup_error",
+        "backup",
+        "Workspace backup APIs are disabled. Enable backups for this workspace or session to use advanced backup snapshots.",
+      );
+      return;
+    }
     const impl = this.context.deps[implKey];
     if (!impl) {
       this.context.emitError(
@@ -655,6 +663,12 @@ export class SessionAdminManager {
     } catch (err) {
       this.context.emitError("backup_error", "backup", `Failed to ${label}: ${String(err)}`);
     }
+  }
+
+  private getBackupsEnabled(): boolean {
+    return (
+      this.context.state.backupsEnabledOverride ?? this.context.state.config.backupsEnabled ?? false
+    );
   }
 
   async uploadFile(filename: string, contentBase64: string) {

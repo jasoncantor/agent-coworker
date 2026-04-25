@@ -421,6 +421,8 @@ export class AgentSession {
     );
 
     const now = new Date().toISOString();
+    const initialBackupsEnabled = hydrated?.backupsEnabledOverride ?? opts.config.backupsEnabled ?? false;
+
     this.state = {
       config: opts.config,
       system: opts.system,
@@ -487,7 +489,7 @@ export class AgentSession {
       backupsEnabledOverride: hydrated?.backupsEnabledOverride ?? null,
       sessionBackup: null,
       sessionBackupState: {
-        status: "initializing",
+        status: initialBackupsEnabled ? "initializing" : "disabled",
         sessionId: this.id,
         workingDirectory: opts.config.workingDirectory,
         backupDirectory: null,
@@ -1032,7 +1034,7 @@ export class AgentSession {
   }
 
   getBackupsEnabled() {
-    return this.state.backupsEnabledOverride ?? this.state.config.backupsEnabled ?? true;
+    return this.state.backupsEnabledOverride ?? this.state.config.backupsEnabled ?? false;
   }
 
   getSessionConfigEvent() {
@@ -1718,37 +1720,27 @@ export class AgentSession {
     await this.getAdminManager().deleteSession(targetSessionId);
   }
 
-  // Each workspace backup method calls getSessionBackupState() first to ensure
-  // the backup controller is initialized (lazy init) before the admin manager
-  // accesses backup data. This is intentional coupling, not redundancy.
-
   async listWorkspaceBackups() {
-    await this.backupController.getSessionBackupState();
     await this.getAdminManager().listWorkspaceBackups();
   }
 
   async createWorkspaceBackupCheckpoint(targetSessionId: string) {
-    await this.backupController.getSessionBackupState();
     await this.getAdminManager().createWorkspaceBackupCheckpoint(targetSessionId);
   }
 
   async restoreWorkspaceBackup(targetSessionId: string, checkpointId?: string) {
-    await this.backupController.getSessionBackupState();
     await this.getAdminManager().restoreWorkspaceBackup(targetSessionId, checkpointId);
   }
 
   async deleteWorkspaceBackupCheckpoint(targetSessionId: string, checkpointId: string) {
-    await this.backupController.getSessionBackupState();
     await this.getAdminManager().deleteWorkspaceBackupCheckpoint(targetSessionId, checkpointId);
   }
 
   async deleteWorkspaceBackupEntry(targetSessionId: string) {
-    await this.backupController.getSessionBackupState();
     await this.getAdminManager().deleteWorkspaceBackupEntry(targetSessionId);
   }
 
   async getWorkspaceBackupDelta(targetSessionId: string, checkpointId: string) {
-    await this.backupController.getSessionBackupState();
     await this.getAdminManager().getWorkspaceBackupDelta(targetSessionId, checkpointId);
   }
 

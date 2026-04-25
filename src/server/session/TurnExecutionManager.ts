@@ -1107,9 +1107,11 @@ export class TurnExecutionManager {
       void this.deps.flushPendingExternalSkillRefresh().catch(() => {
         // refresh helper already emits skill refresh errors.
       });
-      void this.deps.backupController.takeAutomaticSessionCheckpoint().catch(() => {
-        // takeAutomaticSessionCheckpoint already emits backup errors/telemetry.
-      });
+      if (this.deps.backupController.isBackupsEnabled()) {
+        void this.deps.backupController.takeAutomaticSessionCheckpoint().catch(() => {
+          // takeAutomaticSessionCheckpoint already emits backup errors/telemetry.
+        });
+      }
     }
   }
 

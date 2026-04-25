@@ -141,6 +141,7 @@ export class SessionBackupController {
   }
 
   async takeAutomaticSessionCheckpoint() {
+    if (!this.getBackupsEnabled()) return;
     if (Date.now() - this.context.state.lastAutoCheckpointAt < AUTO_CHECKPOINT_MIN_INTERVAL_MS)
       return;
 
@@ -209,6 +210,10 @@ export class SessionBackupController {
     this.emitSessionBackupState("requested");
   }
 
+  isBackupsEnabled(): boolean {
+    return this.getBackupsEnabled();
+  }
+
   async reloadSessionBackupStateFromDisk() {
     await this.runInBackupQueue(async () => {
       await this.ensureSessionBackupInitialized();
@@ -236,7 +241,7 @@ export class SessionBackupController {
 
   private getBackupsEnabled(): boolean {
     return (
-      this.context.state.backupsEnabledOverride ?? this.context.state.config.backupsEnabled ?? true
+      this.context.state.backupsEnabledOverride ?? this.context.state.config.backupsEnabled ?? false
     );
   }
 

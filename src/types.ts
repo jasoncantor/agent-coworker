@@ -206,7 +206,7 @@ export interface AgentConfig {
 
   /**
    * Whether workspace/session backups are enabled.
-   * Defaults to true when not specified.
+   * Defaults to false when not specified.
    */
   backupsEnabled?: boolean;
 
