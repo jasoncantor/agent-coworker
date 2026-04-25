@@ -861,7 +861,6 @@ export function createControlSocketHelpers(
           [workspaceId]: {
             ...s.workspaceRuntimeById[workspaceId],
             mcpServers: evt.servers,
-            mcpLegacy: evt.legacy,
             mcpFiles: evt.files,
             mcpWarnings: evt.warnings ?? [],
           },

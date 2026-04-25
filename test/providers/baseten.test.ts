@@ -40,7 +40,7 @@ describe("Baseten provider", () => {
   test("loadConfig accepts a supported non-default baseten model", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "baseten",
       model: "nvidia/Nemotron-120B-A12B",
       preferredChildModel: "nvidia/Nemotron-120B-A12B",

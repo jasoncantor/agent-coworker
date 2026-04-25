@@ -108,7 +108,7 @@ const { AgentSession } = await import("../src/server/session/AgentSession");
 // ---------------------------------------------------------------------------
 
 function makeConfig(dir: string): AgentConfig {
-  const userAgentDir = path.join(dir, ".agent-user");
+  const userCoworkDir = path.join(dir, ".agent-user");
   return {
     provider: "google",
     model: "gemini-3-flash-preview",
@@ -118,11 +118,11 @@ function makeConfig(dir: string): AgentConfig {
     uploadsDirectory: path.join(dir, "uploads"),
     userName: "",
     knowledgeCutoff: "unknown",
-    projectAgentDir: path.join(dir, ".agent"),
-    userAgentDir,
+    projectCoworkDir: path.join(dir, ".cowork"),
+    userCoworkDir,
     builtInDir: dir,
     builtInConfigDir: path.join(dir, "config"),
-    skillsDirs: [path.join(path.dirname(userAgentDir), ".cowork", "skills")],
+    skillsDirs: [path.join(path.dirname(userCoworkDir), ".cowork", "skills")],
     memoryDirs: [],
     configDirs: [],
     enableMcp: true,
@@ -906,7 +906,7 @@ describe("AgentSession", () => {
         if (evt && evt.type === "mcp_servers") {
           expect(evt.servers.some((server) => server.name === "grep")).toBe(true);
           expect(evt.files.some((file) => file.source === "workspace")).toBe(true);
-          expect(typeof evt.legacy.workspace.exists).toBe("boolean");
+          expect(evt.files.some((file) => file.legacy)).toBe(false);
         }
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true });
@@ -1007,57 +1007,6 @@ describe("AgentSession", () => {
       }
     });
 
-    test("migrateLegacyMcpServers imports .agent fallback entries", async () => {
-      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "session-mcp-migrate-"));
-      try {
-        const config = makeConfig(tmpDir);
-        await fs.mkdir(path.join(tmpDir, ".agent"), { recursive: true });
-        await fs.writeFile(
-          path.join(tmpDir, ".agent", "mcp-servers.json"),
-          JSON.stringify(
-            {
-              servers: [
-                {
-                  name: "legacy-one",
-                  transport: { type: "stdio", command: "echo", args: ["legacy"] },
-                },
-              ],
-            },
-            null,
-            2,
-          ),
-          "utf-8",
-        );
-        await fs.mkdir(path.join(tmpDir, ".cowork"), { recursive: true });
-        await fs.writeFile(
-          path.join(tmpDir, ".cowork", "mcp-servers.json"),
-          JSON.stringify(
-            { servers: [{ name: "existing", transport: { type: "stdio", command: "echo" } }] },
-            null,
-            2,
-          ),
-          "utf-8",
-        );
-
-        const { session } = makeSession({ config });
-        await session.migrateLegacyMcpServers("workspace");
-
-        const migratedRaw = await fs.readFile(
-          path.join(tmpDir, ".cowork", "mcp-servers.json"),
-          "utf-8",
-        );
-        expect(migratedRaw).toContain('"name": "existing"');
-        expect(migratedRaw).toContain('"name": "legacy-one"');
-
-        const archived = await fs.readFile(
-          path.join(tmpDir, ".agent", "mcp-servers.legacy-migrated.json"),
-          "utf-8",
-        );
-        expect(archived).toContain('"legacy-one"');
-      } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true });
-      }
-    });
   });
 
   describe("session config", () => {
@@ -1682,7 +1631,7 @@ describe("AgentSession", () => {
 
     test("getSkillsCatalog emits non-deduped installation catalog", async () => {
       const root = await makeTmpDir();
-      const project = path.join(root, ".agent", "skills");
+      const project = path.join(root, ".cowork", "skills");
       const global = path.join(root, ".cowork", "skills");
       await fs.mkdir(project, { recursive: true });
       await fs.mkdir(global, { recursive: true });
@@ -1704,7 +1653,7 @@ describe("AgentSession", () => {
 
     test("installSkills installs a local skill into workspace scope and emits catalog/detail", async () => {
       const root = await makeTmpDir();
-      const project = path.join(root, ".agent", "skills");
+      const project = path.join(root, ".cowork", "skills");
       const sourceRoot = path.join(root, "incoming");
       await fs.mkdir(project, { recursive: true });
       await createSkill(sourceRoot, "alpha", "# Alpha Skill");
@@ -2226,7 +2175,7 @@ describe("AgentSession", () => {
           ...makeConfig("/tmp/test-session"),
           provider: "bedrock",
           model: "amazon.nova-lite-v1:0",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         },
         getAiCoworkerPathsImpl: mock(({ homedir }: { homedir?: string } = {}) => ({
           rootDir: path.join(homedir ?? home, ".cowork"),
@@ -2330,7 +2279,7 @@ describe("AgentSession", () => {
       const { session, events } = makeSession({
         config: {
           ...makeConfig("/tmp/test-session"),
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         },
         connectProviderImpl: connectProviderImpl as any,
         getAiCoworkerPathsImpl: mock(({ homedir }: { homedir?: string } = {}) => ({

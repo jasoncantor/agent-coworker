@@ -25,8 +25,8 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     uploadsDirectory: path.join(dir, "uploads"),
     userName: "",
     knowledgeCutoff: "unknown",
-    projectAgentDir: path.join(dir, ".agent"),
-    userAgentDir: path.join(dir, ".agent-user"),
+    projectCoworkDir: path.join(dir, ".cowork"),
+    userCoworkDir: path.join(dir, ".agent-user"),
     builtInDir: dir,
     builtInConfigDir: path.join(dir, "config"),
     skillsDirs: [],
@@ -505,8 +505,8 @@ describe("raw loop harness context", () => {
       {
         config: makeConfig({
           skillsDirs: [path.join(tmp, "skills")],
-          projectAgentDir: path.join(tmp, ".agent"),
-          userAgentDir: path.join(tmp, ".agent-user"),
+          projectCoworkDir: path.join(tmp, ".cowork"),
+          userCoworkDir: path.join(tmp, ".agent-user"),
         }),
         log: () => {},
         askUser: async () => "",

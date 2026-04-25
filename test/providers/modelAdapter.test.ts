@@ -157,7 +157,7 @@ describe("provider model adapters", () => {
         await fs.mkdir(workspaceDir, { recursive: true });
         const config = makeConfig({
           provider: "codex-cli",
-          userAgentDir: path.join(workspaceDir, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const adapter = createCodexCliModelAdapter(config, "gpt-5.2");

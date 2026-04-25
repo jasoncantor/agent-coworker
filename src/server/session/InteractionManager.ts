@@ -146,7 +146,7 @@ export class InteractionManager {
     const config = this.opts.getConfig();
     const classification = classifyCommandDetailed(command, {
       allowedRoots: [
-        path.dirname(config.projectAgentDir),
+        path.dirname(config.projectCoworkDir),
         config.workingDirectory,
         ...(config.outputDirectory ? [config.outputDirectory] : []),
       ],

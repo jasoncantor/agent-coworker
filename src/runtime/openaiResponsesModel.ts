@@ -52,7 +52,7 @@ async function resolveCodexAccessToken(
 ): Promise<ResolvedCodexAuth> {
   void config;
   // Codex auth is stored in the user-global Cowork home, not under a workspace
-  // `.agent` root.
+  // `.cowork` root.
   const paths = getAiCoworkerPaths({ homedir: resolveAuthHomeDir(config) });
   let material = await readCodexAuthMaterial(paths);
   if (!material?.accessToken) {

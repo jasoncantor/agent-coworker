@@ -10,7 +10,7 @@ async function makeConfig() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "agent-skill-mtime-"));
   const cwd = path.join(root, "workspace");
   const homedir = path.join(root, "home");
-  await fs.mkdir(path.join(cwd, ".agent"), { recursive: true });
+  await fs.mkdir(path.join(cwd, ".cowork"), { recursive: true });
   await fs.mkdir(homedir, { recursive: true });
   return await loadConfig({ cwd, homedir, env: {} });
 }
@@ -20,7 +20,7 @@ describe("readSkillCatalogMtimeSnapshot", () => {
     const config = await makeConfig();
     const before = await readSkillCatalogMtimeSnapshot(config);
 
-    const skillDir = path.join(config.projectAgentDir, "skills", "example-skill");
+    const skillDir = path.join(config.projectCoworkDir, "skills", "example-skill");
     await fs.mkdir(skillDir, { recursive: true });
     await fs.writeFile(
       path.join(skillDir, "SKILL.md"),

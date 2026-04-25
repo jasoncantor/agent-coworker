@@ -170,7 +170,6 @@ Currently implemented `cowork/*` methods include:
   - `cowork/mcp/server/auth/authorize`
   - `cowork/mcp/server/auth/callback`
   - `cowork/mcp/server/auth/setApiKey`
-  - `cowork/mcp/legacy/migrate`
 - skills controls
   - `cowork/skills/catalog/read`
   - `cowork/skills/list`
@@ -597,10 +596,10 @@ Changes in `7.1`:
 
 Changes in `7.0`:
 
-- MCP server management moved to granular control messages (`mcp_server_upsert`, `mcp_server_delete`, `mcp_server_validate`, auth/migration flows).
-- `mcp_servers` event now returns layered effective servers, file diagnostics, and legacy visibility.
+- MCP server management moved to granular control messages (`mcp_server_upsert`, `mcp_server_delete`, `mcp_server_validate`, auth flows).
+- `mcp_servers` event now returns layered effective servers and file diagnostics.
 - New MCP server events: `mcp_server_validation`, `mcp_server_auth_challenge`, `mcp_server_auth_result`.
-- MCP config layering now targets `.cowork` (`workspace`, `user`, built-in) with `.agent` legacy fallback read-only visibility.
+- MCP config layering targets `.cowork` (`workspace`, `user`, built-in). Legacy `.agent` files are migrated only by `cowork migrate-agent-config`, not loaded as protocol fallbacks.
 
 ## Protocol v6 Notes
 
@@ -836,7 +835,7 @@ Returned in `server_hello` and `config_updated`:
 ```json
 {
   "name": "commit",
-  "path": "/home/user/.agent/skills/commit/SKILL.md",
+  "path": "/home/user/.cowork/skills/commit/SKILL.md",
   "source": "global",
   "enabled": true,
   "triggers": ["/commit"],
@@ -892,7 +891,7 @@ Represents one concrete installed copy on disk. Unlike `SkillEntry`, this does *
 ```json
 {
   "scopes": [
-    { "scope": "project", "skillsDir": "/workspace/.agent/skills", "disabledSkillsDir": "/workspace/.agent/disabled-skills", "writable": true, "readable": true }
+    { "scope": "project", "skillsDir": "/workspace/.cowork/skills", "disabledSkillsDir": "/workspace/.cowork/disabled-skills", "writable": true, "readable": true }
   ],
   "effectiveSkills": ["...SkillInstallationEntry"],
   "installations": ["...SkillInstallationEntry"]
@@ -1435,7 +1434,7 @@ Canonical session metadata snapshot. Sent on connection and whenever title, prov
 
 ### mcp_servers
 
-Layered MCP server snapshot with auth status, source attribution, and legacy visibility.
+Layered MCP server snapshot with auth status, source attribution, and file diagnostics.
 
 ```json
 {
@@ -1452,10 +1451,6 @@ Layered MCP server snapshot with auth status, source attribution, and legacy vis
       "authMessage": "OAuth token available."
     }
   ],
-  "legacy": {
-    "workspace": { "path": "/workspace/.agent/mcp-servers.json", "exists": true },
-    "user": { "path": "/Users/me/.agent/mcp-servers.json", "exists": false }
-  },
   "files": [
     {
       "source": "workspace",
@@ -1466,7 +1461,7 @@ Layered MCP server snapshot with auth status, source attribution, and legacy vis
       "serverCount": 1
     }
   ],
-  "warnings": ["workspace_legacy: mcp-servers.json: invalid JSON: ..."]
+  "warnings": ["workspace: mcp-servers.json: invalid JSON: ..."]
 }
 ```
 
@@ -1475,7 +1470,6 @@ Layered MCP server snapshot with auth status, source attribution, and legacy vis
 | `type` | `"mcp_servers"` | — |
 | `sessionId` | `string` | Session identifier |
 | `servers` | `Array<MCPServerConfig & { source, inherited, authMode, authScope, authMessage }>` | Effective servers with layer/auth metadata |
-| `legacy` | `{ workspace, user }` | Legacy `.agent` file paths and existence flags |
 | `files` | `Array<{ source, path, exists, editable, legacy, parseError?, serverCount }>` | File-level diagnostics per layer |
 | `warnings` | `string[]` | Optional non-fatal parse warnings |
 

@@ -55,7 +55,7 @@ These apply to `bun run cli`, `bun run serve`, and `bun src/index.ts` / `cowork`
     *   Files are named `*.test.ts`.
     *   Mocks and temp directories are preferred over live network or system calls.
 *   **Configuration:**
-    *   Precedence: Defaults < User (`~/.agent/`) < Project (`./.agent/`) < Environment Variables. MCP server configs, auth, and session backups also live in `~/.cowork/` and `.cowork/`.
+    *   Precedence: Defaults < User (`~/.cowork/config/`) < Project (`./.cowork/`) < Environment Variables. MCP server configs, auth, and session backups also live in `~/.cowork/` and `.cowork/`.
     *   Environment Variables: `AGENT_PROVIDER`, `AGENT_MODEL`, `AGENT_WORKING_DIR`.
 
 ## Key Files and Directories

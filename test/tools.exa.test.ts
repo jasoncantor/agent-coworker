@@ -6,9 +6,9 @@ import path from "node:path";
 import type { ToolContext } from "../src/tools/context";
 import { fetchExaContents, resolveExaApiKey } from "../src/tools/exa";
 
-function makeCtx(userAgentDir: string): ToolContext {
+function makeCtx(userCoworkDir: string): ToolContext {
   return {
-    config: { userAgentDir } as any,
+    config: { userCoworkDir } as any,
     log: () => {},
     askUser: async () => "",
     approveCommand: async () => true,
@@ -17,11 +17,11 @@ function makeCtx(userAgentDir: string): ToolContext {
 
 async function makeCoworkHome() {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "exa-test-"));
-  const userAgentDir = path.join(tmp, ".agent-user");
-  await fs.mkdir(userAgentDir, { recursive: true });
+  const userCoworkDir = path.join(tmp, ".agent-user");
+  await fs.mkdir(userCoworkDir, { recursive: true });
   const authDir = path.join(tmp, ".cowork", "auth");
   await fs.mkdir(authDir, { recursive: true });
-  return { tmp, userAgentDir, authDir };
+  return { tmp, userCoworkDir, authDir };
 }
 
 async function withEnv<T>(
@@ -43,7 +43,7 @@ async function withEnv<T>(
 
 describe("tools/exa", () => {
   test("resolveExaApiKey prefers stored key over EXA_API_KEY", async () => {
-    const { tmp, userAgentDir, authDir } = await makeCoworkHome();
+    const { tmp, userCoworkDir, authDir } = await makeCoworkHome();
     await fs.writeFile(
       path.join(authDir, "connections.json"),
       JSON.stringify({
@@ -61,7 +61,7 @@ describe("tools/exa", () => {
       const result = await withEnv(
         "HOME",
         tmp,
-        async () => await resolveExaApiKey(makeCtx(userAgentDir)),
+        async () => await resolveExaApiKey(makeCtx(userCoworkDir)),
       );
       expect(result).toBe("saved-key");
     } finally {
@@ -75,7 +75,7 @@ describe("tools/exa", () => {
   });
 
   test("resolveExaApiKey falls back to EXA_API_KEY when no stored key is available", async () => {
-    const { tmp, userAgentDir } = await makeCoworkHome();
+    const { tmp, userCoworkDir } = await makeCoworkHome();
 
     const prev = process.env.EXA_API_KEY;
     process.env.EXA_API_KEY = "env-key";
@@ -83,7 +83,7 @@ describe("tools/exa", () => {
       const result = await withEnv(
         "HOME",
         tmp,
-        async () => await resolveExaApiKey(makeCtx(userAgentDir)),
+        async () => await resolveExaApiKey(makeCtx(userCoworkDir)),
       );
       expect(result).toBe("env-key");
     } finally {
@@ -97,8 +97,8 @@ describe("tools/exa", () => {
   });
 
   test("resolveExaApiKey falls back to saved key", async () => {
-    const { tmp, userAgentDir } = await makeCoworkHome();
-    const authFile = path.join(path.dirname(userAgentDir), ".cowork", "auth", "connections.json");
+    const { tmp, userCoworkDir } = await makeCoworkHome();
+    const authFile = path.join(path.dirname(userCoworkDir), ".cowork", "auth", "connections.json");
     await fs.mkdir(path.dirname(authFile), { recursive: true });
     await fs.writeFile(
       authFile,
@@ -116,7 +116,7 @@ describe("tools/exa", () => {
       const result = await withEnv(
         "HOME",
         tmp,
-        async () => await resolveExaApiKey(makeCtx(userAgentDir)),
+        async () => await resolveExaApiKey(makeCtx(userCoworkDir)),
       );
       expect(result).toBe("saved-key");
     } finally {

@@ -1,9 +1,5 @@
 import { readMCPServersSnapshot } from "../../../mcp";
-import {
-  deleteWorkspaceMCPServer,
-  migrateLegacyMCPServers,
-  upsertWorkspaceMCPServer,
-} from "../../../mcp/configRegistry";
+import { deleteWorkspaceMCPServer, upsertWorkspaceMCPServer } from "../../../mcp/configRegistry";
 import type { MCPServerConfig } from "../../../types";
 import type { SessionContext } from "../SessionContext";
 
@@ -84,7 +80,6 @@ export class McpRegistryFlow {
         type: "mcp_servers",
         sessionId: this.context.id,
         servers: payload.servers,
-        legacy: payload.legacy,
         files: payload.files,
         ...(payload.warnings.length > 0 ? { warnings: payload.warnings } : {}),
       });
@@ -137,31 +132,6 @@ export class McpRegistryFlow {
         "internal_error",
         "session",
         `Failed to delete MCP server: ${message}`,
-      );
-      return;
-    }
-
-    await this.emitMcpServers();
-  }
-
-  async migrate(scope: "workspace" | "user") {
-    if (!this.context.guardBusy()) return;
-
-    try {
-      const result = await migrateLegacyMCPServers(this.context.state.config, scope);
-      this.context.emit({
-        type: "assistant_message",
-        sessionId: this.context.id,
-        text:
-          `Legacy MCP migration (${scope}) complete: imported ${result.imported}, ` +
-          `skipped ${result.skippedConflicts}.` +
-          (result.archivedPath ? ` Archived legacy file to ${result.archivedPath}.` : ""),
-      });
-    } catch (err) {
-      this.context.emitError(
-        "internal_error",
-        "session",
-        `Failed to migrate legacy MCP servers: ${String(err)}`,
       );
       return;
     }

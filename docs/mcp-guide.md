@@ -9,7 +9,8 @@ To provide maximum flexibility across different environments and projects, agent
 1. **Workspace (`.cowork/mcp-servers.json`)**: Project-specific configurations. This is ideal for tools that are only relevant to the current repository.
 2. **User (`~/.cowork/config/mcp-servers.json`)**: Global configurations for the current user. Useful for developer-specific tools or personal access tokens that should be available across all projects.
 3. **Built-in (`config/mcp-servers.json`)**: Default servers bundled with the agent-coworker installation.
-4. **Legacy Fallback (`.agent/mcp-servers.json`)**: Supported for backward compatibility with older agent configurations.
+
+Legacy `.agent/mcp-servers.json` files are not runtime fallback layers. Run `cowork migrate-agent-config` once to merge old workspace and user MCP configs into the canonical `.cowork` paths.
 
 *Note: If the same server key is defined in multiple layers, the configuration from the higher-precedence layer will override the lower ones.*
 

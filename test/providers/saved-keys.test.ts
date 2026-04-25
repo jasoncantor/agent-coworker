@@ -36,7 +36,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
         const cfg = makeConfig({
           provider: "openai",
           model: "gpt-5.2",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -69,7 +69,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
         const cfg = makeConfig({
           provider: "google",
           model: "gemini-3-flash-preview",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -102,7 +102,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
         const cfg = makeConfig({
           provider: "anthropic",
           model: "claude-opus-4-6",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -136,7 +136,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
           provider: "baseten",
           model: "moonshotai/Kimi-K2.5",
           preferredChildModel: "moonshotai/Kimi-K2.5",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -170,7 +170,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
           provider: "together",
           model: "moonshotai/Kimi-K2.5",
           preferredChildModel: "moonshotai/Kimi-K2.5",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -204,7 +204,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
           provider: "nvidia",
           model: "nvidia/nemotron-3-super-120b-a12b",
           preferredChildModel: "nvidia/nemotron-3-super-120b-a12b",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -238,7 +238,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
           provider: "opencode-go",
           model: "glm-5",
           preferredChildModel: "glm-5",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -272,7 +272,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
           provider: "opencode-zen",
           model: "glm-5",
           preferredChildModel: "glm-5",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -303,7 +303,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
       const cfg = makeConfig({
         provider: "codex-cli",
         model: "gpt-5.4",
-        userAgentDir: path.join(home, ".agent"),
+        userCoworkDir: path.join(home, ".cowork"),
       });
 
       const model = getModel(cfg) as any;
@@ -328,7 +328,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
       const cfg = makeConfig({
         provider: "codex-cli",
         model: "gpt-5.4-mini",
-        userAgentDir: path.join(home, ".agent"),
+        userCoworkDir: path.join(home, ".cowork"),
       });
 
       const model = getModel(cfg) as any;
@@ -361,7 +361,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
         const cfg = makeConfig({
           provider: "openai",
           model: "gpt-5.2",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -393,7 +393,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
           provider: "opencode-go",
           model: "glm-5",
           preferredChildModel: "glm-5",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -425,7 +425,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
           provider: "baseten",
           model: "moonshotai/Kimi-K2.5",
           preferredChildModel: "moonshotai/Kimi-K2.5",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -457,7 +457,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
           provider: "together",
           model: "moonshotai/Kimi-K2.5",
           preferredChildModel: "moonshotai/Kimi-K2.5",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -489,7 +489,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
           provider: "nvidia",
           model: "nvidia/nemotron-3-super-120b-a12b",
           preferredChildModel: "nvidia/nemotron-3-super-120b-a12b",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;
@@ -521,7 +521,7 @@ describe("Saved API key precedence (~/.cowork/auth)", () => {
           provider: "opencode-zen",
           model: "glm-5",
           preferredChildModel: "glm-5",
-          userAgentDir: path.join(home, ".agent"),
+          userCoworkDir: path.join(home, ".cowork"),
         });
 
         const model = getModel(cfg) as any;

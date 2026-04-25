@@ -366,7 +366,10 @@ function buildPluginSkillInstallationId(
 }
 
 export function getSkillScopeDescriptors(skillsDirs: string[]): SkillScopeDescriptor[] {
-  const scopes: SkillScope[] = ["project", "global", "user", "built-in"];
+  const scopes: SkillScope[] =
+    skillsDirs.length >= 4
+      ? ["project", "global", "user", "built-in"]
+      : ["project", "global", "built-in"];
   return skillsDirs.map((skillsDir, index) => {
     const scope = scopes[index] ?? "built-in";
     const writable = scope === "project" || scope === "global";

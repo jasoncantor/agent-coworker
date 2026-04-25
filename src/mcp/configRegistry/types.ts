@@ -4,8 +4,6 @@ export type MCPServerSource =
   | "workspace"
   | "user"
   | "system"
-  | "workspace_legacy"
-  | "user_legacy"
   | "plugin";
 
 export interface MCPRegistryServer extends MCPServerConfig {
@@ -15,17 +13,6 @@ export interface MCPRegistryServer extends MCPServerConfig {
   pluginName?: string;
   pluginDisplayName?: string;
   pluginScope?: PluginScope;
-}
-
-export interface MCPRegistryLegacyState {
-  workspace: {
-    path: string;
-    exists: boolean;
-  };
-  user: {
-    path: string;
-    exists: boolean;
-  };
 }
 
 export interface MCPRegistryFileState {
@@ -45,15 +32,5 @@ export interface MCPRegistryFileState {
 export interface MCPConfigRegistrySnapshot {
   servers: MCPRegistryServer[];
   files: MCPRegistryFileState[];
-  legacy: MCPRegistryLegacyState;
   warnings: string[];
-}
-
-export interface MCPMigrationResult {
-  scope: "workspace" | "user";
-  sourcePath: string;
-  targetPath: string;
-  archivedPath: string | null;
-  imported: number;
-  skippedConflicts: number;
 }

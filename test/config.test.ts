@@ -67,13 +67,13 @@ describe("loadConfig", () => {
     await fs.mkdir(cwd, { recursive: true });
     await fs.mkdir(home, { recursive: true });
 
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       provider: "anthropic",
       model: "claude-sonnet-4-5",
       outputDirectory: "user-output",
     });
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "openai",
       model: "gpt-5.2",
       outputDirectory: "project-output",
@@ -260,7 +260,7 @@ describe("loadConfig", () => {
     });
     expect(cfg.runtime).toBe("google-interactions");
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "openai",
       model: "gpt-5.4",
     });
@@ -284,7 +284,7 @@ describe("loadConfig", () => {
   test("legacy pi runtime config is normalized away for openai providers", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "openai",
       model: "gpt-5.4",
       runtime: "pi",
@@ -304,7 +304,7 @@ describe("loadConfig", () => {
   test("legacy pi runtime config is normalized away for codex-cli providers", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "codex-cli",
       model: "gpt-5.4",
       runtime: "pi",
@@ -324,7 +324,7 @@ describe("loadConfig", () => {
   test("stale OpenAI Responses runtime config is normalized away for non-OpenAI providers", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "google",
       model: "gemini-3-flash-preview",
       runtime: "openai-responses",
@@ -365,7 +365,7 @@ describe("loadConfig", () => {
   test("project config can override toolOutputOverflowChars", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       toolOutputOverflowChars: 4096,
     });
 
@@ -382,7 +382,7 @@ describe("loadConfig", () => {
   test("project config can disable toolOutputOverflowChars with null", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       toolOutputOverflowChars: null,
     });
 
@@ -396,10 +396,10 @@ describe("loadConfig", () => {
     expect(cfg.toolOutputOverflowChars).toBeNull();
   });
 
-  test("user config from homedir/.agent/config.json overrides defaults", async () => {
+  test("user config from homedir/.cowork/config/config.json overrides defaults", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       provider: "anthropic",
       model: "claude-sonnet-4-5",
       userName: "Alice",
@@ -417,16 +417,16 @@ describe("loadConfig", () => {
     expect(cfg.userName).toBe("Alice");
   });
 
-  test("project config from cwd/.agent/config.json overrides user config", async () => {
+  test("project config from cwd/.cowork/config.json overrides user config", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       provider: "anthropic",
       model: "claude-sonnet-4-5",
       userName: "Alice",
     });
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "openai",
       model: "gpt-5.2",
     });
@@ -446,7 +446,7 @@ describe("loadConfig", () => {
   test("AGENT_PROVIDER env var overrides all config files", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "openai",
     });
 
@@ -463,7 +463,7 @@ describe("loadConfig", () => {
   test("AGENT_MODEL env var overrides all config files", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "openai",
       model: "gpt-5.4",
     });
@@ -481,7 +481,7 @@ describe("loadConfig", () => {
   test("invalid configured model IDs fall back to provider defaults during startup", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "google",
       model: "gemini-legacy-preview",
       preferredChildModel: "gemini-legacy-research",
@@ -502,7 +502,7 @@ describe("loadConfig", () => {
   test("removed OpenAI model IDs load through legacy aliases", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "openai",
       model: "gpt-5.1",
       preferredChildModel: "gpt-5.2-codex",
@@ -524,7 +524,7 @@ describe("loadConfig", () => {
   test("removed Codex CLI model IDs load through legacy aliases", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "codex-cli",
       model: "gpt-5.1-codex-mini",
       preferredChildModel: "gpt-5.2-codex",
@@ -560,7 +560,7 @@ describe("loadConfig", () => {
   test("AGENT_OUTPUT_DIR env var overrides all output directory config", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       outputDirectory: "project-out",
     });
 
@@ -590,7 +590,7 @@ describe("loadConfig", () => {
   test("AGENT_USER_NAME env var overrides all userName config", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       userName: "Alice",
     });
 
@@ -638,13 +638,13 @@ describe("loadConfig", () => {
     const { cwd, home } = await makeTmpDirs();
 
     // User sets knowledgeCutoff and userName
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       knowledgeCutoff: "user-level-cutoff",
       userName: "UserName",
     });
 
     // Project only sets userName (should override user)
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       userName: "ProjectName",
     });
 
@@ -698,11 +698,11 @@ describe("loadConfig", () => {
   test("preferredChildModel from project config overrides user config", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       preferredChildModel: "gemini-3-flash-preview",
     });
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       preferredChildModel: "gemini-3.1-pro-preview",
     });
 
@@ -719,7 +719,7 @@ describe("loadConfig", () => {
   test("legacy subAgentModel config still seeds the preferred child model", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "openai",
       model: "gpt-5.4",
       subAgentModel: "gpt-5-mini",
@@ -739,7 +739,7 @@ describe("loadConfig", () => {
   test("preferredChildModelRef and allowlist normalize cross-provider child routing config", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "codex-cli",
       model: "gpt-5.4",
       childModelRoutingMode: "cross-provider-allowlist",
@@ -763,11 +763,11 @@ describe("loadConfig", () => {
   test("knowledgeCutoff config values are ignored in favor of the selected model registry entry", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       knowledgeCutoff: "User cutoff 2024",
     });
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       knowledgeCutoff: "Project cutoff 2025",
     });
 
@@ -784,7 +784,7 @@ describe("loadConfig", () => {
   test("invalid provider in config falls back to default", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "invalid-provider",
     });
 
@@ -801,7 +801,7 @@ describe("loadConfig", () => {
   test("invalid provider in env falls through to config chain", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "anthropic",
     });
 
@@ -892,7 +892,7 @@ describe("loadConfig", () => {
   test("loads command template config from merged config", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       command: {
         triage: {
           description: "triage issues",
@@ -918,7 +918,7 @@ describe("loadConfig", () => {
   test("throws on invalid command template entries", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       command: {
         bad1: { template: "" },
         bad2: { description: "missing template" },
@@ -953,7 +953,7 @@ describe("loadConfig", () => {
       },
     });
 
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       providerOptions: {
         openai: {
           reasoningSummary: "detailed",
@@ -961,7 +961,7 @@ describe("loadConfig", () => {
       },
     });
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       providerOptions: {
         openai: {
           reasoningEffort: "high",
@@ -1000,7 +1000,7 @@ describe("loadConfig", () => {
   test("preserves other providerOptions without synthesizing an empty active-provider section", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       providerOptions: {
         openai: {
           reasoningEffort: "high",
@@ -1028,7 +1028,7 @@ describe("loadConfig", () => {
   test("loads modelSettings maxRetries from config and allows env overrides", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       modelSettings: {
         maxRetries: 4,
       },
@@ -1120,7 +1120,7 @@ describe("directory resolution", () => {
   test("relative outputDirectory resolved against cwd", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       outputDirectory: "my-output",
     });
 
@@ -1137,7 +1137,7 @@ describe("directory resolution", () => {
   test("absolute outputDirectory used as-is", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       outputDirectory: "/absolute/output/path",
     });
 
@@ -1154,7 +1154,7 @@ describe("directory resolution", () => {
   test("relative uploadsDirectory resolved against cwd", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       uploadsDirectory: "my-uploads",
     });
 
@@ -1207,7 +1207,7 @@ describe("directory resolution", () => {
     expect(cfg.uploadsDirectory).toBeUndefined();
   });
 
-  test("skillsDirs populated with 4 paths (project, global, user, built-in)", async () => {
+  test("skillsDirs populated with 3 paths (project, user-global, built-in)", async () => {
     const { cwd, home } = await makeTmpDirs();
 
     const cfg = await loadConfig({
@@ -1217,11 +1217,10 @@ describe("directory resolution", () => {
       env: {},
     });
 
-    expect(cfg.skillsDirs).toHaveLength(4);
-    expect(cfg.skillsDirs[0]).toBe(path.join(cwd, ".agent", "skills"));
+    expect(cfg.skillsDirs).toHaveLength(3);
+    expect(cfg.skillsDirs[0]).toBe(path.join(cwd, ".cowork", "skills"));
     expect(cfg.skillsDirs[1]).toBe(path.join(home, ".cowork", "skills"));
-    expect(cfg.skillsDirs[2]).toBe(path.join(home, ".agent", "skills"));
-    expect(cfg.skillsDirs[3]).toBe(path.join(repoRoot(), "skills"));
+    expect(cfg.skillsDirs[2]).toBe(path.join(repoRoot(), "skills"));
   });
 
   test("skillsDirs omit built-in skills when COWORK_DISABLE_BUILTIN_SKILLS is enabled", async () => {
@@ -1234,10 +1233,9 @@ describe("directory resolution", () => {
       env: { COWORK_DISABLE_BUILTIN_SKILLS: "1" },
     });
 
-    expect(cfg.skillsDirs).toHaveLength(3);
-    expect(cfg.skillsDirs[0]).toBe(path.join(cwd, ".agent", "skills"));
+    expect(cfg.skillsDirs).toHaveLength(2);
+    expect(cfg.skillsDirs[0]).toBe(path.join(cwd, ".cowork", "skills"));
     expect(cfg.skillsDirs[1]).toBe(path.join(home, ".cowork", "skills"));
-    expect(cfg.skillsDirs[2]).toBe(path.join(home, ".agent", "skills"));
   });
 
   test("memoryDirs populated correctly", async () => {
@@ -1251,8 +1249,8 @@ describe("directory resolution", () => {
     });
 
     expect(cfg.memoryDirs).toHaveLength(2);
-    expect(cfg.memoryDirs[0]).toBe(path.join(cwd, ".agent", "memory"));
-    expect(cfg.memoryDirs[1]).toBe(path.join(home, ".agent", "memory"));
+    expect(cfg.memoryDirs[0]).toBe(path.join(cwd, ".cowork", "memory"));
+    expect(cfg.memoryDirs[1]).toBe(path.join(home, ".cowork", "memory"));
   });
 
   test("configDirs populated correctly", async () => {
@@ -1266,12 +1264,12 @@ describe("directory resolution", () => {
     });
 
     expect(cfg.configDirs).toHaveLength(3);
-    expect(cfg.configDirs[0]).toBe(path.join(cwd, ".agent"));
-    expect(cfg.configDirs[1]).toBe(path.join(home, ".agent"));
+    expect(cfg.configDirs[0]).toBe(path.join(cwd, ".cowork"));
+    expect(cfg.configDirs[1]).toBe(path.join(home, ".cowork", "config"));
     expect(cfg.configDirs[2]).toBe(path.join(repoRoot(), "config"));
   });
 
-  test("projectAgentDir and userAgentDir set correctly", async () => {
+  test("projectCoworkDir and userCoworkDir set correctly", async () => {
     const { cwd, home } = await makeTmpDirs();
 
     const cfg = await loadConfig({
@@ -1281,8 +1279,8 @@ describe("directory resolution", () => {
       env: {},
     });
 
-    expect(cfg.projectAgentDir).toBe(path.join(cwd, ".agent"));
-    expect(cfg.userAgentDir).toBe(path.join(home, ".agent"));
+    expect(cfg.projectCoworkDir).toBe(path.join(cwd, ".cowork"));
+    expect(cfg.userCoworkDir).toBe(path.join(home, ".cowork"));
   });
 
   test("builtInDir and builtInConfigDir set correctly", async () => {
@@ -1429,12 +1427,12 @@ describe("deepMerge (tested indirectly through recognized fields)", () => {
   test("project config overrides user config for same field", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       userName: "UserLevel",
       knowledgeCutoff: "2024",
     });
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       userName: "ProjectLevel",
     });
 
@@ -1454,11 +1452,11 @@ describe("deepMerge (tested indirectly through recognized fields)", () => {
   test("project config can explicitly clear an inherited userName", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       userName: "UserLevel",
     });
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       userName: "",
     });
 
@@ -1475,7 +1473,7 @@ describe("deepMerge (tested indirectly through recognized fields)", () => {
   test("does not mutate original objects (verified by loading twice)", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       userName: "Alice",
     });
 
@@ -1486,7 +1484,7 @@ describe("deepMerge (tested indirectly through recognized fields)", () => {
       env: {},
     });
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       userName: "Bob",
     });
 
@@ -1535,7 +1533,7 @@ describe("loadJsonSafe (tested indirectly)", () => {
   test("throws for invalid JSON config files", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    const configPath = path.join(cwd, ".agent", "config.json");
+    const configPath = path.join(cwd, ".cowork", "config.json");
     await fs.mkdir(path.dirname(configPath), { recursive: true });
     await fs.writeFile(configPath, "NOT VALID JSON {{{", "utf-8");
 
@@ -1552,7 +1550,7 @@ describe("loadJsonSafe (tested indirectly)", () => {
   test("parses valid JSON correctly", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "anthropic",
       model: "claude-sonnet-4-5",
     });

@@ -34,7 +34,7 @@ function extractProtocolHeadings(doc: string, startMarker: string, endMarker: st
 async function makeTmpProject(): Promise<string> {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "agent-server-test-"));
   // Ensure the .agent dir exists so loadConfig can resolve it
-  await fs.mkdir(path.join(tmp, ".agent"), { recursive: true });
+  await fs.mkdir(path.join(tmp, ".cowork"), { recursive: true });
   return tmp;
 }
 
@@ -109,13 +109,13 @@ describe("Server Startup", () => {
     }
   });
 
-  test("creates projectAgentDir on startup", async () => {
+  test("creates projectCoworkDir on startup", async () => {
     const tmpDir = await makeTmpProject();
     // Remove the .agent dir so startServer has to create it
-    await fs.rm(path.join(tmpDir, ".agent"), { recursive: true, force: true });
+    await fs.rm(path.join(tmpDir, ".cowork"), { recursive: true, force: true });
     const { server, config } = await startAgentServer(serverOpts(tmpDir));
     try {
-      const stat = await fs.stat(config.projectAgentDir);
+      const stat = await fs.stat(config.projectCoworkDir);
       expect(stat.isDirectory()).toBe(true);
     } finally {
       await stopTestServer(server);
@@ -172,9 +172,9 @@ describe("Server Startup", () => {
     const tmpDir = await makeTmpProject();
     const { server, config, system } = await startAgentServer(serverOpts(tmpDir));
     try {
-      expect(config.skillsDirs).toHaveLength(4);
-      expect(config.skillsDirs[1]).toBe(path.join(tmpDir, ".cowork", "skills"));
-      expect(config.skillsDirs[3]).toBe(path.join(config.builtInDir, "skills"));
+      expect(config.skillsDirs).toHaveLength(3);
+      expect(config.skillsDirs[0]).toBe(path.join(tmpDir, ".cowork", "skills"));
+      expect(config.skillsDirs[2]).toBe(path.join(config.builtInDir, "skills"));
       expect(system).toContain("## Available Skills");
       expect(system).toContain("**slides**");
     } finally {
@@ -195,7 +195,7 @@ describe("Server Startup", () => {
       }),
     );
     try {
-      expect(config.skillsDirs).toHaveLength(3);
+      expect(config.skillsDirs).toHaveLength(2);
       expect(config.skillsDirs).not.toContain(path.join(config.builtInDir, "skills"));
     } finally {
       await stopTestServer(server);

@@ -163,32 +163,5 @@ export function createMcpRouteHandlers(context: JsonRpcRouteContext): JsonRpcReq
       }
       context.jsonrpc.sendResult(ws, message.id, { event: outcome });
     },
-
-    "cowork/mcp/legacy/migrate": async (ws, message) => {
-      const params = toJsonRpcParams(message.params);
-      const cwd = context.utils.resolveWorkspacePath(params, message.method);
-      const scope = params.scope === "user" ? "user" : "workspace";
-      const mutationError = await captureWorkspaceControlMutationError(
-        context,
-        cwd,
-        async (runtime) => await runtime.mcp.migrateLegacyServers(scope),
-      );
-      if (mutationError) {
-        sendSessionMutationError(context, ws, message.id, mutationError);
-        return;
-      }
-      const outcome = await captureWorkspaceControlOutcome(
-        context,
-        cwd,
-        async (runtime) => await runtime.mcp.emitServers(),
-        (event): event is Extract<SessionEvent, { type: "mcp_servers" }> =>
-          event.type === "mcp_servers",
-      );
-      if (context.utils.isSessionError(outcome)) {
-        sendSessionMutationError(context, ws, message.id, outcome);
-        return;
-      }
-      context.jsonrpc.sendResult(ws, message.id, { event: outcome });
-    },
   };
 }

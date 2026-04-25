@@ -270,8 +270,8 @@ class MockJsonRpcSocket {
           sessionId: "jsonrpc-control",
           servers: [],
           legacy: {
-            workspace: { path: "/tmp/jsonrpc-workspace/.agent/mcp-servers.json", exists: false },
-            user: { path: "/home/test/.agent/mcp-servers.json", exists: false },
+            workspace: { path: "/tmp/jsonrpc-workspace/.cowork/mcp-servers.json", exists: false },
+            user: { path: "/home/test/.cowork/mcp-servers.json", exists: false },
           },
           files: [],
         },

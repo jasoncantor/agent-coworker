@@ -1,4 +1,5 @@
 export interface CliArgs {
+  command?: "migrate-agent-config";
   dir?: string;
   help: boolean;
   cli: boolean;
@@ -11,6 +12,15 @@ export function parseCliArgs(argv: string[]): { args: CliArgs; errors: string[] 
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+
+    if (a === "migrate-agent-config") {
+      if (args.command) {
+        errors.push(`Unexpected command: ${a}`);
+      } else {
+        args.command = "migrate-agent-config";
+      }
+      continue;
+    }
 
     if (a === "--help" || a === "-h") {
       args.help = true;

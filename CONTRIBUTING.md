@@ -97,8 +97,8 @@ test/                   # All test files (*.test.ts)
 Configuration uses a **three-tier hierarchy** (each layer overrides the previous):
 
 1. **Built-in**: `config/defaults.json`
-2. **User**: `~/.agent/config.json`
-3. **Project**: `.agent/config.json` (in working directory)
+2. **User**: `~/.cowork/config/config.json`
+3. **Project**: `.cowork/config.json` (in working directory)
 
 **Environment variables** override all tiers:
 
@@ -172,7 +172,7 @@ The protocol doc is the source of truth for anyone building an alternative UI.
 
 ## Writing Skills
 
-Skills live in `skills/` directories (built-in, user `~/.agent/skills/`, or project `.agent/skills/`).
+Skills live in `skills/` directories (built-in, user `~/.cowork/skills/`, or project `.cowork/skills/`).
 
 Each skill is a directory containing a `SKILL.md` file with YAML front-matter:
 

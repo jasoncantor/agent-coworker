@@ -21,8 +21,8 @@ function makeConfig(dir: string): AgentConfig {
     uploadsDirectory: path.join(dir, "uploads"),
     userName: "",
     knowledgeCutoff: "unknown",
-    projectAgentDir: path.join(dir, ".agent"),
-    userAgentDir: path.join(dir, ".agent-user"),
+    projectCoworkDir: path.join(dir, ".cowork"),
+    userCoworkDir: path.join(dir, ".agent-user"),
     builtInDir: dir,
     builtInConfigDir: path.join(dir, "config"),
     skillsDirs: [],
@@ -117,30 +117,30 @@ describe("isWritePathAllowed", () => {
     });
   });
 
-  // ---- Writes inside projectAgentDir parent (project root) ------------------
+  // ---- Writes inside projectCoworkDir parent (project root) ------------------
 
-  describe("allows writes via projectAgentDir parent (project root)", () => {
+  describe("allows writes via projectCoworkDir parent (project root)", () => {
     test("file in .agent directory", () => {
       const cfg = makeConfig(PROJECT);
-      expect(isWritePathAllowed(path.join(PROJECT, ".agent", "config.json"), cfg)).toBe(true);
+      expect(isWritePathAllowed(path.join(PROJECT, ".cowork", "config.json"), cfg)).toBe(true);
     });
 
-    test("projectAgentDir parent matches workingDirectory", () => {
+    test("projectCoworkDir parent matches workingDirectory", () => {
       const cfg = makeConfig(PROJECT);
-      const projectRoot = path.dirname(cfg.projectAgentDir);
+      const projectRoot = path.dirname(cfg.projectCoworkDir);
       expect(projectRoot).toBe(PROJECT);
       expect(isWritePathAllowed(path.join(projectRoot, "anything.ts"), cfg)).toBe(true);
     });
 
-    test("custom projectAgentDir allows writes in its parent", () => {
+    test("custom projectCoworkDir allows writes in its parent", () => {
       const cfg = makeConfig(PROJECT);
-      cfg.projectAgentDir = "/other/root/.agent";
+      cfg.projectCoworkDir = "/other/root/.cowork";
       expect(isWritePathAllowed("/other/root/file.ts", cfg)).toBe(true);
     });
 
-    test("custom projectAgentDir: file inside parent subdirectory", () => {
+    test("custom projectCoworkDir: file inside parent subdirectory", () => {
       const cfg = makeConfig(PROJECT);
-      cfg.projectAgentDir = "/other/root/.agent";
+      cfg.projectCoworkDir = "/other/root/.cowork";
       expect(isWritePathAllowed("/other/root/src/app.ts", cfg)).toBe(true);
     });
   });
@@ -261,9 +261,9 @@ describe("isWritePathAllowed", () => {
       expect(isWritePathAllowed(cfg.outputDirectory, cfg)).toBe(true);
     });
 
-    test("projectAgentDir itself is inside its parent and allowed", () => {
+    test("projectCoworkDir itself is inside its parent and allowed", () => {
       const cfg = makeConfig(PROJECT);
-      expect(isWritePathAllowed(cfg.projectAgentDir, cfg)).toBe(true);
+      expect(isWritePathAllowed(cfg.projectCoworkDir, cfg)).toBe(true);
     });
   });
 

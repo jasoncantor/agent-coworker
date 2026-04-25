@@ -7,7 +7,6 @@ export {
   writeWorkspaceMCPServersDocument,
 } from "./configRegistry/editor";
 export { loadMCPConfigRegistry } from "./configRegistry/layers";
-export { migrateLegacyMCPServers } from "./configRegistry/migration";
 export {
   DEFAULT_MCP_SERVERS_DOCUMENT,
   parseMCPServerConfig,
@@ -15,9 +14,7 @@ export {
 } from "./configRegistry/parser";
 export type {
   MCPConfigRegistrySnapshot,
-  MCPMigrationResult,
   MCPRegistryFileState,
-  MCPRegistryLegacyState,
   MCPRegistryServer,
   MCPServerSource,
 } from "./configRegistry/types";

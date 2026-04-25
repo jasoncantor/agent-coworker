@@ -13,9 +13,13 @@ function homeFromSkillsDir(skillsDir: string): string | undefined {
 }
 
 export function resolveAuthHomeDir(
-  config?: Pick<AgentConfig, "skillsDirs">,
+  config?: Pick<AgentConfig, "skillsDirs"> & Partial<Pick<AgentConfig, "userCoworkDir">>,
   fallbackHomedir?: string,
 ): string {
+  const userCoworkDir = config?.userCoworkDir?.trim();
+  if (userCoworkDir && path.basename(path.normalize(userCoworkDir)) === ".cowork") {
+    return path.dirname(path.normalize(userCoworkDir));
+  }
   for (const skillsDir of config?.skillsDirs ?? []) {
     const derived = homeFromSkillsDir(skillsDir);
     if (derived) return derived;

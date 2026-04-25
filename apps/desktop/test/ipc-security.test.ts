@@ -126,13 +126,13 @@ describe("desktop IPC security helpers", () => {
     }
   });
 
-  test("resolveAllowedRevealPath allows ~/.cowork and ~/.agent paths for skill folders", async () => {
+  test("resolveAllowedRevealPath allows ~/.cowork and ~/.cowork paths for skill folders", async () => {
     const tempWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-desktop-ws-"));
     const workspaceRoot = await fs.realpath(tempWorkspace);
     const home = os.homedir();
     try {
       const coworkSkill = path.join(home, ".cowork", "skills", "some-skill", "SKILL.md");
-      const agentSkill = path.join(home, ".agent", "skills", "other", "SKILL.md");
+      const agentSkill = path.join(home, ".cowork", "skills", "other", "SKILL.md");
       expect(() => resolveAllowedRevealPath([workspaceRoot], coworkSkill)).not.toThrow();
       expect(() => resolveAllowedRevealPath([workspaceRoot], agentSkill)).not.toThrow();
 
@@ -155,7 +155,7 @@ describe("desktop IPC security helpers", () => {
     const home = os.homedir();
     const workspaceFile = path.join(workspaceRoot, "inside.txt");
     const coworkSkillDir = path.join(home, ".cowork", "skills", "some-skill");
-    const agentSkillFile = path.join(home, ".agent", "skills", "other", "SKILL.md");
+    const agentSkillFile = path.join(home, ".cowork", "skills", "other", "SKILL.md");
     try {
       await fs.writeFile(workspaceFile, "inside workspace\n");
 

@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {
-  loadMCPConfigRegistry,
-  migrateLegacyMCPServers,
-  upsertWorkspaceMCPServer,
-} from "../src/mcp/configRegistry";
+import { loadMCPConfigRegistry, upsertWorkspaceMCPServer } from "../src/mcp/configRegistry";
 import type { AgentConfig } from "../src/types";
 
 function makeConfig(
@@ -23,8 +19,8 @@ function makeConfig(
     uploadsDirectory: path.join(workspaceRoot, "uploads"),
     userName: "tester",
     knowledgeCutoff: "unknown",
-    projectAgentDir: path.join(workspaceRoot, ".agent"),
-    userAgentDir: path.join(userHome, ".agent"),
+    projectCoworkDir: path.join(workspaceRoot, ".cowork"),
+    userCoworkDir: path.join(userHome, ".cowork"),
     workspaceAgentsDir: path.join(workspaceRoot, ".agents"),
     userAgentsDir: path.join(userHome, ".agents"),
     workspacePluginsDir: path.join(workspaceRoot, ".agents", "plugins"),
@@ -44,7 +40,7 @@ async function writeJson(filePath: string, value: unknown) {
 }
 
 describe("mcp config registry", () => {
-  test("workspace/user/system precedence includes legacy layers at lower priority", async () => {
+  test("workspace/user/system precedence ignores legacy .agent MCP files", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-registry-workspace-"));
     const home = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-registry-home-"));
     const builtInDir = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-registry-builtin-"));
@@ -71,17 +67,10 @@ describe("mcp config registry", () => {
       const shared = snapshot.servers.find((server) => server.name === "shared");
       expect(shared?.source).toBe("workspace");
 
-      // legacy-ws is now included from workspace_legacy
       const legacyWs = snapshot.servers.find((server) => server.name === "legacy-ws");
-      expect(legacyWs).toBeTruthy();
-      expect(legacyWs?.source).toBe("workspace_legacy");
-      expect(legacyWs?.inherited).toBe(false);
+      expect(legacyWs).toBeUndefined();
 
-      // legacy file metadata is accurate
-      expect(snapshot.legacy.workspace.exists).toBe(true);
-      const legacyFile = snapshot.files.find((f) => f.source === "workspace_legacy");
-      expect(legacyFile?.exists).toBe(true);
-      expect(legacyFile?.serverCount).toBe(1);
+      expect(snapshot.files.some((file) => file.source === "workspace" && file.legacy)).toBe(false);
     } finally {
       await fs.rm(workspace, { recursive: true, force: true });
       await fs.rm(home, { recursive: true, force: true });
@@ -576,7 +565,7 @@ describe("mcp config registry", () => {
     const config = makeConfig(workspace, home, builtInConfigDir);
 
     try {
-      await writeJson(path.join(workspace, ".agent", "mcp-servers.json"), {
+      await writeJson(path.join(workspace, ".cowork", "mcp-servers.json"), {
         servers: [{ name: "my-server", transport: { type: "stdio", command: "legacy-cmd" } }],
       });
       await writeJson(path.join(workspace, ".cowork", "mcp-servers.json"), {
@@ -594,7 +583,7 @@ describe("mcp config registry", () => {
     }
   });
 
-  test("user legacy servers are included when no user new-format equivalent exists", async () => {
+  test("user legacy .agent MCP files are not loaded", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-registry-user-legacy-"));
     const home = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-registry-user-legacy-home-"));
     const builtInConfigDir = await fs.mkdtemp(
@@ -611,13 +600,8 @@ describe("mcp config registry", () => {
 
       const snapshot = await loadMCPConfigRegistry(config);
       const server = snapshot.servers.find((s) => s.name === "user-legacy-server");
-      expect(server).toBeTruthy();
-      expect(server?.source).toBe("user_legacy");
-      expect(server?.inherited).toBe(true);
-
-      const legacyFile = snapshot.files.find((f) => f.source === "user_legacy");
-      expect(legacyFile?.exists).toBe(true);
-      expect(legacyFile?.serverCount).toBe(1);
+      expect(server).toBeUndefined();
+      expect(snapshot.files.some((file) => file.legacy)).toBe(false);
     } finally {
       await fs.rm(workspace, { recursive: true, force: true });
       await fs.rm(home, { recursive: true, force: true });
@@ -625,38 +609,4 @@ describe("mcp config registry", () => {
     }
   });
 
-  test("migrateLegacyMCPServers preserves existing .cowork entries and archives legacy file", async () => {
-    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-registry-migrate-workspace-"));
-    const home = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-registry-migrate-home-"));
-    const builtInConfigDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), "mcp-registry-migrate-builtin-"),
-    );
-    const config = makeConfig(workspace, home, builtInConfigDir);
-
-    try {
-      await upsertWorkspaceMCPServer(config, {
-        name: "existing",
-        transport: { type: "stdio", command: "echo", args: ["existing"] },
-      });
-      await writeJson(path.join(workspace, ".agent", "mcp-servers.json"), {
-        servers: [
-          { name: "existing", transport: { type: "stdio", command: "legacy-existing" } },
-          { name: "imported", transport: { type: "stdio", command: "legacy-imported" } },
-        ],
-      });
-
-      const result = await migrateLegacyMCPServers(config, "workspace");
-      expect(result.imported).toBe(1);
-      expect(result.skippedConflicts).toBe(1);
-      expect(result.archivedPath).toBeTruthy();
-
-      const raw = await fs.readFile(path.join(workspace, ".cowork", "mcp-servers.json"), "utf-8");
-      expect(raw).toContain("existing");
-      expect(raw).toContain("imported");
-    } finally {
-      await fs.rm(workspace, { recursive: true, force: true });
-      await fs.rm(home, { recursive: true, force: true });
-      await fs.rm(builtInConfigDir, { recursive: true, force: true });
-    }
-  });
 });

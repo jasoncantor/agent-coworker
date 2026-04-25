@@ -26,17 +26,17 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     workingDirectory: "/test/working",
     userName: "TestUser",
     knowledgeCutoff: "End of May 2025",
-    projectAgentDir: "/test/project/.agent",
-    userAgentDir: "/test/home/.agent",
+    projectCoworkDir: "/test/project/.cowork",
+    userCoworkDir: "/test/home/.cowork",
     builtInDir: repoRoot(),
     builtInConfigDir: path.join(repoRoot(), "config"),
     skillsDirs: [
-      "/test/project/.agent/skills",
-      "/test/home/.agent/skills",
+      "/test/project/.cowork/skills",
+      "/test/home/.cowork/skills",
       path.join(repoRoot(), "skills"),
     ],
-    memoryDirs: ["/test/project/.agent/memory", "/test/home/.agent/memory"],
-    configDirs: ["/test/project/.agent", "/test/home/.agent", path.join(repoRoot(), "config")],
+    memoryDirs: ["/test/project/.cowork/memory", "/test/home/.cowork/memory"],
+    configDirs: ["/test/project/.cowork", "/test/home/.cowork", path.join(repoRoot(), "config")],
   };
   return { ...base, ...overrides };
 }
@@ -98,7 +98,7 @@ describe("buildDirectoryTreeLines", () => {
 describe("buildWorkspaceMapSection", () => {
   test("omits node_modules but lists package.json, apps, and packages", async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ws-map-deps-"));
-    const agentDir = path.join(tmp, ".agent");
+    const agentDir = path.join(tmp, ".cowork");
     await fs.mkdir(agentDir, { recursive: true });
     await fs.writeFile(path.join(tmp, "package.json"), "{}");
     await fs.writeFile(path.join(tmp, "AGENTS.md"), "# repo");
@@ -112,7 +112,7 @@ describe("buildWorkspaceMapSection", () => {
 
     const config = makeConfig({
       workingDirectory: tmp,
-      projectAgentDir: agentDir,
+      projectCoworkDir: agentDir,
     });
     const section = buildWorkspaceMapSection(config);
     expect(section).toContain("## Workspace Map");
@@ -126,13 +126,13 @@ describe("buildWorkspaceMapSection", () => {
 
   test("shows a single tree when workspace root, working directory, and git root match", async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ws-map-one-"));
-    const agentDir = path.join(tmp, ".agent");
+    const agentDir = path.join(tmp, ".cowork");
     await fs.mkdir(agentDir, { recursive: true });
     await fs.mkdir(path.join(tmp, ".git"), { recursive: true });
 
     const config = makeConfig({
       workingDirectory: tmp,
-      projectAgentDir: agentDir,
+      projectCoworkDir: agentDir,
     });
     const section = buildWorkspaceMapSection(config);
     const headings = (section.match(/^### /gm) ?? []).length;
@@ -142,7 +142,7 @@ describe("buildWorkspaceMapSection", () => {
 
   test("shows workspace and working directory trees when cwd differs", async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ws-map-two-"));
-    const agentDir = path.join(tmp, ".agent");
+    const agentDir = path.join(tmp, ".cowork");
     await fs.mkdir(agentDir, { recursive: true });
     await fs.mkdir(path.join(tmp, ".git"), { recursive: true });
     const sub = path.join(tmp, "sub");
@@ -151,7 +151,7 @@ describe("buildWorkspaceMapSection", () => {
 
     const config = makeConfig({
       workingDirectory: sub,
-      projectAgentDir: agentDir,
+      projectCoworkDir: agentDir,
     });
     const section = buildWorkspaceMapSection(config);
     expect(section).toContain("### Workspace root");
@@ -170,14 +170,14 @@ describe("WORKSPACE_MAP_IGNORED_DIRS", () => {
 describe("prompt integration", () => {
   test("loadSystemPromptWithSkills and loadAgentPrompt include Workspace Map", async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ws-map-prompt-"));
-    const agentDir = path.join(tmp, ".agent");
+    const agentDir = path.join(tmp, ".cowork");
     await fs.mkdir(agentDir, { recursive: true });
     await fs.mkdir(path.join(tmp, ".git"), { recursive: true });
     await fs.writeFile(path.join(tmp, "package.json"), "{}");
 
     const config = makeConfig({
       workingDirectory: tmp,
-      projectAgentDir: agentDir,
+      projectCoworkDir: agentDir,
     });
 
     const { prompt: mainPrompt } = await loadSystemPromptWithSkills(config);
@@ -189,13 +189,13 @@ describe("prompt integration", () => {
 
   test("does not duplicate project instructions in main system prompt (template already has user profile)", async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ws-map-proj-"));
-    const agentDir = path.join(tmp, ".agent");
+    const agentDir = path.join(tmp, ".cowork");
     await fs.mkdir(agentDir, { recursive: true });
     await fs.mkdir(path.join(tmp, ".git"), { recursive: true });
 
     const config = makeConfig({
       workingDirectory: tmp,
-      projectAgentDir: agentDir,
+      projectCoworkDir: agentDir,
       userProfile: { instructions: "Use pnpm only." },
     });
 
@@ -207,13 +207,13 @@ describe("prompt integration", () => {
 
   test("subagent prompt includes project instructions section when set (subagent templates omit user profile)", async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "ws-map-sub-proj-"));
-    const agentDir = path.join(tmp, ".agent");
+    const agentDir = path.join(tmp, ".cowork");
     await fs.mkdir(agentDir, { recursive: true });
     await fs.mkdir(path.join(tmp, ".git"), { recursive: true });
 
     const config = makeConfig({
       workingDirectory: tmp,
-      projectAgentDir: agentDir,
+      projectCoworkDir: agentDir,
       userProfile: { instructions: "Use pnpm only." },
     });
 
@@ -231,13 +231,13 @@ describe("prompt integration", () => {
     await fs.writeFile(path.join(tmp, "AGENTS.md"), "ROOT AGENTS CONTENT\n", "utf-8");
 
     const app = path.join(tmp, "apps", "web");
-    const agentDir = path.join(app, ".agent");
+    const agentDir = path.join(app, ".cowork");
     await fs.mkdir(agentDir, { recursive: true });
     await fs.writeFile(path.join(app, "AGENTS.md"), "APP WEB CONTENT\n", "utf-8");
 
     const config = makeConfig({
       workingDirectory: app,
-      projectAgentDir: agentDir,
+      projectCoworkDir: agentDir,
     });
 
     const { prompt: mainPrompt } = await loadSystemPromptWithSkills(config);
@@ -267,7 +267,7 @@ describe("prompt integration", () => {
 
     const config = makeConfig({
       workingDirectory: app,
-      projectAgentDir: path.join(tmp, ".agent"),
+      projectCoworkDir: path.join(tmp, ".cowork"),
     });
 
     const { prompt: mainPrompt } = await loadSystemPromptWithSkills(config);

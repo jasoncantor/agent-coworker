@@ -11,7 +11,7 @@ type ActiveWorkspaceContext = {
   workingDirectoryRelation: string;
   outputDirectory?: string;
   effectiveUploadsDirectory: string;
-  projectAgentDir: string;
+  projectCoworkDir: string;
 };
 
 function findGitRootSync(startDir: string): string | undefined {
@@ -83,7 +83,7 @@ export function deriveActiveWorkspaceContext(
   config: AgentConfig,
   platform: NodeJS.Platform = process.platform,
 ): ActiveWorkspaceContext {
-  const workspaceRoot = path.dirname(config.projectAgentDir);
+  const workspaceRoot = path.dirname(config.projectCoworkDir);
   const executionCwd = config.workingDirectory;
 
   return {
@@ -94,7 +94,7 @@ export function deriveActiveWorkspaceContext(
     outputDirectory: config.outputDirectory,
     effectiveUploadsDirectory:
       config.uploadsDirectory ?? path.resolve(config.workingDirectory, "User Uploads"),
-    projectAgentDir: config.projectAgentDir,
+    projectCoworkDir: config.projectCoworkDir,
   };
 }
 
@@ -123,9 +123,9 @@ export function renderActiveWorkspaceContextSection(
 
   lines.push(
     `- Uploads directory: ${context.effectiveUploadsDirectory}`,
-    `- Project config, memory, and MCP overrides: ${context.projectAgentDir}`,
+    `- Project config, memory, and MCP overrides: ${context.projectCoworkDir}`,
     "- Path rule: `bash`, `read`, `write`, `glob`, and `grep` default to the execution working directory.",
-    `- Path rule: project config, memory, and MCP overrides live under ${context.projectAgentDir}.`,
+    `- Path rule: project config, memory, and MCP overrides live under ${context.projectCoworkDir}.`,
   );
 
   return lines.join("\n");

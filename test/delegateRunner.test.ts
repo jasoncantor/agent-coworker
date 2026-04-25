@@ -14,8 +14,8 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     uploadsDirectory: `${dir}/uploads`,
     userName: "",
     knowledgeCutoff: "unknown",
-    projectAgentDir: `${dir}/.agent`,
-    userAgentDir: `${dir}/.agent-user`,
+    projectCoworkDir: `${dir}/.cowork`,
+    userCoworkDir: `${dir}/.agent-user`,
     builtInDir: dir,
     builtInConfigDir: `${dir}/config`,
     skillsDirs: [],
@@ -151,7 +151,7 @@ describe("DelegateRunner", () => {
       }),
     );
     expect(runTurn.mock.calls[0]?.[0]?.system).toContain(
-      `- Workspace root: ${path.dirname(config.projectAgentDir)}`,
+      `- Workspace root: ${path.dirname(config.projectCoworkDir)}`,
     );
     expect(runTurn.mock.calls[0]?.[0]?.system).toContain(
       `- Execution working directory: ${config.workingDirectory}`,

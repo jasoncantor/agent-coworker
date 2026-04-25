@@ -508,8 +508,8 @@ export class AgentSession {
     };
 
     this.memoryStore = new MemoryStore(
-      `${opts.config.projectAgentDir}/memory.sqlite`,
-      `${opts.config.userAgentDir}/memory.sqlite`,
+      `${opts.config.projectCoworkDir}/memory.sqlite`,
+      `${opts.config.userCoworkDir}/memory.sqlite`,
     );
 
     this.deps = {
@@ -1431,11 +1431,6 @@ export class AgentSession {
   async setMcpServerApiKey(nameRaw: string, apiKeyRaw: string) {
     await this.getMcpManager().setApiKey(nameRaw, apiKeyRaw);
   }
-
-  async migrateLegacyMcpServers(scope: "workspace" | "user") {
-    await this.getMcpManager().migrate(scope);
-  }
-
   getHarnessContext() {
     this.metadataManager.getHarnessContext();
   }

@@ -119,7 +119,6 @@ function transportSummary(server: McpUpsertServer) {
 export default function McpServersScreen() {
   const theme = useAppTheme();
   const servers = useMcpStore((s) => s.servers);
-  const legacy = useMcpStore((s) => s.legacy);
   const files = useMcpStore((s) => s.files);
   const warnings = useMcpStore((s) => s.warnings);
   const validationByName = useMcpStore((s) => s.validationByName);
@@ -132,7 +131,6 @@ export default function McpServersScreen() {
   const authorizeServer = useMcpStore((s) => s.authorizeServer);
   const callbackServer = useMcpStore((s) => s.callbackServer);
   const setServerApiKey = useMcpStore((s) => s.setServerApiKey);
-  const migrateLegacy = useMcpStore((s) => s.migrateLegacy);
   const lastAuthChallenge = useMcpStore((s) => s.lastAuthChallenge);
   const lastAuthResult = useMcpStore((s) => s.lastAuthResult);
   const isConnected = usePairingStore((s) => isWorkspaceConnectionReady(s.connectionState));
@@ -544,40 +542,6 @@ export default function McpServersScreen() {
           >
             <Text style={{ color: theme.primaryText, fontWeight: "700" }}>Add integration</Text>
           </Pressable>
-          {legacy?.workspace.exists ? (
-            <Pressable
-              onPress={() => {
-                void migrateLegacy("workspace");
-              }}
-              style={({ pressed }) => ({
-                borderRadius: 999,
-                borderWidth: 1,
-                borderColor: theme.border,
-                backgroundColor: pressed ? theme.surfaceMuted : "transparent",
-                paddingHorizontal: 16,
-                paddingVertical: 11,
-              })}
-            >
-              <Text style={{ color: theme.text, fontWeight: "700" }}>Migrate workspace legacy</Text>
-            </Pressable>
-          ) : null}
-          {legacy?.user.exists ? (
-            <Pressable
-              onPress={() => {
-                void migrateLegacy("user");
-              }}
-              style={({ pressed }) => ({
-                borderRadius: 999,
-                borderWidth: 1,
-                borderColor: theme.border,
-                backgroundColor: pressed ? theme.surfaceMuted : "transparent",
-                paddingHorizontal: 16,
-                paddingVertical: 11,
-              })}
-            >
-              <Text style={{ color: theme.text, fontWeight: "700" }}>Migrate user legacy</Text>
-            </Pressable>
-          ) : null}
         </View>
       </SectionCard>
 

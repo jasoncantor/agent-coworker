@@ -20,7 +20,6 @@ export type McpUpsertServer = JsonRpcControlRequest<"cowork/mcp/server/upsert">[
 
 type McpStoreState = {
   servers: McpServerEntry[];
-  legacy: McpServersEvent["legacy"] | null;
   files: McpServersEvent["files"];
   warnings: string[];
   validationByName: Record<string, McpValidationState>;
@@ -50,7 +49,6 @@ type McpStoreState = {
   authorizeServer(name: string): Promise<void>;
   callbackServer(name: string, code?: string): Promise<void>;
   setServerApiKey(name: string, apiKey: string): Promise<void>;
-  migrateLegacy(scope: "workspace" | "user"): Promise<void>;
   clear(): void;
 };
 
@@ -65,7 +63,6 @@ function getClientAndCwd() {
 function applyServersEvent(event: McpServersEvent) {
   return {
     servers: event.servers,
-    legacy: event.legacy,
     files: event.files,
     warnings: event.warnings ?? [],
   };
@@ -73,7 +70,6 @@ function applyServersEvent(event: McpServersEvent) {
 
 export const useMcpStore = create<McpStoreState>((set, get) => ({
   servers: [],
-  legacy: null,
   files: [],
   warnings: [],
   validationByName: {},
@@ -248,30 +244,9 @@ export const useMcpStore = create<McpStoreState>((set, get) => ({
     }
   },
 
-  async migrateLegacy(scope: "workspace" | "user") {
-    const { client, cwd } = getClientAndCwd();
-    set({ loading: true, error: null });
-    try {
-      const result = await callParsedControlMethod(client, "cowork/mcp/legacy/migrate", {
-        cwd,
-        scope,
-      });
-      set({
-        ...applyServersEvent(result.event),
-        loading: false,
-      });
-    } catch (error) {
-      set({
-        loading: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  },
-
   clear() {
     set({
       servers: [],
-      legacy: null,
       files: [],
       warnings: [],
       validationByName: {},

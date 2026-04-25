@@ -64,7 +64,7 @@ When adding a new WebSocket message or event:
 ## Security & Configuration Tips
 
 - Don’t commit secrets or local state. `.env`, `.agent/`, `.cowork/`, `output/`, and `uploads/` are gitignored.
-- Prefer environment variables (e.g. `OPENAI_API_KEY`) and local `.agent/config.json` / `.agent/mcp-servers.json` for developer setup. MCP server configs, auth, and session backups also live in `.cowork/` (project-level or `~/.cowork/`).
+- Prefer environment variables (e.g. `OPENAI_API_KEY`) and local `.cowork/config.json` / `.cowork/mcp-servers.json` for developer setup. MCP server configs, auth, and session backups also live in `.cowork/` (project-level or `~/.cowork/`).
 - `--yolo` bypasses command approvals; use only for local experiments.
 - Make commits liberally as you go with meaningful detailed messages.
 
@@ -186,7 +186,10 @@ Durable rules distilled from prior corrections. Apply before editing, not after.
 ### Repo-Specific Contracts
 - **Auth home**: `~/.cowork` is the only auth home. Never derive auth from a workspace `.agent` path. Pin `HOME` in tests that fabricate auth state.
 - **Codex auth**: lives only at `~/.cowork/auth/codex-cli/auth.json`. No copies, restores, or fallbacks to other tool stores.
+- **Canonical config roots**: `.cowork/` and `~/.cowork/` are the only runtime config/skills/memory/MCP namespaces; support legacy `.agent` only through an explicit one-time migration command, not permanent dual lookups.
 - **Workspace settings**: any new field must round-trip through `PersistenceService.sanitizeWorkspaces()` — partial sanitizer updates silently drop fields on save/load. Audit every new field, not just the headline one.
+- **Checkpoints/backups**: keep backups and checkpoints opt-in; prefer git-native worktrees/stash/diffs for git workspaces and manual snapshots for non-git workspaces over auto-wired core backup flows.
+- **Skill refreshes**: avoid background polling for skill metadata; refresh on explicit UI/server actions, `fs.watch` notifications, or before turns when skill directory mtimes changed.
 - **Tool prompt guidance**: use actual callable tool IDs (`bash`, `glob`, `grep`); generic names like `shell`/`search` route the model into nonexistent calls.
 - **JSON-RPC projector**: item IDs must be occurrence-stable within a turn. Always forward `itemId` on `item/agentMessage/delta`. Close the current assistant item before reasoning/tool phases. Don't key assistant items only by `turnId`.
 - **New provider**: audit every provider-gated tool factory in `src/tools/` and add a `createTools(...)` regression — missing branches crash PI tool mapping before the turn starts.

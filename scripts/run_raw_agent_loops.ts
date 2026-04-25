@@ -2162,27 +2162,29 @@ async function main() {
     config.harness = resolveRawLoopHarnessConfig(config.harness, cliArgs);
 
     // Keep memory local to the run folder so artifacts can be captured per-run.
-    const localProjectAgentDir = path.join(runDir, ".agent");
-    const localUserAgentDir = path.join(runDir, ".agent-user");
+    const localProjectCoworkDir = path.join(runDir, ".cowork");
+    const localUserCoworkDir = path.join(runDir, ".cowork-user");
     const hasProjectSkillsDir = Boolean(config.skillsDirs[0]);
     const coworkSkillsDir = config.skillsDirs[1] || "";
-    const hasUserSkillsDir = Boolean(config.skillsDirs[2]);
-    const trailingSkillDirs = config.skillsDirs.slice(3);
-    config.projectAgentDir = localProjectAgentDir;
-    config.userAgentDir = localUserAgentDir;
+    const trailingSkillDirs = config.skillsDirs.slice(2);
+    config.projectCoworkDir = localProjectCoworkDir;
+    config.userCoworkDir = localUserCoworkDir;
     config.skillsDirs = [
-      hasProjectSkillsDir ? path.join(localProjectAgentDir, "skills") : "",
+      hasProjectSkillsDir ? path.join(localProjectCoworkDir, "skills") : "",
       coworkSkillsDir,
-      hasUserSkillsDir ? path.join(localUserAgentDir, "skills") : "",
       ...trailingSkillDirs,
     ].filter(Boolean);
     config.memoryDirs = [
-      path.join(localProjectAgentDir, "memory"),
-      path.join(localUserAgentDir, "memory"),
+      path.join(localProjectCoworkDir, "memory"),
+      path.join(localUserCoworkDir, "memory"),
     ];
-    config.configDirs = [localProjectAgentDir, localUserAgentDir, config.builtInConfigDir];
+    config.configDirs = [
+      localProjectCoworkDir,
+      path.join(localUserCoworkDir, "config"),
+      config.builtInConfigDir,
+    ];
 
-    await ensureDir(config.projectAgentDir);
+    await ensureDir(config.projectCoworkDir);
     const observabilityStartHealthBefore = getObservabilityHealth(config);
     await emitHarnessRunEvent(
       config,

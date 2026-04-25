@@ -148,7 +148,7 @@ Model Context Protocol servers extend the agent with external tools:
 2. `~/.cowork/config/mcp-servers.json` (user)
 3. `config/mcp-servers.json` (built-in)
 
-### 6. Skills (`skills/`, `.agent/skills/`)
+### 6. Skills (`skills/`, `.cowork/skills/`)
 
 Domain-specific instruction packages loaded on demand:
 
@@ -162,10 +162,9 @@ skills/
 
 Skills are discovered from layered directories:
 
-1. Project: `.agent/skills/`
+1. Project: `.cowork/skills/`
 2. Global: `~/.cowork/skills/`
-3. User: `~/.agent/skills/`
-4. Built-in: `skills/`
+3. Built-in: `skills/`
 
 ### 7. Observability (`src/observability/`)
 
@@ -242,13 +241,13 @@ Configuration merges across three tiers (each overrides the previous):
                      │ overrides
                      ▼
 ┌─────────────────────────────────────────┐
-│ Project Config (.agent/config.json)     │
+│ Project Config (.cowork/config.json)    │
 │ Project-specific settings               │
 └────────────────────┬────────────────────┘
                      │ overrides
                      ▼
 ┌─────────────────────────────────────────┐
-│ User Config (~/.agent/config.json)      │
+│ User Config (~/.cowork/config/config.json) │
 │ User's global defaults                  │
 └────────────────────┬────────────────────┘
                      │ overrides

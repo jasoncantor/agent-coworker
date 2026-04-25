@@ -119,6 +119,6 @@ export class SessionRuntimeSupport {
   }
 
   private getUserHomeDir(): string | undefined {
-    return resolveCoworkHomedir(this.opts.state.config.userAgentDir);
+    return resolveCoworkHomedir(this.opts.state.config.userCoworkDir);
   }
 }

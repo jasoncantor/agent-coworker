@@ -40,7 +40,7 @@ describe("Fireworks AI provider", () => {
   test("loadConfig accepts a supported non-default fireworks model", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "fireworks",
       model: "accounts/fireworks/models/kimi-k2p5",
       preferredChildModel: "accounts/fireworks/models/kimi-k2p5",

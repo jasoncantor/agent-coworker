@@ -26,8 +26,8 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     uploadsDirectory: path.join(base, "uploads"),
     userName: "tester",
     knowledgeCutoff: "2025-01",
-    projectAgentDir: path.join(base, ".agent"),
-    userAgentDir: path.join(base, ".agent-user"),
+    projectCoworkDir: path.join(base, ".cowork"),
+    userCoworkDir: path.join(base, ".agent-user"),
     builtInDir: base,
     builtInConfigDir: path.join(base, "config"),
     skillsDirs: [],
@@ -45,7 +45,7 @@ async function makeTempWorkspaceConfig(
   return {
     workspaceRoot,
     config: makeConfig({
-      projectAgentDir: path.join(workspaceRoot, ".agent"),
+      projectCoworkDir: path.join(workspaceRoot, ".cowork"),
       workingDirectory: workspaceRoot,
       outputDirectory: path.join(workspaceRoot, "output"),
       uploadsDirectory: undefined,
@@ -158,7 +158,7 @@ describe("runTurn", () => {
     expect(callArg.system).toContain("Custom system prompt");
     expect(callArg.system).toContain("## Active Workspace Context");
     expect(callArg.system).toContain(
-      `- Workspace root: ${path.dirname(params.config.projectAgentDir)}`,
+      `- Workspace root: ${path.dirname(params.config.projectCoworkDir)}`,
     );
     expect(callArg.system).toContain(
       `- Execution working directory: ${params.config.workingDirectory}`,
@@ -229,7 +229,7 @@ describe("runTurn", () => {
     expect(system).toContain("- Working directory relation: same as workspace root");
     expect(system).toContain(`- Uploads directory: ${path.resolve(workspaceRoot, "User Uploads")}`);
     expect(system).toContain(
-      `- Project config, memory, and MCP overrides: ${path.join(workspaceRoot, ".agent")}`,
+      `- Project config, memory, and MCP overrides: ${path.join(workspaceRoot, ".cowork")}`,
     );
     expect(system).toContain(
       "- Path rule: `bash`, `read`, `write`, `glob`, and `grep` default to the execution working directory.",
@@ -241,7 +241,7 @@ describe("runTurn", () => {
     const insideDir = path.join(workspaceRoot, "packages", "cli");
     await fs.mkdir(insideDir, { recursive: true });
     const config = makeConfig({
-      projectAgentDir: path.join(workspaceRoot, ".agent"),
+      projectCoworkDir: path.join(workspaceRoot, ".cowork"),
       workingDirectory: insideDir,
       uploadsDirectory: undefined,
     });
@@ -262,7 +262,7 @@ describe("runTurn", () => {
     const outsideDir = path.join(outsideRoot, "scratch");
     await fs.mkdir(outsideDir, { recursive: true });
     const config = makeConfig({
-      projectAgentDir: path.join(workspaceRoot, ".agent"),
+      projectCoworkDir: path.join(workspaceRoot, ".cowork"),
       workingDirectory: outsideDir,
       uploadsDirectory: undefined,
     });
@@ -284,7 +284,7 @@ describe("runTurn", () => {
     await fs.mkdir(path.join(outsideRoot, ".git"), { recursive: true });
     await fs.mkdir(outsideDir, { recursive: true });
     const config = makeConfig({
-      projectAgentDir: path.join(workspaceRoot, ".agent"),
+      projectCoworkDir: path.join(workspaceRoot, ".cowork"),
       workingDirectory: outsideDir,
       uploadsDirectory: undefined,
     });
@@ -295,37 +295,37 @@ describe("runTurn", () => {
     expect(system).not.toContain(`- Git root: ${workspaceRoot}`);
   });
 
-  test("buildTurnSystemPrompt rewrites legacy project .agent guidance for off-root working directories", () => {
+  test("buildTurnSystemPrompt rewrites project .cowork guidance for off-root working directories", () => {
     const workspaceRoot = "/tmp/workspace-root";
     const config = makeConfig({
-      projectAgentDir: path.join(workspaceRoot, ".agent"),
+      projectCoworkDir: path.join(workspaceRoot, ".cowork"),
       workingDirectory: "/tmp/outside-workdir",
       uploadsDirectory: undefined,
     });
     const system = buildTurnSystemPrompt(
       [
-        "- **Project-level** (`.agent/` in the current working directory): Per-project overrides — project-specific skills, memory, config, and MCP servers.",
-        "- Skills: `.agent/skills/`, `~/.cowork/skills/`, `~/.agent/skills/`, and built-in `skills/` are all scanned in that order. For duplicate names, higher-priority tiers win.",
-        "- Memory: `.agent/AGENT.md` (project hot cache) → `~/.agent/AGENT.md` (user hot cache). Deep storage in `.agent/memory/` and `~/.agent/memory/`.",
-        "- MCP: `.agent/mcp-servers.json` merged with `~/.agent/mcp-servers.json`. Same-named servers: project wins.",
-        "- Config: `.agent/config.json` merged over `~/.agent/config.json` over built-in defaults.",
-        "User-created skills can be placed in `~/.cowork/skills/{name}/SKILL.md` (shared across projects), `~/.agent/skills/{name}/SKILL.md` (user-level), or `.agent/skills/{name}/SKILL.md` (project-only).",
+        "- **Project-level** (`.cowork/` in the current working directory): Per-project overrides — project-specific skills, memory, config, and MCP servers.",
+        "- Skills: `.cowork/skills/`, `~/.cowork/skills/`, and built-in `skills/` are all scanned in that order. For duplicate names, higher-priority tiers win.",
+        "- Memory: `.cowork/AGENT.md` (project hot cache) → `~/.cowork/AGENT.md` (user hot cache). Deep storage in `.cowork/memory/` and `~/.cowork/memory/`.",
+        "- MCP: `.cowork/mcp-servers.json` merged with `~/.cowork/config/mcp-servers.json`. Same-named servers: project wins.",
+        "- Config: `.cowork/config.json` merged over `~/.cowork/config/config.json` over built-in defaults.",
+        "User-created skills can be placed in `~/.cowork/skills/{name}/SKILL.md` (shared across projects) or `.cowork/skills/{name}/SKILL.md` (project-only).",
       ].join("\n"),
       config,
       [],
     );
 
     expect(system).not.toContain("current working directory");
-    expect(system).toContain(`\`${path.join(workspaceRoot, ".agent", "config.json")}\``);
-    expect(system).toContain(`\`${path.join(workspaceRoot, ".agent", "mcp-servers.json")}\``);
+    expect(system).toContain(`\`${path.join(workspaceRoot, ".cowork", "config.json")}\``);
+    expect(system).toContain(`\`${path.join(workspaceRoot, ".cowork", "mcp-servers.json")}\``);
     expect(system).toContain(
-      `\`${path.join(workspaceRoot, ".agent", "skills", "{name}", "SKILL.md")}\``,
+      `\`${path.join(workspaceRoot, ".cowork", "skills", "{name}", "SKILL.md")}\``,
     );
   });
 
   test("deriveActiveWorkspaceContext keeps unresolved macOS case-only path changes outside the workspace", () => {
     const config = makeConfig({
-      projectAgentDir: "/Users/max/Repo/.agent",
+      projectCoworkDir: "/Users/max/Repo/.cowork",
       workingDirectory: "/users/max/repo",
       uploadsDirectory: undefined,
     });
@@ -349,7 +349,7 @@ describe("runTurn", () => {
       });
     }) as typeof fsSync.realpathSync;
     const config = makeConfig({
-      projectAgentDir: "/Users/max/Repo/.agent",
+      projectCoworkDir: "/Users/max/Repo/.cowork",
       workingDirectory: "/users/max/repo",
       uploadsDirectory: undefined,
     });
@@ -381,7 +381,7 @@ describe("runTurn", () => {
     const callArg = mockStreamText.mock.calls[0][0] as any;
     expect(callArg.system).toContain("## Active Workspace Context");
     expect(callArg.system).toContain(
-      `- Workspace root: ${path.dirname(params.config.projectAgentDir)}`,
+      `- Workspace root: ${path.dirname(params.config.projectCoworkDir)}`,
     );
     expect(callArg.system).toContain("## Active Harness Context");
     expect(callArg.system).toContain("- Run ID: run-ctx");

@@ -8,6 +8,7 @@ globalSettings.AI_SDK_LOG_WARNINGS = false;
 
 function printUsage() {
   console.log("Usage: cowork [--dir <directory_path>] [--yolo] [--cli]");
+  console.log("       cowork migrate-agent-config [--dir <directory_path>]");
   console.log("");
   console.log("This launches the CLI REPL. For the desktop app, use 'bun run start'");
   console.log("or 'bun run desktop:dev'.");
@@ -31,6 +32,15 @@ async function main() {
     console.error("");
     printUsage();
     process.exitCode = 1;
+    return;
+  }
+
+  if (args.command === "migrate-agent-config") {
+    const [{ migrateAgentConfig, formatAgentConfigMigrationReport }, { resolveAndValidateDir }] =
+      await Promise.all([import("./migrateAgentConfig"), import("./cli/repl")]);
+    const cwd = args.dir ? await resolveAndValidateDir(args.dir) : process.cwd();
+    const result = await migrateAgentConfig({ cwd });
+    console.log(formatAgentConfigMigrationReport(result));
     return;
   }
 

@@ -6,7 +6,7 @@ import type { StartAgentServerOptions } from "../../src/server/startServer";
 
 export async function makeTmpProject(prefix = "agent-harness-ws-"): Promise<string> {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
-  await fs.mkdir(path.join(tmp, ".agent"), { recursive: true });
+  await fs.mkdir(path.join(tmp, ".cowork"), { recursive: true });
   return tmp;
 }
 

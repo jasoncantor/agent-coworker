@@ -165,10 +165,6 @@ function setDefaultHandlers(workspacePath = "/tmp/workspace") {
           authMessage: "",
         },
       ],
-      legacy: {
-        workspace: { path: `${workspacePath}/.agent/mcp-servers.json`, exists: true },
-        user: { path: "/tmp/home/.agent/mcp-servers.json", exists: false },
-      },
       files: [
         {
           source: "workspace",
@@ -191,7 +187,7 @@ function setDefaultHandlers(workspacePath = "/tmp/workspace") {
           serverCount: 1,
         },
       ],
-      warnings: ["workspace_legacy: invalid JSON"],
+      warnings: ["workspace: invalid JSON"],
     },
   }));
 }
@@ -307,8 +303,8 @@ describe("workspace MCP editor flow", () => {
           },
         ],
         legacy: {
-          workspace: { path: "/tmp/workspace/.agent/mcp-servers.json", exists: false },
-          user: { path: "/tmp/home/.agent/mcp-servers.json", exists: false },
+          workspace: { path: "/tmp/workspace/.cowork/mcp-servers.json", exists: false },
+          user: { path: "/tmp/home/.cowork/mcp-servers.json", exists: false },
         },
         files: [
           {
@@ -342,42 +338,5 @@ describe("workspace MCP editor flow", () => {
     const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
     expect(runtime?.mcpServers).toHaveLength(1);
     expect(runtime?.mcpServers[0]?.name).toBe("local");
-  });
-
-  test("migrateWorkspaceMcpLegacy routes through cowork/mcp/legacy/migrate and refreshes editor metadata", async () => {
-    jsonRpcHandlers.set("cowork/mcp/legacy/migrate", async () => ({
-      event: {
-        type: "mcp_servers",
-        sessionId: "jsonrpc-control",
-        servers: [],
-        legacy: {
-          workspace: { path: "/tmp/workspace/.agent/mcp-servers.json", exists: false },
-          user: { path: "/tmp/home/.agent/mcp-servers.json", exists: false },
-        },
-        files: [
-          {
-            source: "workspace",
-            path: "/tmp/workspace/.cowork/mcp-servers.json",
-            exists: true,
-            editable: true,
-            legacy: false,
-            serverCount: 0,
-          },
-        ],
-        warnings: [],
-      },
-    }));
-
-    await useAppStore.getState().migrateWorkspaceMcpLegacy(workspaceId, "workspace");
-
-    const request = jsonRpcRequests.find((entry) => entry.method === "cowork/mcp/legacy/migrate");
-    expect(request?.params).toMatchObject({
-      cwd: "/tmp/workspace",
-      scope: "workspace",
-    });
-
-    const runtime = useAppStore.getState().workspaceRuntimeById[workspaceId];
-    expect(runtime?.mcpFiles[0]?.legacy).toBe(false);
-    expect(runtime?.mcpWarnings).toEqual([]);
   });
 });

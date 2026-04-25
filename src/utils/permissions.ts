@@ -13,7 +13,7 @@ const READ_ROOT_LABEL =
   "workingDirectory/outputDirectory/uploadsDirectory/project root/skills directories/plugin roots";
 
 function writeRoots(config: AgentConfig): string[] {
-  const projectRoot = path.dirname(config.projectAgentDir);
+  const projectRoot = path.dirname(config.projectCoworkDir);
   return [
     projectRoot,
     config.workingDirectory,

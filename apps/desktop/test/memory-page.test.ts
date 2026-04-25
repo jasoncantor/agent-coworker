@@ -106,7 +106,6 @@ describe("desktop memory page", () => {
           controlSessionConfig: null,
           controlEnableMcp: true,
           mcpServers: [],
-          mcpLegacy: null,
           mcpFiles: [],
           mcpWarnings: [],
           mcpValidationByName: {},

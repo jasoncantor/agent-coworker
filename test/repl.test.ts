@@ -339,7 +339,7 @@ describe("REPL command parsing", () => {
   // TODO: Integration tests that start runCliRepl with mocked readline and
   // verify actual console output are difficult because runCliRepl:
   //   1. Calls loadConfig which reads real filesystem config
-  //   2. Creates directories (projectAgentDir, outputDirectory, uploadsDirectory)
+  //   2. Creates directories (projectCoworkDir, outputDirectory, uploadsDirectory)
   //   3. Binds to process.stdin via readline
   //
   // A full integration test would require mock.module() for:

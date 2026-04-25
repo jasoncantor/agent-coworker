@@ -7,8 +7,8 @@ Harness observability uses Langfuse's OpenTelemetry processor/runtime and export
 The harness resolves observability from the same layered config path as the rest of `AgentConfig`:
 
 1. Environment variables
-2. Project `.agent/config.json`
-3. User `~/.agent/config.json`
+2. Project `.cowork/config.json`
+3. User `~/.cowork/config/config.json`
 4. Built-in `config/defaults.json`
 
 `AGENT_OBSERVABILITY_ENABLED` overrides the top-level `observabilityEnabled` boolean. Langfuse connection fields can come from environment variables or the `observability` config object.

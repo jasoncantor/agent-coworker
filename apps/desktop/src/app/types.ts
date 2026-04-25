@@ -373,7 +373,6 @@ export type WorkspaceRuntime = {
   controlSessionConfig: SessionConfigSubset | null;
   controlEnableMcp: boolean | null;
   mcpServers: MCPServersEvent["servers"];
-  mcpLegacy: MCPServersEvent["legacy"] | null;
   mcpFiles: MCPServersEvent["files"];
   mcpWarnings: string[];
   mcpValidationByName: Record<string, MCPServerValidationEvent>;

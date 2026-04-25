@@ -57,8 +57,8 @@ function normalizeDocument(value: unknown): PluginOverrideDocument {
 }
 
 function buildConfigPaths(config: AgentConfig): { workspace: string; user: string } {
-  const workspaceRoot = path.dirname(config.projectAgentDir);
-  const userHome = resolveCoworkHomedir(config.userAgentDir);
+  const workspaceRoot = path.dirname(config.projectCoworkDir);
+  const userHome = resolveCoworkHomedir(config.userCoworkDir);
   const coworkPaths = getAiCoworkerPaths({ homedir: userHome });
   return {
     workspace: path.join(workspaceRoot, ".cowork", "plugins.json"),

@@ -398,7 +398,7 @@ function rebaseAbsolutePathWithinWorkspace(
 }
 
 export function rebaseWorkspaceConfig(config: AgentConfig, cwd: string): AgentConfig {
-  const previousWorkspaceRoot = path.dirname(config.projectAgentDir);
+  const previousWorkspaceRoot = path.dirname(config.projectCoworkDir);
   if (previousWorkspaceRoot === cwd) {
     return {
       ...config,
@@ -406,7 +406,7 @@ export function rebaseWorkspaceConfig(config: AgentConfig, cwd: string): AgentCo
     };
   }
 
-  const projectAgentDir = path.join(cwd, ".agent");
+  const projectCoworkDir = path.join(cwd, ".cowork");
   const workspaceAgentsDir = path.join(cwd, ".agents");
   const workspacePluginsDir = path.join(workspaceAgentsDir, "plugins");
   const builtInSkillsDir = path.join(config.builtInDir, "skills");
@@ -415,7 +415,7 @@ export function rebaseWorkspaceConfig(config: AgentConfig, cwd: string): AgentCo
   return {
     ...config,
     workingDirectory: cwd,
-    projectAgentDir,
+    projectCoworkDir,
     workspaceAgentsDir,
     workspacePluginsDir,
     outputDirectory: rebaseAbsolutePathWithinWorkspace(
@@ -429,23 +429,23 @@ export function rebaseWorkspaceConfig(config: AgentConfig, cwd: string): AgentCo
       cwd,
     ),
     skillsDirs: [
-      path.join(projectAgentDir, "skills"),
+      path.join(projectCoworkDir, "skills"),
       ...config.skillsDirs.filter(
         (skillsDir) =>
-          skillsDir !== path.join(config.projectAgentDir, "skills") &&
+          skillsDir !== path.join(config.projectCoworkDir, "skills") &&
           skillsDir !== builtInSkillsDir,
       ),
       ...(builtInSkillsEnabled ? [builtInSkillsDir] : []),
     ],
     memoryDirs: [
-      path.join(projectAgentDir, "memory"),
+      path.join(projectCoworkDir, "memory"),
       ...config.memoryDirs.filter(
-        (memoryDir) => memoryDir !== path.join(config.projectAgentDir, "memory"),
+        (memoryDir) => memoryDir !== path.join(config.projectCoworkDir, "memory"),
       ),
     ],
     configDirs: [
-      projectAgentDir,
-      ...config.configDirs.filter((configDir) => configDir !== config.projectAgentDir),
+      projectCoworkDir,
+      ...config.configDirs.filter((configDir) => configDir !== config.projectCoworkDir),
     ],
   };
 }
@@ -456,18 +456,19 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
   const env = options.env ?? process.env;
   const builtInDir = options.builtInDir ?? resolveBuiltInDir(env);
 
-  const projectAgentDir = path.join(cwd, ".agent");
-  const userAgentDir = path.join(homedir, ".agent");
+  const projectCoworkDir = path.join(cwd, ".cowork");
   const workspaceAgentsDir = path.join(cwd, ".agents");
   const userAgentsDir = path.join(homedir, ".agents");
   const workspacePluginsDir = path.join(workspaceAgentsDir, "plugins");
   const userPluginsDir = path.join(userAgentsDir, "plugins");
   const builtInConfigDir = path.join(builtInDir, "config");
   const coworkPaths = getAiCoworkerPaths({ homedir });
+  const userCoworkDir = coworkPaths.rootDir;
+  const userConfigDir = coworkPaths.configDir;
 
   const builtInDefaults = await loadJsonSafe(path.join(builtInConfigDir, "defaults.json"));
-  const userConfig = await loadJsonSafe(path.join(userAgentDir, "config.json"));
-  const projectConfig = await loadJsonSafe(path.join(projectAgentDir, "config.json"));
+  const userConfig = await loadJsonSafe(path.join(userConfigDir, "config.json"));
+  const projectConfig = await loadJsonSafe(path.join(projectCoworkDir, "config.json"));
 
   const inheritedMerged = deepMerge(builtInDefaults, userConfig);
   const merged = deepMerge(deepMerge(builtInDefaults, userConfig), projectConfig);
@@ -741,8 +742,8 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     userProfile,
     knowledgeCutoff,
 
-    projectAgentDir,
-    userAgentDir,
+    projectCoworkDir,
+    userCoworkDir,
     workspaceAgentsDir,
     userAgentsDir,
     workspacePluginsDir,
@@ -751,13 +752,12 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     builtInConfigDir,
 
     skillsDirs: [
-      path.join(projectAgentDir, "skills"),
+      path.join(projectCoworkDir, "skills"),
       coworkPaths.skillsDir,
-      path.join(userAgentDir, "skills"),
       ...(disableBuiltInSkills ? [] : [path.join(builtInDir, "skills")]),
     ],
-    memoryDirs: [path.join(projectAgentDir, "memory"), path.join(userAgentDir, "memory")],
-    configDirs: [projectAgentDir, userAgentDir, builtInConfigDir],
+    memoryDirs: [path.join(projectCoworkDir, "memory"), path.join(userCoworkDir, "memory")],
+    configDirs: [projectCoworkDir, userConfigDir, builtInConfigDir],
 
     enableMcp,
     enableMemory,

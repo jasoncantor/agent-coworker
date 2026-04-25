@@ -63,7 +63,7 @@ export function resolveAllowedSaveExportSourcePath(
 /**
  * Workspace roots plus Cowork agent homes where skills and config commonly live.
  * Used for `revealPath` targets outside the active workspace
- * (e.g. ~/.cowork/skills, ~/.agent/skills).
+ * (e.g. ~/.cowork/skills).
  *
  * `builtinSkillRoots` should match server `builtInDir` / `COWORK_BUILTIN_DIR`
  * (see `resolveDesktopBuiltinSkillRootsForReveal`); pass a freshly resolved list
@@ -74,7 +74,7 @@ export function getRevealPathRoots(
   builtinSkillRoots: string[] = [],
 ): string[] {
   const home = os.homedir();
-  const extra: string[] = [path.join(home, ".cowork"), path.join(home, ".agent")];
+  const extra: string[] = [path.join(home, ".cowork")];
   for (const root of builtinSkillRoots) {
     const trimmed = root.trim();
     if (trimmed.length > 0) {

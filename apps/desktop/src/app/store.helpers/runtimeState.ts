@@ -257,7 +257,6 @@ export function defaultWorkspaceRuntime(): WorkspaceRuntime {
     controlSessionConfig: null,
     controlEnableMcp: null,
     mcpServers: [],
-    mcpLegacy: null,
     mcpFiles: [],
     mcpWarnings: [],
     mcpValidationByName: {},

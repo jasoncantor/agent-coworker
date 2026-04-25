@@ -68,7 +68,6 @@ export function McpServersPage() {
   const authorizeWorkspaceMcpServerAuth = useAppStore((s) => s.authorizeWorkspaceMcpServerAuth);
   const callbackWorkspaceMcpServerAuth = useAppStore((s) => s.callbackWorkspaceMcpServerAuth);
   const setWorkspaceMcpServerApiKey = useAppStore((s) => s.setWorkspaceMcpServerApiKey);
-  const migrateWorkspaceMcpLegacy = useAppStore((s) => s.migrateWorkspaceMcpLegacy);
 
   const workspace = useMemo(
     () => workspaces.find((entry) => entry.id === selectedWorkspaceId) ?? workspaces[0] ?? null,
@@ -108,8 +107,6 @@ export function McpServersPage() {
   const files = runtime?.mcpFiles ?? [];
   const warnings = runtime?.mcpWarnings ?? [];
   const validationByName = runtime?.mcpValidationByName ?? {};
-  const hasLegacyWorkspace = runtime?.mcpLegacy?.workspace.exists ?? false;
-  const hasLegacyUser = runtime?.mcpLegacy?.user.exists ?? false;
 
   const resetDraft = ({ clearAutoValidate = true }: { clearAutoValidate?: boolean } = {}) => {
     if (clearAutoValidate) clearAutoValidateTimer();
@@ -147,38 +144,6 @@ export function McpServersPage() {
           </Button>
         ) : null}
       </div>
-
-      {workspace && (hasLegacyWorkspace || hasLegacyUser) ? (
-        <Card className="border-warning/35 bg-warning/[0.08]">
-          <CardHeader>
-            <CardTitle>Legacy MCP configs found</CardTitle>
-            <CardDescription>
-              `.agent/mcp-servers.json` files are visible as fallback. Migrate to `.cowork` to make
-              them first-class.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            {hasLegacyWorkspace ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void migrateWorkspaceMcpLegacy(workspace.id, "workspace")}
-              >
-                Migrate workspace legacy
-              </Button>
-            ) : null}
-            {hasLegacyUser ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void migrateWorkspaceMcpLegacy(workspace.id, "user")}
-              >
-                Migrate user legacy
-              </Button>
-            ) : null}
-          </CardContent>
-        </Card>
-      ) : null}
 
       {workspace ? (
         <Dialog

@@ -68,7 +68,7 @@ export function safeParseClientMessage(raw: string) {
 - Legacy import: hydrates old JSON snapshots into the new schema (lines 552-691) — **140 lines of one-time migration code**
 - Full transaction wrapper with rollback
 
-**Alternative:** Use simple JSON files per session (`~/.agent/sessions/{id}.json`). Bun's file I/O is fast enough. If you need querying, use SQLite but drop the migration framework — schema changes can just recreate the DB (it's a cache, not source of truth).
+**Alternative:** Use simple JSON files per session (`~/.cowork/sessions/{id}.json`). Bun's file I/O is fast enough. If you need querying, use SQLite but drop the migration framework — schema changes can just recreate the DB (it's a cache, not source of truth).
 
 **Impact:** 700 → ~150 lines. Delete migration framework + legacy import.
 

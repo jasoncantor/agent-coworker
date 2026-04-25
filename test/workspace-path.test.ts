@@ -29,13 +29,13 @@ describe("workspacePath", () => {
     });
 
     test("source is ancestor of target", () => {
-      expect(workspacePathOverlaps("/workspace", "/workspace/.agent/skills/foo", "linux")).toBe(
+      expect(workspacePathOverlaps("/workspace", "/workspace/.cowork/skills/foo", "linux")).toBe(
         true,
       );
     });
 
     test("target is ancestor of source", () => {
-      expect(workspacePathOverlaps("/workspace/.agent/skills/foo", "/workspace", "linux")).toBe(
+      expect(workspacePathOverlaps("/workspace/.cowork/skills/foo", "/workspace", "linux")).toBe(
         true,
       );
     });

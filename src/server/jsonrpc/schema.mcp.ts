@@ -14,7 +14,6 @@ export const jsonRpcMcpRequestSchemas = {
     jsonRpcControlRequestSchemas["cowork/mcp/server/auth/callback"],
   "cowork/mcp/server/auth/setApiKey":
     jsonRpcControlRequestSchemas["cowork/mcp/server/auth/setApiKey"],
-  "cowork/mcp/legacy/migrate": jsonRpcControlRequestSchemas["cowork/mcp/legacy/migrate"],
 } as const;
 
 export const jsonRpcMcpResultSchemas = {
@@ -27,5 +26,4 @@ export const jsonRpcMcpResultSchemas = {
   "cowork/mcp/server/auth/callback": jsonRpcControlResultSchemas["cowork/mcp/server/auth/callback"],
   "cowork/mcp/server/auth/setApiKey":
     jsonRpcControlResultSchemas["cowork/mcp/server/auth/setApiKey"],
-  "cowork/mcp/legacy/migrate": jsonRpcControlResultSchemas["cowork/mcp/legacy/migrate"],
 } as const;

@@ -37,7 +37,7 @@ function buildProjectInstructionsSection(config: AgentConfig): string {
 }
 
 function resolveProjectInstructionsTargetDir(config: AgentConfig): string {
-  const workspaceRoot = path.resolve(path.dirname(config.projectAgentDir));
+  const workspaceRoot = path.resolve(path.dirname(config.projectCoworkDir));
   const executionCwd = path.resolve(config.workingDirectory);
   if (sameWorkspacePath(workspaceRoot, executionCwd)) {
     return executionCwd;
@@ -281,6 +281,8 @@ function renderMemorySpecificPrompt(prompt: string, enabled: boolean): string {
 
   out = stripPromptLine(out, /^\s*-\s*Memory:\s*`?\.agent\/AGENT\.md/i);
   out = stripPromptLine(out, /^\s*Memory:\s*\.agent\/AGENT\.md/i);
+  out = stripPromptLine(out, /^\s*-\s*Memory:\s*`?\.cowork\/AGENT\.md/i);
+  out = stripPromptLine(out, /^\s*Memory:\s*\.cowork\/AGENT\.md/i);
   out = out.replace(/\n{3,}/g, "\n\n").trimEnd();
 
   return `${out}\n\n## Memory Disabled\n\nPersistent memory is disabled for this workspace. Do not read or write AGENT.md and do not call the memory tool.`;
@@ -510,7 +512,7 @@ function normalizeLegacySpawnAgentGuidance(prompt: string): string {
 }
 
 function buildSkillSearchOrder(config: AgentConfig): string {
-  const labels = ["project", "global (~/.cowork/skills)", "user (~/.agent/skills)", "built-in"];
+  const labels = ["project", "global (~/.cowork/skills)", "built-in"];
   return config.skillsDirs
     .map((_, index) => labels[index] ?? `skills-dir-${index + 1}`)
     .join(" -> ");
@@ -644,8 +646,8 @@ function buildShellExecutionPolicySection(): string {
 
 async function _loadHotCache(config: AgentConfig): Promise<string> {
   const candidates = [
-    path.join(config.projectAgentDir, "AGENT.md"),
-    path.join(config.userAgentDir, "AGENT.md"),
+    path.join(config.projectCoworkDir, "AGENT.md"),
+    path.join(config.userCoworkDir, "AGENT.md"),
   ];
 
   for (const p of candidates) {
@@ -739,7 +741,7 @@ export async function loadSystemPromptWithSkills(config: AgentConfig): Promise<S
   prompt = normalizeLegacySpawnAgentGuidance(prompt);
 
   // User profile instructions render via {{userProfileInstructions}} in system templates; do not duplicate.
-  // Hierarchical AGENTS.md / AGENTS.override.md are appended separately from memory (.agent/AGENT.md).
+  // Hierarchical AGENTS.md / AGENTS.override.md are appended separately from memory (.cowork/AGENT.md).
   prompt = await appendWorkspaceContextBlocks(prompt, config, {
     includeProjectInstructions: false,
   });
@@ -768,8 +770,8 @@ export async function loadSystemPromptWithSkills(config: AgentConfig): Promise<S
 
   if (config.enableMemory ?? true) {
     const memoryStore = new MemoryStore(
-      path.join(config.projectAgentDir, "memory.sqlite"),
-      path.join(config.userAgentDir, "memory.sqlite"),
+      path.join(config.projectCoworkDir, "memory.sqlite"),
+      path.join(config.userCoworkDir, "memory.sqlite"),
     );
     try {
       const memorySection = await memoryStore.renderPromptSection();

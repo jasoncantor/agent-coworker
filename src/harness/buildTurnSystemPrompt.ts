@@ -34,25 +34,47 @@ function rewriteLegacyProjectPathGuidance(
   return system
     .replaceAll(
       "(`.agent/` in the current working directory)",
-      `(\`${withTrailingSeparator(context.projectAgentDir)}\`)`,
+      `(\`${withTrailingSeparator(context.projectCoworkDir)}\`)`,
+    )
+    .replaceAll(
+      "(`.cowork/` in the current working directory)",
+      `(\`${withTrailingSeparator(context.projectCoworkDir)}\`)`,
     )
     .replaceAll(
       "`.agent/skills/`",
-      `\`${withTrailingSeparator(path.join(context.projectAgentDir, "skills"))}\``,
+      `\`${withTrailingSeparator(path.join(context.projectCoworkDir, "skills"))}\``,
     )
-    .replaceAll("`.agent/AGENT.md`", `\`${path.join(context.projectAgentDir, "AGENT.md")}\``)
+    .replaceAll(
+      "`.cowork/skills/`",
+      `\`${withTrailingSeparator(path.join(context.projectCoworkDir, "skills"))}\``,
+    )
+    .replaceAll("`.agent/AGENT.md`", `\`${path.join(context.projectCoworkDir, "AGENT.md")}\``)
+    .replaceAll("`.cowork/AGENT.md`", `\`${path.join(context.projectCoworkDir, "AGENT.md")}\``)
     .replaceAll(
       "`.agent/memory/`",
-      `\`${withTrailingSeparator(path.join(context.projectAgentDir, "memory"))}\``,
+      `\`${withTrailingSeparator(path.join(context.projectCoworkDir, "memory"))}\``,
+    )
+    .replaceAll(
+      "`.cowork/memory/`",
+      `\`${withTrailingSeparator(path.join(context.projectCoworkDir, "memory"))}\``,
     )
     .replaceAll(
       "`.agent/mcp-servers.json`",
-      `\`${path.join(context.projectAgentDir, "mcp-servers.json")}\``,
+      `\`${path.join(context.projectCoworkDir, "mcp-servers.json")}\``,
     )
-    .replaceAll("`.agent/config.json`", `\`${path.join(context.projectAgentDir, "config.json")}\``)
+    .replaceAll(
+      "`.cowork/mcp-servers.json`",
+      `\`${path.join(context.projectCoworkDir, "mcp-servers.json")}\``,
+    )
+    .replaceAll("`.agent/config.json`", `\`${path.join(context.projectCoworkDir, "config.json")}\``)
+    .replaceAll("`.cowork/config.json`", `\`${path.join(context.projectCoworkDir, "config.json")}\``)
     .replaceAll(
       "`.agent/skills/{name}/SKILL.md`",
-      `\`${path.join(context.projectAgentDir, "skills", "{name}", "SKILL.md")}\``,
+      `\`${path.join(context.projectCoworkDir, "skills", "{name}", "SKILL.md")}\``,
+    )
+    .replaceAll(
+      "`.cowork/skills/{name}/SKILL.md`",
+      `\`${path.join(context.projectCoworkDir, "skills", "{name}", "SKILL.md")}\``,
     );
 }
 

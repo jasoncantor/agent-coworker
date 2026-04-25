@@ -124,7 +124,7 @@ describe("Anthropic provider (claude-opus-4-6)", () => {
   test("loadConfig anthropic from project config file", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "anthropic",
       model: "claude-opus-4-6",
     });

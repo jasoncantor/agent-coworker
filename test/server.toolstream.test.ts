@@ -8,7 +8,7 @@ import { stopTestServer } from "./helpers/wsHarness";
 
 async function makeTmpProject(): Promise<string> {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "agent-toolstream-test-"));
-  await fs.mkdir(path.join(tmp, ".agent"), { recursive: true });
+  await fs.mkdir(path.join(tmp, ".cowork"), { recursive: true });
   return tmp;
 }
 

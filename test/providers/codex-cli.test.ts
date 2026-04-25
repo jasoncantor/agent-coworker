@@ -47,7 +47,7 @@ describe(`Codex provider (${DEFAULT_CODEX_MODEL})`, () => {
       const cfg = makeConfig({
         provider: "codex-cli",
         model: DEFAULT_CODEX_MODEL,
-        userAgentDir: path.join(home, ".agent"),
+        userCoworkDir: path.join(home, ".cowork"),
       });
       const viaGetModel = getModel(cfg, DEFAULT_CODEX_MODEL) as any;
       const headers = await viaGetModel.config.headers();
@@ -100,7 +100,7 @@ describe(`Codex provider (${DEFAULT_CODEX_MODEL})`, () => {
       const cfg = makeConfig({
         provider: "codex-cli",
         model: "gpt-5.4-mini",
-        userAgentDir: path.join(home, ".agent"),
+        userCoworkDir: path.join(home, ".cowork"),
       });
       const model = getModel(cfg);
 

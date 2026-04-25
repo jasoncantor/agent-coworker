@@ -22,7 +22,6 @@ export function createWorkspaceMcpActions(
   | "authorizeWorkspaceMcpServerAuth"
   | "callbackWorkspaceMcpServerAuth"
   | "setWorkspaceMcpServerApiKey"
-  | "migrateWorkspaceMcpLegacy"
 > {
   return {
     requestWorkspaceMcpServers: async (workspaceId: string) => {
@@ -215,31 +214,6 @@ export function createWorkspaceMcpActions(
           kind: "error",
           title: "Not connected",
           detail: "Unable to save MCP API key.",
-        }),
-      }));
-    },
-
-    migrateWorkspaceMcpLegacy: async (workspaceId, scope) => {
-      await ensureServerRunning(get, set, workspaceId);
-      ensureControlSocket(get, set, workspaceId);
-      const ok = await requestJsonRpcControlEvent(
-        get,
-        set,
-        workspaceId,
-        "cowork/mcp/legacy/migrate",
-        {
-          cwd: get().workspaces.find((workspace) => workspace.id === workspaceId)?.path,
-          scope,
-        },
-      );
-      if (ok) return;
-      set((s) => ({
-        notifications: pushNotification(s.notifications, {
-          id: makeId(),
-          ts: nowIso(),
-          kind: "error",
-          title: "Not connected",
-          detail: "Unable to migrate legacy MCP servers.",
         }),
       }));
     },

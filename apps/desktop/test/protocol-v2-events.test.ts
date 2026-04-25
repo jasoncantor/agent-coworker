@@ -204,8 +204,8 @@ function setDefaultHandlers(sessionId = "thread-session") {
       sessionId: "jsonrpc-control",
       servers: [],
       legacy: {
-        workspace: { path: "/tmp/workspace/.agent/mcp-servers.json", exists: false },
-        user: { path: "/tmp/home/.agent/mcp-servers.json", exists: false },
+        workspace: { path: "/tmp/workspace/.cowork/mcp-servers.json", exists: false },
+        user: { path: "/tmp/home/.cowork/mcp-servers.json", exists: false },
       },
       files: [],
     },
@@ -407,7 +407,6 @@ describe("desktop JSON-RPC event mapping", () => {
             controlSessionConfig: null,
             controlEnableMcp: null,
             mcpServers: [],
-            mcpLegacy: null,
             mcpFiles: [],
             mcpWarnings: [],
             mcpValidationByName: {},

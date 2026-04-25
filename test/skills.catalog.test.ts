@@ -69,7 +69,7 @@ describe("scanSkillCatalog", () => {
   });
 
   test("keeps effective, shadowed, and disabled installations without deduping", async () => {
-    const project = path.join(root, ".agent", "skills");
+    const project = path.join(root, ".cowork", "skills");
     const global = path.join(root, ".cowork", "skills");
     const globalDisabled = path.join(root, ".cowork", "disabled-skills");
     const user = path.join(root, ".agent-user", "skills");
@@ -106,7 +106,7 @@ describe("scanSkillCatalog", () => {
   });
 
   test("can lazily adopt unmanaged writable installs with manifests", async () => {
-    const project = path.join(root, ".agent", "skills");
+    const project = path.join(root, ".cowork", "skills");
     const global = path.join(root, ".cowork", "skills");
 
     await createSkill(project, "alpha", "Project alpha.");
@@ -127,7 +127,7 @@ describe("scanSkillCatalog", () => {
   });
 
   test("ignores escaped icon paths while still embedding in-tree icons", async () => {
-    const project = path.join(root, ".agent", "skills");
+    const project = path.join(root, ".cowork", "skills");
     const skillDir = path.join(project, "alpha");
     await fs.mkdir(path.join(skillDir, "agents"), { recursive: true });
     await fs.mkdir(path.join(skillDir, "assets"), { recursive: true });
@@ -162,7 +162,7 @@ describe("scanSkillCatalog", () => {
   test("ignores symlinked icon paths that resolve outside the skill root", async () => {
     if (process.platform === "win32") return;
 
-    const project = path.join(root, ".agent", "skills");
+    const project = path.join(root, ".cowork", "skills");
     const skillDir = path.join(project, "alpha");
     const outsideDir = path.join(root, "outside");
     await fs.mkdir(path.join(skillDir, "agents"), { recursive: true });

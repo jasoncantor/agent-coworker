@@ -285,8 +285,8 @@ export class SessionBackupController {
       return;
     }
 
-    const userHome = this.context.state.config.userAgentDir
-      ? path.dirname(this.context.state.config.userAgentDir)
+    const userHome = this.context.state.config.userCoworkDir
+      ? path.dirname(this.context.state.config.userCoworkDir)
       : undefined;
     const startedAt = Date.now();
 

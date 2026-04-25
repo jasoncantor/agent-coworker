@@ -90,7 +90,7 @@ function looksLikeInlineRepoPath(reference: string): boolean {
   ) {
     return false;
   }
-  if (normalized.startsWith("~/.agent") || normalized.startsWith("~/.cowork")) return false;
+  if (normalized.startsWith("~/.cowork")) return false;
   if (normalized.includes("<") || normalized.includes(">")) return false;
   if (
     normalized.includes("myTool") ||

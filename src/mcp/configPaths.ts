@@ -1,7 +1,6 @@
 import path from "node:path";
 
 import type { AgentConfig } from "../types";
-import { resolveCoworkHomedir } from "../utils/coworkHome";
 
 export const MCP_SERVERS_FILE_NAME = "mcp-servers.json";
 
@@ -13,18 +12,14 @@ export interface MCPConfigPaths {
   userConfigDir: string;
   userConfigFile: string;
   systemConfigFile: string;
-  workspaceLegacyFile: string;
-  userLegacyFile: string;
   workspaceAuthFile: string;
   userAuthFile: string;
 }
 
 export function resolveMcpConfigPaths(config: AgentConfig): MCPConfigPaths {
-  const workspaceRoot = path.dirname(config.projectAgentDir);
-  const userHome = resolveCoworkHomedir(config.userAgentDir);
-
-  const workspaceCoworkDir = path.join(workspaceRoot, ".cowork");
-  const userCoworkDir = path.join(userHome, ".cowork");
+  const workspaceRoot = path.dirname(config.projectCoworkDir);
+  const workspaceCoworkDir = config.projectCoworkDir;
+  const userCoworkDir = config.userCoworkDir;
 
   return {
     workspaceRoot,
@@ -34,8 +29,6 @@ export function resolveMcpConfigPaths(config: AgentConfig): MCPConfigPaths {
     userConfigDir: path.join(userCoworkDir, "config"),
     userConfigFile: path.join(userCoworkDir, "config", MCP_SERVERS_FILE_NAME),
     systemConfigFile: path.join(config.builtInConfigDir, MCP_SERVERS_FILE_NAME),
-    workspaceLegacyFile: path.join(config.projectAgentDir, MCP_SERVERS_FILE_NAME),
-    userLegacyFile: path.join(config.userAgentDir, MCP_SERVERS_FILE_NAME),
     workspaceAuthFile: path.join(workspaceCoworkDir, "auth", "mcp-credentials.json"),
     userAuthFile: path.join(userCoworkDir, "auth", "mcp-credentials.json"),
   };

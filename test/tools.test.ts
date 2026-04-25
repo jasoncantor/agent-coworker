@@ -48,8 +48,8 @@ async function withAuthHome<T>(homeDir: string, run: () => Promise<T>): Promise<
 }
 
 function makeConfig(dir: string, overrides: Partial<AgentConfig> = {}): AgentConfig {
-  const userAgentDir = overrides.userAgentDir ?? path.join(dir, ".agent-user");
-  const authHomeDir = path.dirname(userAgentDir);
+  const userCoworkDir = overrides.userCoworkDir ?? path.join(dir, ".agent-user");
+  const authHomeDir = path.dirname(userCoworkDir);
   return {
     provider: "google",
     model: "gemini-3-flash-preview",
@@ -59,8 +59,8 @@ function makeConfig(dir: string, overrides: Partial<AgentConfig> = {}): AgentCon
     uploadsDirectory: path.join(dir, "uploads"),
     userName: "",
     knowledgeCutoff: "unknown",
-    projectAgentDir: path.join(dir, ".agent"),
-    userAgentDir,
+    projectCoworkDir: path.join(dir, ".cowork"),
+    userCoworkDir,
     builtInDir: dir,
     builtInConfigDir: path.join(dir, "config"),
     skillsDirs: overrides.skillsDirs ?? [path.join(authHomeDir, ".cowork", "skills")],
@@ -3397,7 +3397,7 @@ describe("skill tool", () => {
 describe("memory tool", () => {
   test("imports AGENT.md into sqlite memory on read", async () => {
     const dir = await tmpDir();
-    const agentDir = path.join(dir, ".agent");
+    const agentDir = path.join(dir, ".cowork");
     await fs.mkdir(agentDir, { recursive: true });
     await fs.writeFile(path.join(agentDir, "AGENT.md"), "# Hot cache content", "utf-8");
 
@@ -3408,7 +3408,7 @@ describe("memory tool", () => {
 
   test("reads imported AGENT.md using hot-cache aliases", async () => {
     const dir = await tmpDir();
-    const agentDir = path.join(dir, ".agent");
+    const agentDir = path.join(dir, ".cowork");
     await fs.mkdir(agentDir, { recursive: true });
     await fs.writeFile(path.join(agentDir, "AGENT.md"), "Hot via AGENT.md key", "utf-8");
 
@@ -3440,7 +3440,7 @@ describe("memory tool", () => {
 
   test("reads named memory key with .md extension", async () => {
     const dir = await tmpDir();
-    const memDir = path.join(dir, ".agent", "memory");
+    const memDir = path.join(dir, ".cowork", "memory");
     await fs.mkdir(memDir, { recursive: true });
     await fs.writeFile(path.join(memDir, "notes.md"), "My notes", "utf-8");
 
@@ -3512,9 +3512,9 @@ describe("memory tool", () => {
 
   test("reads from user agent dir as fallback via legacy import", async () => {
     const dir = await tmpDir();
-    const userAgentDir = path.join(dir, ".agent-user");
-    await fs.mkdir(userAgentDir, { recursive: true });
-    await fs.writeFile(path.join(userAgentDir, "AGENT.md"), "User-level hot cache", "utf-8");
+    const userCoworkDir = path.join(dir, ".agent-user");
+    await fs.mkdir(userCoworkDir, { recursive: true });
+    await fs.writeFile(path.join(userCoworkDir, "AGENT.md"), "User-level hot cache", "utf-8");
 
     const t: any = createMemoryTool(makeCtx(dir));
     const res: string = await t.execute({ action: "read" });
@@ -3583,7 +3583,7 @@ describe("memory tool", () => {
 
   test("legacy import deduplicates files normalizing to the same id", async () => {
     const dir = await tmpDir();
-    const memDir = path.join(dir, ".agent", "memory");
+    const memDir = path.join(dir, ".cowork", "memory");
     await fs.mkdir(memDir, { recursive: true });
     // Both normalize to "foo-bar"
     await fs.writeFile(path.join(memDir, "foo bar.md"), "First content", "utf-8");

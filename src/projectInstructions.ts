@@ -148,7 +148,7 @@ async function loadAgentsFileForDirectory(
 
 /**
  * Load AGENTS.override.md / AGENTS.md along the path from git root (if any) to workspace root.
- * Does not read `.agent/AGENT.md` or other memory paths.
+ * Does not read `.cowork/AGENT.md` or other memory paths.
  */
 export async function loadProjectAgentsFiles(
   workspaceRoot: string,

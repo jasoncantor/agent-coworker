@@ -52,8 +52,7 @@ export function createSkillTool(ctx: ToolContext) {
   const searchOrder = [
     "project",
     "global (~/.cowork/skills)",
-    "user (~/.agent/skills)",
-    ...(ctx.config.skillsDirs.length >= 4 ? ["built-in"] : []),
+    ...(ctx.config.skillsDirs.length >= 3 ? ["built-in"] : []),
   ].join(", ");
 
   // Build description dynamically from discovered skills so models see actual skill names.

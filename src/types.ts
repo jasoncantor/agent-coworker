@@ -132,7 +132,7 @@ export interface AgentConfig {
   inheritedToolOutputOverflowChars?: number | null;
   /**
    * Raw workspace-scoped overrides that were explicitly present in the
-   * project `.agent/config.json`, before built-in defaults were materialized.
+   * project `.cowork/config.json`, before built-in defaults were materialized.
    */
   projectConfigOverrides?: {
     toolOutputOverflowChars?: number | null;
@@ -146,8 +146,8 @@ export interface AgentConfig {
   userProfile?: UserProfile;
   knowledgeCutoff: string;
 
-  projectAgentDir: string;
-  userAgentDir: string;
+  projectCoworkDir: string;
+  userCoworkDir: string;
   workspaceAgentsDir?: string;
   userAgentsDir?: string;
   workspacePluginsDir?: string;

@@ -25,7 +25,6 @@ import {
   loadMCPConfigRegistry,
   MCP_SERVERS_FILE_NAME,
   type MCPRegistryFileState,
-  type MCPRegistryLegacyState,
   type MCPRegistryServer,
   parseMCPServersDocument,
   readWorkspaceMCPServersDocument,
@@ -51,7 +50,6 @@ export type MCPServerEffectiveState = MCPRegistryServer & {
 export interface MCPServersSnapshot {
   servers: MCPServerEffectiveState[];
   files: MCPRegistryFileState[];
-  legacy: MCPRegistryLegacyState;
   warnings: string[];
 }
 
@@ -398,7 +396,6 @@ export async function readMCPServersSnapshot(config: AgentConfig): Promise<MCPSe
   return {
     servers: serversWithAuth,
     files: registry.files,
-    legacy: registry.legacy,
     warnings: registry.warnings,
   };
 }
@@ -428,12 +425,11 @@ export async function readProjectMCPServersDocument(config: AgentConfig): Promis
 }
 
 export async function writeProjectMCPServersDocument(
-  projectAgentDir: string,
+  projectCoworkDir: string,
   rawJson: string,
 ): Promise<void> {
   parseMCPServersDocument(rawJson);
-  const workspaceRoot = path.dirname(projectAgentDir);
-  const workspaceCoworkDir = path.join(workspaceRoot, ".cowork");
+  const workspaceCoworkDir = projectCoworkDir;
   await fs.mkdir(workspaceCoworkDir, { recursive: true });
   const filePath = path.join(workspaceCoworkDir, MCP_SERVERS_FILE_NAME);
   const payload = rawJson.endsWith("\n") ? rawJson : `${rawJson}\n`;

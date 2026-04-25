@@ -20,8 +20,8 @@ describe("NVIDIA provider", () => {
       uploadsDirectory: "/tmp/uploads",
       userName: "",
       knowledgeCutoff: "unknown",
-      projectAgentDir: "/tmp/.agent",
-      userAgentDir: "/tmp/.agent-user",
+      projectCoworkDir: "/tmp/.cowork",
+      userCoworkDir: "/tmp/.agent-user",
       builtInDir: "/tmp/built-in",
       builtInConfigDir: "/tmp/built-in/config",
       skillsDirs: [],
@@ -52,7 +52,7 @@ describe("NVIDIA provider", () => {
   test("loadConfig accepts the supported nvidia model", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "nvidia",
       model: "nvidia/nemotron-3-super-120b-a12b",
       preferredChildModel: "nvidia/nemotron-3-super-120b-a12b",

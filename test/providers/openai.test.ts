@@ -121,7 +121,7 @@ describe("OpenAI provider (gpt-5.4 with reasoning)", () => {
   test("loadConfig openai from project config file", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "openai",
       model: "gpt-5.4",
     });

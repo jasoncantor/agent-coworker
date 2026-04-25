@@ -40,8 +40,8 @@ function makeConfig(homeDir: string, overrides: Partial<AgentConfig> = {}): Agen
     uploadsDirectory: path.join(homeDir, "uploads"),
     userName: "",
     knowledgeCutoff: "unknown",
-    projectAgentDir: path.join(homeDir, ".agent-project"),
-    userAgentDir: path.join(homeDir, ".agent"),
+    projectCoworkDir: path.join(homeDir, ".agent-project"),
+    userCoworkDir: path.join(homeDir, ".cowork"),
     builtInDir: homeDir,
     builtInConfigDir: path.join(homeDir, "config"),
     skillsDirs: [path.join(homeDir, ".cowork", "skills")],
@@ -135,7 +135,7 @@ describe("pi runtime regressions", () => {
       provider: "codex-cli",
       model: pickCodexModelId(),
       preferredChildModel: pickCodexModelId(),
-      userAgentDir: path.join(workspaceDir, ".agent"),
+      userCoworkDir: path.join(homeDir, ".cowork"),
     });
 
     const resolved = await resolveOpenAiResponsesModel(makeParams(config));
@@ -173,7 +173,7 @@ describe("pi runtime regressions", () => {
       provider: "codex-cli",
       model: pickCodexModelId(),
       preferredChildModel: pickCodexModelId(),
-      userAgentDir: path.join(workspaceDir, ".agent"),
+      userCoworkDir: path.join(homeDir, ".cowork"),
     });
 
     await expect(resolveOpenAiResponsesModel(makeParams(config))).rejects.toThrow(
@@ -211,7 +211,7 @@ describe("pi runtime regressions", () => {
       provider: "codex-cli",
       model: "gpt-5.4",
       preferredChildModel: "gpt-5.4",
-      userAgentDir: path.join(workspaceDir, ".agent"),
+      userCoworkDir: path.join(homeDir, ".cowork"),
     });
 
     const resolved = await resolveOpenAiResponsesModel(makeParams(config));
@@ -614,7 +614,7 @@ describe("pi runtime regressions", () => {
       provider: "codex-cli",
       model: "gpt-5.4-mini",
       preferredChildModel: "gpt-5.4-mini",
-      userAgentDir: path.join(workspaceDir, ".agent"),
+      userCoworkDir: path.join(homeDir, ".cowork"),
     });
 
     const resolved = await resolveOpenAiResponsesModel(makeParams(config));
@@ -644,7 +644,7 @@ describe("pi runtime regressions", () => {
       provider: "codex-cli",
       model: "gpt-5.5",
       preferredChildModel: "gpt-5.5",
-      userAgentDir: path.join(workspaceDir, ".agent"),
+      userCoworkDir: path.join(homeDir, ".cowork"),
     });
 
     const resolved = await resolveOpenAiResponsesModel(makeParams(config));

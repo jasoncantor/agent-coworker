@@ -250,8 +250,8 @@ function setDefaultJsonRpcHandlers(sessionId = "session-1") {
       sessionId: "jsonrpc-control",
       servers: [],
       legacy: {
-        workspace: { path: "/tmp/workspace/.agent/mcp-servers.json", exists: false },
-        user: { path: "/home/test/.agent/mcp-servers.json", exists: false },
+        workspace: { path: "/tmp/workspace/.cowork/mcp-servers.json", exists: false },
+        user: { path: "/home/test/.cowork/mcp-servers.json", exists: false },
       },
       files: [],
     },
@@ -358,7 +358,6 @@ function seedStore(
         memories: [],
         memoriesLoading: false,
         mcpServers: [],
-        mcpLegacy: null,
         mcpFiles: [],
         mcpWarnings: [],
         mcpValidationByName: {},

@@ -215,10 +215,11 @@ When agent control is enabled, sessions also expose persistent-agent tools: `lis
 
 Skills are instruction bundles rooted in `SKILL.md`. They are discovered from layered locations:
 
-1. `.agent/skills` in the current workspace
+1. `.cowork/skills` in the current workspace
 2. `~/.cowork/skills`
-3. `~/.agent/skills`
-4. built-in `skills/`
+3. built-in `skills/`
+
+Legacy `.agent` skill/config trees are not loaded at runtime. Run `cowork migrate-agent-config` once to move old workspace and user config into `.cowork/` and `~/.cowork/`.
 
 Built-in curated skills currently cover document, PDF, slide, spreadsheet, git workflow, and frontend development. See [docs/custom-tools.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/custom-tools.md) if you want to extend the system further.
 
@@ -230,7 +231,7 @@ Cowork supports Model Context Protocol servers with layered config and auth (wor
 2. `~/.cowork/config/mcp-servers.json` (user)
 3. `config/mcp-servers.json` (built-in defaults)
 
-Legacy paths (`.agent/mcp-servers.json` at workspace and user level) are also loaded for backward compatibility.
+Legacy `.agent/mcp-servers.json` files are migrated only by the explicit `cowork migrate-agent-config` command; they are not loaded as runtime fallbacks.
 
 Supported flows include stdio and HTTP/SSE transports plus API-key and OAuth auth modes. Credentials are stored separately from configs in `.cowork/auth/` and `~/.cowork/auth/`. See [docs/mcp-guide.md](https://github.com/mweinbach/agent-coworker/blob/main/docs/mcp-guide.md).
 

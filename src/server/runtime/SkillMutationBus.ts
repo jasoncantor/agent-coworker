@@ -22,19 +22,19 @@ export class SkillMutationBus {
 
   constructor(
     private readonly options: {
-      userAgentDir: string;
+      userCoworkDir: string;
       workingDirectory: string;
       refreshLocalSkillState: (options: RefreshLocalSkillStateOptions) => Promise<void>;
     },
   ) {
-    this.signalPath = resolveSharedSkillMutationSignalPath(options.userAgentDir);
+    this.signalPath = resolveSharedSkillMutationSignalPath(options.userCoworkDir);
   }
 
   async start(): Promise<void> {
-    await fs.mkdir(this.options.userAgentDir, { recursive: true });
+    await fs.mkdir(this.options.userCoworkDir, { recursive: true });
     this.lastRevision = (await readSharedSkillMutationSignal(this.signalPath))?.revision ?? null;
     try {
-      this.watcher = fsSync.watch(this.options.userAgentDir, () => {
+      this.watcher = fsSync.watch(this.options.userCoworkDir, () => {
         this.scheduleRefresh();
       });
     } catch {

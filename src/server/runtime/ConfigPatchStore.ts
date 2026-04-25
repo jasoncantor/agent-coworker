@@ -135,7 +135,7 @@ async function loadJsonObjectSafe(filePath: string): Promise<Record<string, unkn
 }
 
 export async function persistProjectConfigPatch(
-  projectAgentDir: string,
+  projectCoworkDir: string,
   patch: ProjectConfigPatch,
   runtimeProviderOptions?: AgentConfig["providerOptions"],
   opts: { a2uiExperimentEnabled?: boolean } = {},
@@ -150,7 +150,7 @@ export async function persistProjectConfigPatch(
   );
   const shouldClearToolOutputOverflowChars = patch.clearToolOutputOverflowChars === true;
   if (entries.length === 0 && !shouldClearToolOutputOverflowChars) return;
-  const configPath = path.join(projectAgentDir, "config.json");
+  const configPath = path.join(projectCoworkDir, "config.json");
   const current = await loadJsonObjectSafe(configPath);
   const next: Record<string, unknown> = { ...current };
   for (const [key, value] of entries) {
@@ -217,7 +217,7 @@ export async function persistProjectConfigPatch(
   if (shouldClearToolOutputOverflowChars) {
     delete next.toolOutputOverflowChars;
   }
-  await fs.mkdir(projectAgentDir, { recursive: true });
+  await fs.mkdir(projectCoworkDir, { recursive: true });
   const payload = `${JSON.stringify(next, null, 2)}\n`;
   await writeTextFileAtomic(configPath, payload);
 }

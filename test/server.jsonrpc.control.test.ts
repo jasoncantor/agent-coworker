@@ -85,9 +85,9 @@ async function connectJsonRpc(url: string) {
 }
 
 async function enableProjectBackups(cwd: string): Promise<void> {
-  await fs.mkdir(path.join(cwd, ".agent"), { recursive: true });
+  await fs.mkdir(path.join(cwd, ".cowork"), { recursive: true });
   await fs.writeFile(
-    path.join(cwd, ".agent", "config.json"),
+    path.join(cwd, ".cowork", "config.json"),
     `${JSON.stringify({ backupsEnabled: true })}\n`,
   );
 }
@@ -687,7 +687,7 @@ describe("server JSON-RPC control methods", () => {
     const serverRoot = await makeTmpProject("agent-harness-server-config-");
     const targetWorkspace = await makeTmpProject("agent-harness-target-config-");
     await fs.writeFile(
-      `${targetWorkspace}/.agent/config.json`,
+      `${targetWorkspace}/.cowork/config.json`,
       `${JSON.stringify(
         {
           provider: "openai",
@@ -737,11 +737,11 @@ describe("server JSON-RPC control methods", () => {
       expect(defaultsResponse.result.event.type).toBe("session_config");
 
       const targetConfig = JSON.parse(
-        await fs.readFile(`${targetWorkspace}/.agent/config.json`, "utf-8"),
+        await fs.readFile(`${targetWorkspace}/.cowork/config.json`, "utf-8"),
       );
       expect(targetConfig.featureFlags?.workspace?.a2ui).toBeUndefined();
       expect(targetConfig.enableMemory).toBe(true);
-      await expect(fs.readFile(`${serverRoot}/.agent/config.json`, "utf-8")).rejects.toBeDefined();
+      await expect(fs.readFile(`${serverRoot}/.cowork/config.json`, "utf-8")).rejects.toBeDefined();
 
       rpc.close();
     } finally {
@@ -752,7 +752,7 @@ describe("server JSON-RPC control methods", () => {
   test("workspace feature flags round-trip through session defaults apply", async () => {
     const workspace = await makeTmpProject("agent-harness-feature-flags-");
     await fs.writeFile(
-      `${workspace}/.agent/config.json`,
+      `${workspace}/.cowork/config.json`,
       `${JSON.stringify(
         {
           featureFlags: {
@@ -791,7 +791,7 @@ describe("server JSON-RPC control methods", () => {
       expect(apply.result.event.config.featureFlags.workspace.a2ui).toBe(true);
       expect(apply.result.event.config.enableA2ui).toBe(true);
 
-      const persisted = JSON.parse(await fs.readFile(`${workspace}/.agent/config.json`, "utf-8"));
+      const persisted = JSON.parse(await fs.readFile(`${workspace}/.cowork/config.json`, "utf-8"));
       expect(persisted.featureFlags.workspace.a2ui).toBe(true);
 
       const after = await rpc.request("cowork/session/state/read", { cwd: workspace });
@@ -907,10 +907,10 @@ describe("server JSON-RPC control methods", () => {
         }),
       );
       await expect(
-        fs.stat(`${targetWorkspace}/.agent/skills/example-skill/SKILL.md`),
+        fs.stat(`${targetWorkspace}/.cowork/skills/example-skill/SKILL.md`),
       ).resolves.toBeDefined();
       await expect(
-        fs.stat(`${serverRoot}/.agent/skills/example-skill/SKILL.md`),
+        fs.stat(`${serverRoot}/.cowork/skills/example-skill/SKILL.md`),
       ).rejects.toBeDefined();
 
       rpc.close();
@@ -1028,7 +1028,7 @@ describe("server JSON-RPC control methods", () => {
 
       expect(response.result.event.type).toBe("mcp_servers");
       expect(Array.isArray(response.result.event.servers)).toBe(true);
-      expect(response.result.event.legacy.workspace.path).toContain("mcp-servers.json");
+      expect(response.result.event.files[0]?.path).toContain("mcp-servers.json");
       rpc.close();
     } finally {
       await stopTestServer(server);

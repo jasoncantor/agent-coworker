@@ -73,9 +73,7 @@ async function readLayer(opts: {
 function mergeLayers(layers: MCPConfigLayer[]): MCPRegistryServer[] {
   const precedence: MCPServerSource[] = [
     "system",
-    "user_legacy",
     "user",
-    "workspace_legacy",
     "workspace",
   ];
   const bySource = new Map(layers.map((layer) => [layer.source, layer]));
@@ -88,7 +86,7 @@ function mergeLayers(layers: MCPConfigLayer[]): MCPRegistryServer[] {
       mergedByName.set(server.name, {
         ...server,
         source,
-        inherited: source !== "workspace" && source !== "workspace_legacy",
+        inherited: source !== "workspace",
       });
     }
   }
@@ -269,18 +267,6 @@ export async function loadMCPConfigRegistry(
         editable: false,
         legacy: false,
       }),
-      readLayer({
-        source: "workspace_legacy",
-        filePath: paths.workspaceLegacyFile,
-        editable: false,
-        legacy: true,
-      }),
-      readLayer({
-        source: "user_legacy",
-        filePath: paths.userLegacyFile,
-        editable: false,
-        legacy: true,
-      }),
     ]),
     readPluginLayers(config),
   ]);
@@ -310,20 +296,8 @@ export async function loadMCPConfigRegistry(
       fileForSource("workspace"),
       fileForSource("user"),
       fileForSource("system"),
-      fileForSource("workspace_legacy"),
-      fileForSource("user_legacy"),
       ...pluginData.layers.map((layer) => layer.file),
     ],
-    legacy: {
-      workspace: {
-        path: paths.workspaceLegacyFile,
-        exists: fileForSource("workspace_legacy").exists,
-      },
-      user: {
-        path: paths.userLegacyFile,
-        exists: fileForSource("user_legacy").exists,
-      },
-    },
     warnings,
   };
 }

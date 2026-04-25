@@ -90,7 +90,7 @@ export function resolvePrimaryScope(
   source: MCPServerSource | { source: MCPServerSource; pluginScope?: PluginScope },
 ): MCPAuthScope {
   if (typeof source === "string") {
-    if (source === "workspace" || source === "workspace_legacy") return "workspace";
+    if (source === "workspace") return "workspace";
     return "user";
   }
   if (source.source === "plugin") {
@@ -105,7 +105,7 @@ export function resolveScopeReadOrder(
   // Keep credential resolution scoped to the originating config layer.
   // Workspace-defined servers must never fall back to user credentials.
   if (typeof source === "string") {
-    if (source === "workspace" || source === "workspace_legacy") {
+    if (source === "workspace") {
       return ["workspace"];
     }
     return ["user"];
@@ -113,7 +113,7 @@ export function resolveScopeReadOrder(
   if (source.source === "plugin") {
     return resolvePluginAuthScope(source.pluginScope) === "workspace" ? ["workspace"] : ["user"];
   }
-  if (source.source === "workspace" || source.source === "workspace_legacy") {
+  if (source.source === "workspace") {
     return ["workspace"];
   }
   return ["user"];

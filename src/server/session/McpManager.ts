@@ -65,8 +65,4 @@ export class McpManager {
     const validateName = await this.authFlow.setApiKey(nameRaw, apiKeyRaw);
     if (validateName) void this.validate(validateName);
   }
-
-  async migrate(scope: "workspace" | "user") {
-    await this.registryFlow.migrate(scope);
-  }
 }

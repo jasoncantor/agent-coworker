@@ -46,17 +46,17 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     workingDirectory: "/test/working",
     userName: "TestUser",
     knowledgeCutoff: "End of May 2025",
-    projectAgentDir: "/test/project/.agent",
-    userAgentDir: "/test/home/.agent",
+    projectCoworkDir: "/test/project/.cowork",
+    userCoworkDir: "/test/home/.cowork",
     builtInDir: repoRoot(),
     builtInConfigDir: path.join(repoRoot(), "config"),
     skillsDirs: [
-      "/test/project/.agent/skills",
-      "/test/home/.agent/skills",
+      "/test/project/.cowork/skills",
+      "/test/home/.cowork/skills",
       path.join(repoRoot(), "skills"),
     ],
-    memoryDirs: ["/test/project/.agent/memory", "/test/home/.agent/memory"],
-    configDirs: ["/test/project/.agent", "/test/home/.agent", path.join(repoRoot(), "config")],
+    memoryDirs: ["/test/project/.cowork/memory", "/test/home/.cowork/memory"],
+    configDirs: ["/test/project/.cowork", "/test/home/.cowork", path.join(repoRoot(), "config")],
   };
   return { ...base, ...overrides };
 }
@@ -956,17 +956,17 @@ describe("loadSystemPrompt", () => {
 
   test("appends hot cache (AGENT.md) when found in project dir", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "project", ".agent");
-    const userAgentDir = path.join(tmp, "home", ".agent");
+    const projectCoworkDir = path.join(tmp, "project", ".cowork");
+    const userCoworkDir = path.join(tmp, "home", ".cowork");
 
     await writeFile(
-      path.join(projectAgentDir, "AGENT.md"),
+      path.join(projectCoworkDir, "AGENT.md"),
       "This is the project hot cache content.",
     );
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: ["/nonexistent/skills"],
     });
 
@@ -978,15 +978,15 @@ describe("loadSystemPrompt", () => {
 
   test("appends hot cache (AGENT.md) when found in user dir (fallback)", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "project-no-cache", ".agent");
-    const userAgentDir = path.join(tmp, "home", ".agent");
+    const projectCoworkDir = path.join(tmp, "project-no-cache", ".cowork");
+    const userCoworkDir = path.join(tmp, "home", ".cowork");
 
     // Only user dir has AGENT.md, not project dir
-    await writeFile(path.join(userAgentDir, "AGENT.md"), "This is the user hot cache content.");
+    await writeFile(path.join(userCoworkDir, "AGENT.md"), "This is the user hot cache content.");
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: ["/nonexistent/skills"],
     });
 
@@ -998,16 +998,16 @@ describe("loadSystemPrompt", () => {
 
   test("project AGENT.md takes priority over user AGENT.md", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "project", ".agent");
-    const userAgentDir = path.join(tmp, "home", ".agent");
+    const projectCoworkDir = path.join(tmp, "project", ".cowork");
+    const userCoworkDir = path.join(tmp, "home", ".cowork");
 
-    await writeFile(path.join(projectAgentDir, "AGENT.md"), "PROJECT cache wins.");
+    await writeFile(path.join(projectCoworkDir, "AGENT.md"), "PROJECT cache wins.");
 
-    await writeFile(path.join(userAgentDir, "AGENT.md"), "USER cache loses.");
+    await writeFile(path.join(userCoworkDir, "AGENT.md"), "USER cache loses.");
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: ["/nonexistent/skills"],
     });
 
@@ -1018,18 +1018,18 @@ describe("loadSystemPrompt", () => {
 
   test("does not inject deep memory entries into the startup prompt", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "project", ".agent");
-    const userAgentDir = path.join(tmp, "home", ".agent");
+    const projectCoworkDir = path.join(tmp, "project", ".cowork");
+    const userCoworkDir = path.join(tmp, "home", ".cowork");
 
-    await writeFile(path.join(projectAgentDir, "AGENT.md"), "Hot cache summary.");
+    await writeFile(path.join(projectCoworkDir, "AGENT.md"), "Hot cache summary.");
     await writeFile(
-      path.join(projectAgentDir, "memory", "people", "sarah.md"),
+      path.join(projectCoworkDir, "memory", "people", "sarah.md"),
       "Sarah deep profile.",
     );
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: ["/nonexistent/skills"],
     });
 
@@ -1040,12 +1040,12 @@ describe("loadSystemPrompt", () => {
 
   test("skips hot cache section when no AGENT.md exists", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "project-empty", ".agent");
-    const userAgentDir = path.join(tmp, "home-empty", ".agent");
+    const projectCoworkDir = path.join(tmp, "project-empty", ".cowork");
+    const userCoworkDir = path.join(tmp, "home-empty", ".cowork");
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: ["/nonexistent/skills"],
     });
 
@@ -1109,14 +1109,14 @@ describe("loadSystemPrompt", () => {
 
   test("skips hot cache section when AGENT.md is empty/whitespace", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "project", ".agent");
-    const userAgentDir = path.join(tmp, "home", ".agent");
+    const projectCoworkDir = path.join(tmp, "project", ".cowork");
+    const userCoworkDir = path.join(tmp, "home", ".cowork");
 
-    await writeFile(path.join(projectAgentDir, "AGENT.md"), "   \n  \n  ");
+    await writeFile(path.join(projectCoworkDir, "AGENT.md"), "   \n  \n  ");
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: ["/nonexistent/skills"],
     });
 
@@ -1266,7 +1266,7 @@ describe("loadSubAgentPrompt", () => {
     const config = makeConfig({
       builtInDir: builtIn,
       workingDirectory: cwd,
-      projectAgentDir: path.join(cwd, ".agent"),
+      projectCoworkDir: path.join(cwd, ".cowork"),
     });
     const prompt = await loadSubAgentPrompt(config, "explore");
     const combined = `${basePrompt}\n\n${promptContent}\n`;
@@ -1281,14 +1281,14 @@ describe("loadSubAgentPrompt", () => {
 describe("loadHotCache (tested indirectly)", () => {
   test("returns AGENT.md content from project dir", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "project", ".agent");
-    const userAgentDir = path.join(tmp, "home", ".agent");
+    const projectCoworkDir = path.join(tmp, "project", ".cowork");
+    const userCoworkDir = path.join(tmp, "home", ".cowork");
 
-    await writeFile(path.join(projectAgentDir, "AGENT.md"), "Project-level memory content here.");
+    await writeFile(path.join(projectCoworkDir, "AGENT.md"), "Project-level memory content here.");
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: ["/nonexistent/skills"],
     });
 
@@ -1298,14 +1298,14 @@ describe("loadHotCache (tested indirectly)", () => {
 
   test("falls back to user dir when project dir has no AGENT.md", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "no-project", ".agent");
-    const userAgentDir = path.join(tmp, "home", ".agent");
+    const projectCoworkDir = path.join(tmp, "no-project", ".cowork");
+    const userCoworkDir = path.join(tmp, "home", ".cowork");
 
-    await writeFile(path.join(userAgentDir, "AGENT.md"), "User-level memory fallback content.");
+    await writeFile(path.join(userCoworkDir, "AGENT.md"), "User-level memory fallback content.");
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: ["/nonexistent/skills"],
     });
 
@@ -1315,12 +1315,12 @@ describe("loadHotCache (tested indirectly)", () => {
 
   test("returns empty when no AGENT.md exists anywhere", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "empty-project", ".agent");
-    const userAgentDir = path.join(tmp, "empty-home", ".agent");
+    const projectCoworkDir = path.join(tmp, "empty-project", ".cowork");
+    const userCoworkDir = path.join(tmp, "empty-home", ".cowork");
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: ["/nonexistent/skills"],
     });
 
@@ -1331,14 +1331,14 @@ describe("loadHotCache (tested indirectly)", () => {
 
   test("skips memory injection when the memory database is corrupt", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "corrupt-project", ".agent");
-    const userAgentDir = path.join(tmp, "corrupt-home", ".agent");
+    const projectCoworkDir = path.join(tmp, "corrupt-project", ".cowork");
+    const userCoworkDir = path.join(tmp, "corrupt-home", ".cowork");
 
-    await writeFile(path.join(projectAgentDir, "memory.sqlite"), "not a sqlite db");
+    await writeFile(path.join(projectCoworkDir, "memory.sqlite"), "not a sqlite db");
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: ["/nonexistent/skills"],
     });
 
@@ -1349,8 +1349,8 @@ describe("loadHotCache (tested indirectly)", () => {
 
   test("AGENT.md with rich markdown content is preserved", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "rich-project", ".agent");
-    const userAgentDir = path.join(tmp, "rich-home", ".agent");
+    const projectCoworkDir = path.join(tmp, "rich-project", ".cowork");
+    const userCoworkDir = path.join(tmp, "rich-home", ".cowork");
 
     const richContent = [
       "# Project Notes",
@@ -1364,11 +1364,11 @@ describe("loadHotCache (tested indirectly)", () => {
       "- CI: Continuous Integration",
     ].join("\n");
 
-    await writeFile(path.join(projectAgentDir, "AGENT.md"), richContent);
+    await writeFile(path.join(projectCoworkDir, "AGENT.md"), richContent);
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: ["/nonexistent/skills"],
     });
 
@@ -1380,11 +1380,11 @@ describe("loadHotCache (tested indirectly)", () => {
 
   test("hot cache combined with skills in same prompt", async () => {
     const { tmp } = await makeTmpDirs();
-    const projectAgentDir = path.join(tmp, "combo-project", ".agent");
-    const userAgentDir = path.join(tmp, "combo-home", ".agent");
+    const projectCoworkDir = path.join(tmp, "combo-project", ".cowork");
+    const userCoworkDir = path.join(tmp, "combo-home", ".cowork");
     const skillsDir = path.join(tmp, "combo-skills");
 
-    await writeFile(path.join(projectAgentDir, "AGENT.md"), "Hot cache content present.");
+    await writeFile(path.join(projectCoworkDir, "AGENT.md"), "Hot cache content present.");
 
     await writeFile(
       path.join(skillsDir, "combo-skill", "SKILL.md"),
@@ -1392,8 +1392,8 @@ describe("loadHotCache (tested indirectly)", () => {
     );
 
     const config = makeConfig({
-      projectAgentDir,
-      userAgentDir,
+      projectCoworkDir,
+      userCoworkDir,
       skillsDirs: [skillsDir],
     });
 

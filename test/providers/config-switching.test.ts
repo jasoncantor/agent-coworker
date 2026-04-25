@@ -13,7 +13,7 @@ describe("Provider switching via config", () => {
     const { cwd, home } = await makeTmpDirs();
 
     // Start with google via project config
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "google",
     });
 
@@ -46,7 +46,7 @@ describe("Provider switching via config", () => {
   test("explicit model in project config falls back when the provider switch makes it unsupported", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "openai",
       model: "gpt-5.2",
     });
@@ -66,11 +66,11 @@ describe("Provider switching via config", () => {
   test("provider from user config can be overridden by project config", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(home, ".agent", "config.json"), {
+    await writeJson(path.join(home, ".cowork", "config", "config.json"), {
       provider: "anthropic",
     });
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "openai",
     });
 

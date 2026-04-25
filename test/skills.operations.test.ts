@@ -33,11 +33,11 @@ function makeConfig(root: string): AgentConfig {
     workingDirectory: root,
     userName: "Test User",
     knowledgeCutoff: "Unknown",
-    projectAgentDir: path.join(root, ".agent"),
-    userAgentDir: path.join(root, ".agent-user"),
+    projectCoworkDir: path.join(root, ".cowork"),
+    userCoworkDir: path.join(root, ".agent-user"),
     builtInDir: path.join(root, "builtin"),
     builtInConfigDir: path.join(root, "builtin-config"),
-    skillsDirs: [path.join(root, ".agent", "skills")],
+    skillsDirs: [path.join(root, ".cowork", "skills")],
     memoryDirs: [],
     configDirs: [],
   };
@@ -47,7 +47,7 @@ function makeProjectAndGlobalSkillsConfig(root: string): AgentConfig {
   const base = makeConfig(root);
   return {
     ...base,
-    skillsDirs: [path.join(root, ".agent", "skills"), path.join(root, ".agent-user", "skills")],
+    skillsDirs: [path.join(root, ".cowork", "skills"), path.join(root, ".agent-user", "skills")],
   };
 }
 

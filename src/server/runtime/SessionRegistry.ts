@@ -307,7 +307,7 @@ export class SessionRegistry {
         sessionKind === "root"
           ? async (selection) => {
               await persistProjectConfigPatch(
-                currentConfig.projectAgentDir,
+                currentConfig.projectCoworkDir,
                 selection,
                 currentConfig.providerOptions,
                 { a2uiExperimentEnabled: currentConfig.experimentalFeatures?.a2ui === true },
@@ -320,7 +320,7 @@ export class SessionRegistry {
         sessionKind === "root"
           ? async (patch: ProjectConfigPatch) => {
               await persistProjectConfigPatch(
-                currentConfig.projectAgentDir,
+                currentConfig.projectCoworkDir,
                 patch,
                 currentConfig.providerOptions,
                 { a2uiExperimentEnabled: currentConfig.experimentalFeatures?.a2ui === true },

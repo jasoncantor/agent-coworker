@@ -307,10 +307,6 @@ export class SessionMcpService {
   async setApiKey(name: string, apiKey: string): Promise<void> {
     await this.session.setMcpServerApiKey(name, apiKey);
   }
-
-  async migrateLegacyServers(scope: "workspace" | "user"): Promise<void> {
-    await this.session.migrateLegacyMcpServers(scope);
-  }
 }
 
 export class SessionMemoryService {

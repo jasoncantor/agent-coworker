@@ -7,8 +7,8 @@ This document describes how the harness resolves configuration in [`src/config.t
 Configuration resolves in this order:
 
 1. Environment variables
-2. Project config: `.agent/config.json`
-3. User config: `~/.agent/config.json`
+2. Project config: `.cowork/config.json`
+3. User config: `~/.cowork/config/config.json`
 4. Built-in defaults: `config/defaults.json`
 
 Notes:

@@ -40,7 +40,7 @@ describe("Together AI provider", () => {
   test("loadConfig accepts a supported non-default together model", async () => {
     const { cwd, home } = await makeTmpDirs();
 
-    await writeJson(path.join(cwd, ".agent", "config.json"), {
+    await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "together",
       model: "Qwen/Qwen3.5-397B-A17B",
       preferredChildModel: "Qwen/Qwen3.5-397B-A17B",

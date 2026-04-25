@@ -11,8 +11,8 @@ export type SharedSkillMutationSignal = {
   at: string;
 };
 
-export function resolveSharedSkillMutationSignalPath(userAgentDir: string): string {
-  return path.join(userAgentDir, SHARED_SKILL_MUTATION_SIGNAL_FILE);
+export function resolveSharedSkillMutationSignalPath(userCoworkDir: string): string {
+  return path.join(userCoworkDir, SHARED_SKILL_MUTATION_SIGNAL_FILE);
 }
 
 export async function readSharedSkillMutationSignal(

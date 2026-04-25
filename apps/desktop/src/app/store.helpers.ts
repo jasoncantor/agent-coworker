@@ -359,7 +359,6 @@ export type AppStoreState = {
     code?: string,
   ) => Promise<void>;
   setWorkspaceMcpServerApiKey: (workspaceId: string, name: string, apiKey: string) => Promise<void>;
-  migrateWorkspaceMcpLegacy: (workspaceId: string, scope: "workspace" | "user") => Promise<void>;
   requestWorkspaceBackups: (workspaceId: string) => Promise<void>;
   requestWorkspaceBackupDelta: (
     workspaceId: string,

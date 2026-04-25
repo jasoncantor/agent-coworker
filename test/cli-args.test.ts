@@ -49,6 +49,13 @@ describe("parseCliArgs", () => {
     expect(args.help).toBe(true);
   });
 
+  test("parses migrate-agent-config command with --dir", () => {
+    const { args, errors } = parseCliArgs(["migrate-agent-config", "--dir", "/tmp/project"]);
+    expect(errors).toEqual([]);
+    expect(args.command).toBe("migrate-agent-config");
+    expect(args.dir).toBe("/tmp/project");
+  });
+
   test("errors on unknown flags", () => {
     const { errors } = parseCliArgs(["--wat"]);
     expect(errors.length).toBe(1);

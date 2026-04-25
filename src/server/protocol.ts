@@ -50,8 +50,6 @@ export type MCPServerEventSource =
   | "workspace"
   | "user"
   | "system"
-  | "workspace_legacy"
-  | "user_legacy"
   | "plugin";
 export type MCPServerAuthMode =
   | "none"
@@ -199,10 +197,6 @@ export type SessionEvent =
           authMessage: string;
         }
       >;
-      legacy: {
-        workspace: { path: string; exists: boolean };
-        user: { path: string; exists: boolean };
-      };
       files: Array<{
         source: MCPServerEventSource;
         path: string;

@@ -46,7 +46,7 @@ There is no linter or formatter configured. TypeScript strict mode is the primar
 
 ### Configuration
 
-Three-tier hierarchy (each overrides the previous): built-in (`config/defaults.json`) → user (`~/.agent/config.json`) → project (`.agent/config.json`). Environment variables (`AGENT_PROVIDER`, `AGENT_MODEL`, etc.) override all. Config loading and deep-merge logic is in `src/config.ts`.
+Three-tier hierarchy (each overrides the previous): built-in (`config/defaults.json`) → user (`~/.cowork/config/config.json`) → project (`.cowork/config.json`). Environment variables (`AGENT_PROVIDER`, `AGENT_MODEL`, etc.) override all. Config loading and deep-merge logic is in `src/config.ts`.
 
 The same three-tier pattern applies to skills (`skills/` directories), memory (`memory/` directories), and MCP server configs (`mcp-servers.json` files).
 

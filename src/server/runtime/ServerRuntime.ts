@@ -124,7 +124,7 @@ export async function createAgentServerRuntime(
   );
   if (mergedProviderOptions) config.providerOptions = mergedProviderOptions;
 
-  await fs.mkdir(config.projectAgentDir, { recursive: true });
+  await fs.mkdir(config.projectCoworkDir, { recursive: true });
 
   let system = "";
   let discoveredSkills: Array<{ name: string; description: string }> = [];
@@ -235,7 +235,7 @@ export async function createAgentServerRuntime(
   });
 
   skillMutationBus = new SkillMutationBus({
-    userAgentDir: config.userAgentDir,
+    userCoworkDir: config.userCoworkDir,
     workingDirectory: config.workingDirectory,
     refreshLocalSkillState,
   });

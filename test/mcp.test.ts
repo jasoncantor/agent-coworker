@@ -29,8 +29,8 @@ function makeConfig(
     uploadsDirectory: path.join(workspaceRoot, "uploads"),
     userName: "tester",
     knowledgeCutoff: "unknown",
-    projectAgentDir: path.join(workspaceRoot, ".agent"),
-    userAgentDir: path.join(userHome, ".agent"),
+    projectCoworkDir: path.join(workspaceRoot, ".cowork"),
+    userCoworkDir: path.join(userHome, ".cowork"),
     builtInDir: path.dirname(builtInConfigDir),
     builtInConfigDir,
     skillsDirs: [],
@@ -148,7 +148,7 @@ describe("workspace mcp document", () => {
         null,
         2,
       );
-      await writeProjectMCPServersDocument(config.projectAgentDir, raw);
+      await writeProjectMCPServersDocument(config.projectCoworkDir, raw);
 
       const workspaceFile = path.join(tmpWorkspace, ".cowork", "mcp-servers.json");
       const legacyFile = path.join(tmpWorkspace, ".agent", "mcp-servers.json");
@@ -169,7 +169,7 @@ describe("workspace mcp document", () => {
 });
 
 describe("mcp layered snapshot", () => {
-  test("readMCPServersSnapshot merges all layers including legacy at lower priority", async () => {
+  test("readMCPServersSnapshot merges canonical workspace, user, and system layers", async () => {
     const tmpWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-snapshot-workspace-"));
     const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-snapshot-home-"));
     const builtInDir = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-snapshot-builtin-"));
@@ -204,15 +204,12 @@ describe("mcp layered snapshot", () => {
       const names = snapshot.servers.map((server) => server.name);
       expect(names).toContain("shared");
       expect(names).toContain("workspace");
-      expect(names).toContain("legacy-ws");
+      expect(names).not.toContain("legacy-ws");
 
       const shared = snapshot.servers.find((server) => server.name === "shared");
       expect(shared?.source).toBe("workspace");
 
-      const legacyWs = snapshot.servers.find((server) => server.name === "legacy-ws");
-      expect(legacyWs?.source).toBe("workspace_legacy");
-
-      expect(snapshot.legacy.workspace.exists).toBe(true);
+      expect(snapshot.files.some((file) => file.legacy)).toBe(false);
     } finally {
       await fs.rm(tmpWorkspace, { recursive: true, force: true });
       await fs.rm(tmpHome, { recursive: true, force: true });

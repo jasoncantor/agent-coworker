@@ -385,8 +385,6 @@ export const mcpSessionEventSourceSchema = z.enum([
   "workspace",
   "user",
   "system",
-  "workspace_legacy",
-  "user_legacy",
   "plugin",
 ]);
 
@@ -418,22 +416,6 @@ export const mcpServersEventSchema = z
         })
         .passthrough(),
     ),
-    legacy: z
-      .object({
-        workspace: z
-          .object({
-            path: z.string(),
-            exists: z.boolean(),
-          })
-          .strict(),
-        user: z
-          .object({
-            path: z.string(),
-            exists: z.boolean(),
-          })
-          .strict(),
-      })
-      .strict(),
     files: z.array(
       z
         .object({
@@ -1118,13 +1100,6 @@ export const mcpServerAuthSetApiKeyRequestSchema = z
   })
   .strict();
 
-export const mcpLegacyMigrateRequestSchema = z
-  .object({
-    cwd: optionalNonEmptyTrimmedStringSchema,
-    scope: z.enum(["workspace", "user"]),
-  })
-  .strict();
-
 export const skillsCatalogReadRequestSchema = z
   .object({
     cwd: optionalNonEmptyTrimmedStringSchema,
@@ -1349,7 +1324,6 @@ export const jsonRpcControlRequestSchemas = {
   "cowork/mcp/server/auth/authorize": mcpServerAuthAuthorizeRequestSchema,
   "cowork/mcp/server/auth/callback": mcpServerAuthCallbackRequestSchema,
   "cowork/mcp/server/auth/setApiKey": mcpServerAuthSetApiKeyRequestSchema,
-  "cowork/mcp/legacy/migrate": mcpLegacyMigrateRequestSchema,
   "cowork/skills/catalog/read": skillsCatalogReadRequestSchema,
   "cowork/skills/list": skillsListRequestSchema,
   "cowork/skills/read": skillsReadRequestSchema,
@@ -1405,7 +1379,6 @@ export const jsonRpcControlResultSchemas = {
   ),
   "cowork/mcp/server/auth/callback": sessionEventEnvelope(mcpAuthResultEventSchema),
   "cowork/mcp/server/auth/setApiKey": sessionEventEnvelope(mcpAuthResultEventSchema),
-  "cowork/mcp/legacy/migrate": sessionEventEnvelope(mcpServersEventSchema),
   "cowork/skills/catalog/read": sessionEventEnvelope(skillsCatalogEventSchema),
   "cowork/skills/list": sessionEventEnvelope(skillsListEventSchema),
   "cowork/skills/read": sessionEventEnvelope(skillContentEventSchema),
