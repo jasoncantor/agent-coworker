@@ -259,6 +259,7 @@ function makeSession(
     cancelAgentSessionsImpl: (parentSessionId: string) => void;
     deleteSessionImpl: (opts: any) => Promise<void>;
     getSkillMutationBlockReasonImpl: (workingDirectory: string) => string | null;
+    readSkillCatalogMtimeSnapshotImpl: (config: AgentConfig) => Promise<string>;
     refreshSkillsAcrossWorkspaceSessionsImpl: (opts: {
       workingDirectory: string;
       sourceSessionId: string;
@@ -266,6 +267,7 @@ function makeSession(
     }) => Promise<void>;
     sessionInfoPatch: Partial<SessionInfoState>;
     discoveredSkills: Array<{ name: string; description: string }>;
+    initialSkillCatalogMtimeSnapshot: string | null;
   }>,
 ) {
   const dir = "/tmp/test-session";
@@ -301,7 +303,9 @@ function makeSession(
     cancelAgentSessionsImpl: overrides?.cancelAgentSessionsImpl,
     deleteSessionImpl: overrides?.deleteSessionImpl,
     getSkillMutationBlockReasonImpl: overrides?.getSkillMutationBlockReasonImpl,
+    readSkillCatalogMtimeSnapshotImpl: overrides?.readSkillCatalogMtimeSnapshotImpl,
     refreshSkillsAcrossWorkspaceSessionsImpl: overrides?.refreshSkillsAcrossWorkspaceSessionsImpl,
+    initialSkillCatalogMtimeSnapshot: overrides?.initialSkillCatalogMtimeSnapshot,
     sessionInfoPatch: overrides?.sessionInfoPatch,
   });
   return { session, emit, events, sessionBackupFactory };
@@ -633,6 +637,53 @@ describe("AgentSession", () => {
       const runTurnArgs = mockRunTurn.mock.calls.at(-1)?.[0] as any;
       expect(runTurnArgs.system).toBe("prompt:root-system");
       expect(runTurnArgs.discoveredSkills).toEqual([]);
+    });
+
+    test("sendUserMessage refreshes the prompt when the skill catalog mtime changes", async () => {
+      const readSkillCatalogMtimeSnapshotImpl = mock(async () => "snapshot:new");
+      const loadSystemPromptWithSkillsImpl = mock(async () => ({
+        prompt: "prompt:skills-refreshed",
+        discoveredSkills: [{ name: "fresh-skill", description: "Fresh skill" }],
+      }));
+      const { session } = makeSession({
+        system: "prompt:stale",
+        discoveredSkills: [{ name: "stale-skill", description: "Stale skill" }],
+        initialSkillCatalogMtimeSnapshot: "snapshot:old",
+        readSkillCatalogMtimeSnapshotImpl,
+        loadSystemPromptWithSkillsImpl,
+      });
+
+      await session.sendUserMessage("hello");
+
+      expect(readSkillCatalogMtimeSnapshotImpl).toHaveBeenCalledTimes(2);
+      expect(loadSystemPromptWithSkillsImpl).toHaveBeenCalledTimes(1);
+
+      const runTurnArgs = mockRunTurn.mock.calls.at(-1)?.[0] as any;
+      expect(runTurnArgs.system).toBe("prompt:skills-refreshed");
+      expect(runTurnArgs.discoveredSkills).toEqual([
+        { name: "fresh-skill", description: "Fresh skill" },
+      ]);
+    });
+
+    test("sendUserMessage records the skill catalog mtime without refreshing on first observation", async () => {
+      const readSkillCatalogMtimeSnapshotImpl = mock(async () => "snapshot:current");
+      const loadSystemPromptWithSkillsImpl = mock(async () => {
+        throw new Error("should not reload");
+      });
+      const { session } = makeSession({
+        system: "prompt:cached",
+        discoveredSkills: [{ name: "cached-skill", description: "Cached skill" }],
+        readSkillCatalogMtimeSnapshotImpl,
+        loadSystemPromptWithSkillsImpl,
+      });
+
+      await session.sendUserMessage("hello");
+
+      expect(readSkillCatalogMtimeSnapshotImpl).toHaveBeenCalledTimes(1);
+      expect(loadSystemPromptWithSkillsImpl).not.toHaveBeenCalled();
+
+      const runTurnArgs = mockRunTurn.mock.calls.at(-1)?.[0] as any;
+      expect(runTurnArgs.system).toBe("prompt:cached");
     });
 
     test("sendUserMessage backfills discovered skills when prompt metadata is missing", async () => {

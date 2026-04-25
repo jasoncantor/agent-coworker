@@ -6,8 +6,6 @@ import {
   writeSharedSkillMutationSignal,
 } from "../sharedSkillMutationSignal";
 
-const SHARED_SKILL_MUTATION_POLL_MS = 250;
-
 type RefreshLocalSkillStateOptions = {
   workingDirectory: string;
   sourceSessionId?: string;
@@ -16,7 +14,6 @@ type RefreshLocalSkillStateOptions = {
 
 export class SkillMutationBus {
   private watcher: fsSync.FSWatcher | null = null;
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
   private lastRevision: string | null = null;
   private refreshLoop: Promise<void> | null = null;
   private refreshQueued = false;
@@ -43,9 +40,6 @@ export class SkillMutationBus {
     } catch {
       // Cross-process refresh remains best-effort when file watching is unavailable.
     }
-    this.pollTimer = setInterval(() => {
-      this.scheduleRefresh();
-    }, SHARED_SKILL_MUTATION_POLL_MS);
   }
 
   async publish(): Promise<void> {
@@ -66,10 +60,6 @@ export class SkillMutationBus {
       // ignore
     }
     this.watcher = null;
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
   }
 
   private scheduleRefresh(): void {

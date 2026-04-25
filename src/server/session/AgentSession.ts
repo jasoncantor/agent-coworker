@@ -352,6 +352,7 @@ export class AgentSession {
   private pendingConfigMutation: Promise<void> = Promise.resolve();
   private readonly memoryStore: MemoryStore;
   private systemPromptLoadPromise: Promise<boolean> | null = null;
+  private skillCatalogMtimeSnapshot: string | null = null;
   private bufferDisconnectedEvents = false;
   private disconnectedReplayEvents: SessionEvent[] = [];
   private persistedLastEventSeq: number;
@@ -395,9 +396,11 @@ export class AgentSession {
     getLiveSessionSnapshotImpl?: SessionDependencies["getLiveSessionSnapshotImpl"];
     buildLegacySessionSnapshotImpl?: SessionDependencies["buildLegacySessionSnapshotImpl"];
     getSkillMutationBlockReasonImpl?: SessionDependencies["getSkillMutationBlockReasonImpl"];
+    readSkillCatalogMtimeSnapshotImpl?: SessionDependencies["readSkillCatalogMtimeSnapshotImpl"];
     refreshSkillsAcrossWorkspaceSessionsImpl?: SessionDependencies["refreshSkillsAcrossWorkspaceSessionsImpl"];
     createA2uiSurfaceManagerImpl?: SessionDependencies["createA2uiSurfaceManagerImpl"];
     deriveA2uiSurfacesFromSnapshotImpl?: SessionDependencies["deriveA2uiSurfacesFromSnapshotImpl"];
+    initialSkillCatalogMtimeSnapshot?: string | null;
     hydratedState?: HydratedSessionState;
     initialSessionSnapshot?: SessionSnapshot;
     initialLastEventSeq?: number;
@@ -419,6 +422,7 @@ export class AgentSession {
       0,
       Math.floor(opts.initialLastEventSeq ?? opts.initialSessionSnapshot?.lastEventSeq ?? 0),
     );
+    this.skillCatalogMtimeSnapshot = opts.initialSkillCatalogMtimeSnapshot ?? null;
 
     const now = new Date().toISOString();
     const initialBackupsEnabled = hydrated?.backupsEnabledOverride ?? opts.config.backupsEnabled ?? false;
@@ -545,6 +549,7 @@ export class AgentSession {
       getLiveSessionSnapshotImpl: opts.getLiveSessionSnapshotImpl,
       buildLegacySessionSnapshotImpl: opts.buildLegacySessionSnapshotImpl,
       getSkillMutationBlockReasonImpl: opts.getSkillMutationBlockReasonImpl,
+      readSkillCatalogMtimeSnapshotImpl: opts.readSkillCatalogMtimeSnapshotImpl,
       refreshSkillsAcrossWorkspaceSessionsImpl: opts.refreshSkillsAcrossWorkspaceSessionsImpl,
       createA2uiSurfaceManagerImpl: opts.createA2uiSurfaceManagerImpl,
       deriveA2uiSurfacesFromSnapshotImpl: opts.deriveA2uiSurfacesFromSnapshotImpl,
@@ -830,6 +835,7 @@ export class AgentSession {
     deleteWorkspaceBackupCheckpointImpl?: SessionDependencies["deleteWorkspaceBackupCheckpointImpl"];
     deleteWorkspaceBackupEntryImpl?: SessionDependencies["deleteWorkspaceBackupEntryImpl"];
     getWorkspaceBackupDeltaImpl?: SessionDependencies["getWorkspaceBackupDeltaImpl"];
+    readSkillCatalogMtimeSnapshotImpl?: SessionDependencies["readSkillCatalogMtimeSnapshotImpl"];
     createA2uiSurfaceManagerImpl?: SessionDependencies["createA2uiSurfaceManagerImpl"];
     deriveA2uiSurfacesFromSnapshotImpl?: SessionDependencies["deriveA2uiSurfacesFromSnapshotImpl"];
     initialSessionSnapshot?: SessionSnapshot | null;
@@ -924,6 +930,7 @@ export class AgentSession {
       deleteWorkspaceBackupCheckpointImpl: opts.deleteWorkspaceBackupCheckpointImpl,
       deleteWorkspaceBackupEntryImpl: opts.deleteWorkspaceBackupEntryImpl,
       getWorkspaceBackupDeltaImpl: opts.getWorkspaceBackupDeltaImpl,
+      readSkillCatalogMtimeSnapshotImpl: opts.readSkillCatalogMtimeSnapshotImpl,
       createA2uiSurfaceManagerImpl: opts.createA2uiSurfaceManagerImpl,
       deriveA2uiSurfacesFromSnapshotImpl: opts.deriveA2uiSurfacesFromSnapshotImpl,
       ...(opts.initialSessionSnapshot
@@ -1314,6 +1321,7 @@ export class AgentSession {
   private async ensureSystemPromptReady(): Promise<boolean> {
     const hasSystemPrompt = this.state.system.trim().length > 0;
     if (hasSystemPrompt && this.state.systemPromptMetadataLoaded) {
+      await this.refreshSystemPromptIfSkillCatalogChanged();
       return true;
     }
     if (this.systemPromptLoadPromise) {
@@ -1328,6 +1336,7 @@ export class AgentSession {
         }
         this.state.discoveredSkills = result.discoveredSkills;
         this.state.systemPromptMetadataLoaded = true;
+        await this.recordSkillCatalogMtimeSnapshot();
         return true;
       } catch (err) {
         this.context.emitError(
@@ -1344,12 +1353,47 @@ export class AgentSession {
     return await this.systemPromptLoadPromise;
   }
 
+  private async recordSkillCatalogMtimeSnapshot(): Promise<void> {
+    const readSnapshot = this.deps.readSkillCatalogMtimeSnapshotImpl;
+    if (!readSnapshot) {
+      return;
+    }
+    try {
+      this.skillCatalogMtimeSnapshot = await readSnapshot(this.state.config);
+    } catch {
+      // Catalog mtime checks should never block a turn or an explicit refresh.
+    }
+  }
+
+  private async refreshSystemPromptIfSkillCatalogChanged(): Promise<void> {
+    const readSnapshot = this.deps.readSkillCatalogMtimeSnapshotImpl;
+    if (!readSnapshot) {
+      return;
+    }
+    let nextSnapshot: string;
+    try {
+      nextSnapshot = await readSnapshot(this.state.config);
+    } catch {
+      return;
+    }
+    const previousSnapshot = this.skillCatalogMtimeSnapshot;
+    if (previousSnapshot === null) {
+      this.skillCatalogMtimeSnapshot = nextSnapshot;
+      return;
+    }
+    if (previousSnapshot === nextSnapshot) {
+      return;
+    }
+    await this.refreshSystemPromptWithSkills("skills.pre_turn_mtime_refresh");
+  }
+
   async refreshSystemPromptWithSkills(reason = "session.refresh_system_prompt") {
     try {
       const result = await this.context.deps.loadSystemPromptWithSkillsImpl(this.state.config);
       this.state.system = result.prompt;
       this.state.discoveredSkills = result.discoveredSkills;
       this.state.systemPromptMetadataLoaded = true;
+      await this.recordSkillCatalogMtimeSnapshot();
       this.queuePersistSessionSnapshot(reason);
     } catch (err) {
       this.context.emitError(

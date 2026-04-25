@@ -67,6 +67,8 @@ export type SessionRegistryOptions = {
   threadJournal: ThreadJournal;
   loadAgentPrompt: typeof loadAgentPromptFn;
   setConfig: (config: AgentConfig) => void;
+  readSkillCatalogMtimeSnapshot?: (config: AgentConfig) => Promise<string>;
+  initialSkillCatalogMtimeSnapshot?: string | null;
   refreshSkillsAcrossWorkspaceSessions: (options: {
     workingDirectory: string;
     sourceSessionId: string;
@@ -403,6 +405,7 @@ export class SessionRegistry {
         this.sessionBindings.get(sessionId)?.runtime?.read.workingDirectory ?? null,
       buildLegacySessionSnapshotImpl: (record: PersistedSessionRecord) =>
         loadSessionSnapshotProjectorModule().createLegacySessionSnapshot(record),
+      readSkillCatalogMtimeSnapshotImpl: this.options.readSkillCatalogMtimeSnapshot,
       getSkillMutationBlockReasonImpl: (workingDirectory) => {
         const busyRuntime = [...this.sessionBindings.values()]
           .map((candidate) => candidate.runtime)
@@ -474,6 +477,10 @@ export class SessionRegistry {
     const session = new AgentSession({
       config: sessionConfig,
       system: overrides?.system ?? this.options.system,
+      initialSkillCatalogMtimeSnapshot:
+        overrides?.config || overrides?.system
+          ? null
+          : this.options.initialSkillCatalogMtimeSnapshot,
       persistenceEnabled: overrides?.persistenceEnabled,
       ...(overrides?.seedContext ? { seedContext: overrides.seedContext } : {}),
       ...(overrides?.sessionInfoPatch ? { sessionInfoPatch: overrides.sessionInfoPatch } : {}),

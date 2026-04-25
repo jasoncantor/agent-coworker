@@ -264,6 +264,7 @@ export type SessionDependencies = {
     record: import("../sessionDb").PersistedSessionRecord,
   ) => SessionSnapshot;
   getSkillMutationBlockReasonImpl?: (workingDirectory: string) => string | null;
+  readSkillCatalogMtimeSnapshotImpl?: (config: AgentConfig) => Promise<string>;
   refreshSkillsAcrossWorkspaceSessionsImpl?: (opts: {
     workingDirectory: string;
     sourceSessionId: string;

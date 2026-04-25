@@ -131,6 +131,7 @@ export function withSession<T>(
     const settled = { value: false };
     let activeSessionId = options?.resumeSessionId ?? "";
     let rpc: JsonRpcConnection | null = null;
+    let legacySendQueue = Promise.resolve();
 
     const timeout = setTimeout(() => {
       if (settled.value) return;
@@ -266,7 +267,8 @@ export function withSession<T>(
           }
         };
 
-        void run().catch((error) => {
+        legacySendQueue = legacySendQueue.then(run);
+        void legacySendQueue.catch((error) => {
           finishReject(error instanceof Error ? error : new Error(String(error)));
         });
       },

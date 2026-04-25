@@ -299,7 +299,11 @@ export class AgentControl {
   async wait(opts: AgentWaitOptions): Promise<AgentWaitResult> {
     for (const agentId of opts.agentIds) {
       const session = this.ensureAgentSession(opts.parentSessionId, agentId);
-      this.publish(opts.parentSessionId, session);
+      this.publish(
+        opts.parentSessionId,
+        session,
+        this.inFlightByAgentId.has(agentId) ? { executionState: "running", busy: true } : {},
+      );
     }
     return await this.statusBus.wait(opts.agentIds, opts.timeoutMs, opts.mode);
   }

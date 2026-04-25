@@ -27,6 +27,7 @@ import {
 import { createJsonRpcTransportAdapter } from "../jsonrpc/transportAdapter";
 import { ResearchService } from "../research/ResearchService";
 import { type PersistedSessionRecord, SessionDb } from "../sessionDb";
+import { readSkillCatalogMtimeSnapshot } from "../skillCatalogMtime";
 import { refreshSessionsForSkillMutation } from "../skillMutationRefresh";
 import type { StartServerSocket } from "../startServer/types";
 import { isErrorWithCode, isPlainObject, mergeRuntimeProviderOptions } from "./ConfigPatchStore";
@@ -127,10 +128,12 @@ export async function createAgentServerRuntime(
 
   let system = "";
   let discoveredSkills: Array<{ name: string; description: string }> = [];
+  let initialSkillCatalogMtimeSnapshot: string | null = null;
   if (opts.preloadSystemPrompt !== false) {
     const loadedSystemPrompt = await lazyLoadSystemPromptWithSkills(config);
     system = loadedSystemPrompt.prompt;
     discoveredSkills = loadedSystemPrompt.discoveredSkills;
+    initialSkillCatalogMtimeSnapshot = await readSkillCatalogMtimeSnapshot(config);
   }
 
   const getAiCoworkerPathsImpl = opts.getAiCoworkerPathsImpl ?? getAiCoworkerPathsDefault;
@@ -176,6 +179,8 @@ export async function createAgentServerRuntime(
     setConfig: (nextConfig) => {
       config = nextConfig;
     },
+    readSkillCatalogMtimeSnapshot,
+    initialSkillCatalogMtimeSnapshot,
     refreshSkillsAcrossWorkspaceSessions: async ({
       workingDirectory,
       sourceSessionId,
