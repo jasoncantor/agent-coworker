@@ -230,6 +230,7 @@ describe("desktop persistence state validation", () => {
       showHiddenFiles: false,
       desktopSettings: {
         quickChat: {
+          iconEnabled: false,
           shortcutEnabled: true,
           shortcutAccelerator: "Alt+Space",
         },
@@ -237,6 +238,7 @@ describe("desktop persistence state validation", () => {
     });
 
     const loaded = await persistence.loadState();
+    expect(loaded.desktopSettings?.quickChat?.iconEnabled).toBe(false);
     expect(loaded.desktopSettings?.quickChat?.shortcutEnabled).toBe(true);
     expect(loaded.desktopSettings?.quickChat?.shortcutAccelerator).toBe("Alt+Space");
   });
@@ -583,6 +585,7 @@ describe("desktop persistence state validation", () => {
       perWorkspaceSettings: false,
       desktopSettings: {
         quickChat: {
+          iconEnabled: true,
           shortcutEnabled: false,
           shortcutAccelerator: "CommandOrControl+Shift+Space",
         },

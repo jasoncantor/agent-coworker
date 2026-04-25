@@ -345,6 +345,9 @@ const persistedStateSchema = z
       .object({
         quickChat: z
           .object({
+            iconEnabled: z
+              .preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean())
+              .optional(),
             shortcutEnabled: z
               .preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean())
               .optional(),
@@ -680,6 +683,7 @@ export function createBootstrapActions(
   | "setDeveloperMode"
   | "setShowHiddenFiles"
   | "setPerWorkspaceSettings"
+  | "setQuickChatIconEnabled"
   | "setQuickChatShortcutEnabled"
   | "setQuickChatShortcutAccelerator"
   | "setDesktopFeatureFlagOverride"
@@ -959,6 +963,19 @@ export function createBootstrapActions(
           }
         }
       }
+      void persistNow(get);
+    },
+
+    setQuickChatIconEnabled: (enabled) => {
+      set((state) => ({
+        desktopSettings: {
+          ...state.desktopSettings,
+          quickChat: {
+            ...state.desktopSettings.quickChat,
+            iconEnabled: enabled,
+          },
+        },
+      }));
       void persistNow(get);
     },
 

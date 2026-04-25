@@ -179,6 +179,7 @@ describe("feature flags settings page", () => {
           },
           desktopSettings: {
             quickChat: {
+              iconEnabled: true,
               shortcutEnabled: false,
               shortcutAccelerator: "CommandOrControl+Shift+Space",
             },

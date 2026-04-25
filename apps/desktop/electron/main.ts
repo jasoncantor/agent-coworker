@@ -423,7 +423,9 @@ async function createQuickChatWindow(opts?: ShowQuickChatWindowInput): Promise<B
     fullscreenable: false,
     skipTaskbar: true,
     autoHideMenuBar: true,
-    roundedCorners: !isDarwin,
+    // Let the native window clip the transparent host instead of drawing a
+    // second CSS radius at the renderer edge.
+    roundedCorners: true,
     hasShadow: true,
     backgroundColor: useDarkColors ? "#1f1d1a" : "#f5f0e5",
     ...getInitialWindowAppearanceOptions({ useDarkColors, useMacosNativeGlass }),

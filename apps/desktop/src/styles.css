@@ -30,7 +30,8 @@ body {
   background: transparent;
 }
 
-/* Edge-to-edge shell; window provides the round clip on macOS (see createUtilityWindow). */
+/* Edge-to-edge popup shells; native windows provide the rounded clip. */
+:root[data-window-mode="quick-chat"] #root,
 :root[data-window-mode="utility"] #root {
   overflow: hidden;
 }

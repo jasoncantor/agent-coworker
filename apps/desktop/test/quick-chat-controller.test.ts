@@ -314,6 +314,40 @@ describe("resolveTrayIconPath", () => {
     expect(controller.hasTray()).toBe(false);
   });
 
+  test("removes the tray when the quick chat icon setting is disabled", () => {
+    createdTrays.length = 0;
+    const controller = new QuickChatController({
+      appName: "Cowork",
+      platform: "darwin",
+      trayIconPath: "/tmp/icon.png",
+      getMainWindow: () => null,
+      createMainWindow: async () => new FakeWindow() as never,
+      createQuickChatWindow: async () => new FakeWindow() as never,
+      retargetQuickChatWindow: async () => {},
+      createUtilityWindow: async () => new FakeWindow() as never,
+    });
+
+    controller.initialize();
+    expect(createdTrays).toHaveLength(1);
+    expect(controller.hasTray()).toBe(true);
+
+    controller.applyPersistedState({
+      version: 2,
+      workspaces: [],
+      threads: [],
+      desktopSettings: {
+        quickChat: {
+          iconEnabled: false,
+          shortcutEnabled: false,
+          shortcutAccelerator: "CommandOrControl+Shift+Space",
+        },
+      },
+    });
+
+    expect(createdTrays[0]?.destroyed).toBe(true);
+    expect(controller.hasTray()).toBe(false);
+  });
+
   test("reports tray availability while the tray surface is active", () => {
     createdTrays.length = 0;
     const controller = new QuickChatController({

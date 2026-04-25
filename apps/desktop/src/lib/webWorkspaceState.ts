@@ -72,6 +72,7 @@ function createEmptyState(): PersistedState {
     showHiddenFiles: false,
     desktopSettings: {
       quickChat: {
+        iconEnabled: true,
         shortcutEnabled: false,
         shortcutAccelerator: DEFAULT_QUICK_CHAT_SHORTCUT_ACCELERATOR,
       },
@@ -97,6 +98,7 @@ export function loadPersistedState(): PersistedState {
       showHiddenFiles: parsed.showHiddenFiles ?? false,
       desktopSettings: {
         quickChat: {
+          iconEnabled: parsed.desktopSettings?.quickChat?.iconEnabled !== false,
           shortcutEnabled: parsed.desktopSettings?.quickChat?.shortcutEnabled === true,
           shortcutAccelerator: normalizeQuickChatShortcutAccelerator(
             parsed.desktopSettings?.quickChat?.shortcutAccelerator,

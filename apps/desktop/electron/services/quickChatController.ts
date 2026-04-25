@@ -51,6 +51,7 @@ export class QuickChatController {
   private tray: Tray | null = null;
   private quickChatWindow: BrowserWindow | null = null;
   private utilityWindow: BrowserWindow | null = null;
+  private quickChatIconEnabled = true;
   private quickChatShortcutEnabled = false;
   private quickChatShortcutAccelerator = DEFAULT_QUICK_CHAT_SHORTCUT_ACCELERATOR;
   private registeredShortcutAccelerator: string | null = null;
@@ -81,6 +82,7 @@ export class QuickChatController {
       overrides: state.desktopFeatureFlagOverrides,
     });
     this.menuBarEnabled = featureFlags.menuBar;
+    this.quickChatIconEnabled = settings.quickChat.iconEnabled;
     this.quickChatShortcutEnabled = settings.quickChat.shortcutEnabled;
     this.quickChatShortcutAccelerator = settings.quickChat.shortcutAccelerator;
     this.syncTrayVisibility();
@@ -217,7 +219,7 @@ export class QuickChatController {
       }
       return;
     }
-    if (!this.menuBarEnabled) {
+    if (!this.menuBarEnabled || !this.quickChatIconEnabled) {
       if (this.tray) {
         this.tray.destroy();
         this.tray = null;

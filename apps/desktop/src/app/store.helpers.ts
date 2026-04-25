@@ -270,6 +270,7 @@ export type AppStoreState = {
   setDeveloperMode: (v: boolean) => void;
   setShowHiddenFiles: (v: boolean) => void;
   setPerWorkspaceSettings: (enabled: boolean) => void;
+  setQuickChatIconEnabled: (enabled: boolean) => void;
   setQuickChatShortcutEnabled: (enabled: boolean) => void;
   setQuickChatShortcutAccelerator: (accelerator: string) => void;
   setDesktopFeatureFlagOverride: (flagId: DesktopFeatureFlagId, enabled: boolean) => Promise<void>;

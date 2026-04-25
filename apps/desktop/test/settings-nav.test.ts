@@ -368,10 +368,28 @@ describe("settings nav (store)", () => {
     expect(useAppStore.getState().developerMode).toBe(true);
   });
 
+  test("setQuickChatIconEnabled updates persisted desktop settings", () => {
+    useAppStore.setState({
+      desktopSettings: {
+        quickChat: {
+          iconEnabled: true,
+          shortcutEnabled: false,
+          shortcutAccelerator: "CommandOrControl+Shift+Space",
+        },
+      },
+    });
+
+    useAppStore.getState().setQuickChatIconEnabled(false);
+
+    expect(useAppStore.getState().desktopSettings.quickChat.iconEnabled).toBe(false);
+    expect(savedStates.at(-1)?.desktopSettings?.quickChat?.iconEnabled).toBe(false);
+  });
+
   test("setQuickChatShortcutEnabled updates persisted desktop settings", () => {
     useAppStore.setState({
       desktopSettings: {
         quickChat: {
+          iconEnabled: true,
           shortcutEnabled: false,
           shortcutAccelerator: "CommandOrControl+Shift+Space",
         },
@@ -388,6 +406,7 @@ describe("settings nav (store)", () => {
     useAppStore.setState({
       desktopSettings: {
         quickChat: {
+          iconEnabled: true,
           shortcutEnabled: true,
           shortcutAccelerator: "CommandOrControl+Shift+Space",
         },

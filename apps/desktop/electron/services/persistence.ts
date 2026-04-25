@@ -129,6 +129,7 @@ function sanitizeDesktopSettings(value: unknown): PersistedDesktopSettings {
   );
   return {
     quickChat: {
+      iconEnabled: normalized.quickChat.iconEnabled,
       shortcutEnabled: normalized.quickChat.shortcutEnabled,
       shortcutAccelerator: normalized.quickChat.shortcutAccelerator,
     },

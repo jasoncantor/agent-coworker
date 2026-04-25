@@ -361,6 +361,9 @@ const persistedDesktopSettingsSchema = z
   .object({
     quickChat: z
       .object({
+        iconEnabled: z
+          .preprocess((value) => (typeof value === "boolean" ? value : true), z.boolean())
+          .optional(),
         shortcutEnabled: z
           .preprocess((value) => (typeof value === "boolean" ? value : false), z.boolean())
           .optional(),

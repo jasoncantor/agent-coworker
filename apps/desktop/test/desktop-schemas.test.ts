@@ -85,6 +85,7 @@ describe("desktop persisted-state schema defaults", () => {
       showHiddenFiles: true,
       desktopSettings: {
         quickChat: {
+          iconEnabled: false,
           shortcutEnabled: true,
           shortcutAccelerator: "Alt+Space",
         },
@@ -104,6 +105,7 @@ describe("desktop persisted-state schema defaults", () => {
     expect(parsed.workspaces[0]?.yolo).toBe(true);
     expect(parsed.developerMode).toBe(true);
     expect(parsed.showHiddenFiles).toBe(true);
+    expect(parsed.desktopSettings?.quickChat?.iconEnabled).toBe(false);
     expect(parsed.desktopSettings?.quickChat?.shortcutEnabled).toBe(true);
     expect(parsed.desktopSettings?.quickChat?.shortcutAccelerator).toBe("Alt+Space");
   });

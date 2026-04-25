@@ -148,6 +148,7 @@ export type PersistedOnboardingState = {
 
 export type PersistedDesktopSettings = {
   quickChat?: {
+    iconEnabled?: boolean;
     shortcutEnabled?: boolean;
     shortcutAccelerator?: string;
   };
@@ -155,6 +156,7 @@ export type PersistedDesktopSettings = {
 
 export type DesktopSettings = {
   quickChat: {
+    iconEnabled: boolean;
     shortcutEnabled: boolean;
     shortcutAccelerator: string;
   };
@@ -163,6 +165,7 @@ export type DesktopSettings = {
 export function normalizeDesktopSettings(value?: PersistedDesktopSettings | null): DesktopSettings {
   return {
     quickChat: {
+      iconEnabled: value?.quickChat?.iconEnabled !== false,
       shortcutEnabled: value?.quickChat?.shortcutEnabled === true,
       shortcutAccelerator: normalizeQuickChatShortcutAccelerator(value?.quickChat?.shortcutAccelerator),
     },
