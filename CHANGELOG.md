@@ -4,6 +4,73 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 0.1.48 - 2026-04-25
+
+### Added
+
+- **Experimental OpenAI native connectors** — Workspace-scoped ChatGPT apps
+  for Codex: discovery and enablement flow, synthetic `codex_apps` MCP
+  injection when enabled, JSON-RPC connector controls
+  (`cowork/connectors/*`), provider/MCP wiring for the OpenAI Responses
+  path, and an optional desktop settings page (behind
+  `COWORK_EXPERIMENTAL_OPENAI_NATIVE_CONNECTORS`, with `codex-cli` OAuth
+  required). Protocol and generated schema updates in
+  `docs/websocket-protocol.md`.
+
+- **Desktop Deep Research workflow and exports** (#88) — Deep Research
+  flow in the desktop app with export handling and related IPC wiring.
+
+- **GPT-5.5 model support** (#89) — Registry and runtime support for GPT-5.5.
+
+- **Menu bar quick chat** (#87, Jason Cantor) — macOS menu bar and system tray
+  entry to Quick Chat, with the tray “utility” window split from the Quick Chat
+  popout so each surface keeps its own behavior. Global shortcut for Quick Chat
+  is registered only when the menu bar / tray feature is enabled; shortcut and
+  related controls live in Desktop feature settings. Popups use transparent
+  macOS window chrome so the rounded in-app card owns the corners (no dark frame
+  bleed), with narrowed popup sizing and follow-up fixes for popup lifecycle,
+  workspace persistence, tray shutdown, and “new chat” from the menu bar.
+  Shared shortcut resolution lives in `src/shared/quickChatShortcut.ts` with
+  cross-platform tests.
+
+### Changed
+
+- **Canonical JSON-RPC WebSocket** (#92) — JSON-RPC-lite on
+  `cowork.jsonrpc.v1` is the only supported live protocol; removed
+  `?protocol=` and server-side protocol default override so negotiation
+  matches a single wire contract.
+
+- **Server/runtime structure** (#91) — Split large server runtime modules for
+  clearer boundaries and maintenance.
+
+- **Developer harness package** (#93) — Split developer-oriented harness
+  code into `packages/harness`.
+
+- **Cowork config namespace** — Normalized config namespace usage and related
+  documentation (companion to harness split).
+
+- **Feature flags UX** — Feature flags are managed from Desktop settings
+  with updated tests; replaces the older standalone feature-flags page flow.
+
+- **Task bar / Quick Chat icon** — Workspace-driven icon loading for the
+  task bar and quick chat chrome.
+
+- **Backups opt-in** — Checkpoints/backups are opt-in rather than wired as a
+  default core behavior.
+
+- **A2UI experiment gate** — A2UI is gated behind the experiment flag instead
+  of always on.
+
+- **Skills refresh** — Refreshes skill metadata without background polling
+  (explicit actions, filesystem signals, or pre-turn checks).
+
+- **Efficiency** — Miscellaneous performance and allocation improvements.
+
+### Fixed
+
+- **Desktop release publishing** — Tag-based desktop releases publish
+  correctly in the release workflow.
+
 ## 0.1.47 - 2026-04-21
 
 ### Fixed
