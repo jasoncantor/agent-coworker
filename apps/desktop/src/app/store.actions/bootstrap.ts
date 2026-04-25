@@ -121,6 +121,7 @@ function normalizeSettingsPageId(
 
 function normalizeKnownSettingsPageId(value: unknown): SettingsPageId {
   return value === "providers" ||
+    value === "openAiNativeConnectors" ||
     value === "desktop" ||
     value === "usage" ||
     value === "workspaces" ||
@@ -139,6 +140,7 @@ const normalizedSettingsPageSchema = z.preprocess(
   (value) => normalizeKnownSettingsPageId(value),
   z.enum([
     "providers",
+    "openAiNativeConnectors",
     "desktop",
     "usage",
     "workspaces",
@@ -375,6 +377,7 @@ const persistedStateSchema = z
           workspacePicker: z.boolean().optional(),
           workspaceLifecycle: z.boolean().optional(),
           a2ui: z.boolean().optional(),
+          openAiNativeConnectors: z.boolean().optional(),
         })
         .passthrough()
         .optional(),

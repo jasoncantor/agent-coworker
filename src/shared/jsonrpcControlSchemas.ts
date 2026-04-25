@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CHILD_MODEL_ROUTING_MODES, PROVIDER_NAMES } from "../types";
 import { GOOGLE_THINKING_LEVEL_VALUES } from "./googleThinking";
+import { openAiNativeConnectorsEventSchema } from "./openaiNativeConnectors";
 import {
   CODEX_WEB_SEARCH_BACKEND_VALUES,
   CODEX_WEB_SEARCH_CONTEXT_SIZE_VALUES,
@@ -18,6 +19,11 @@ const optionalNonEmptyTrimmedStringSchema = nonEmptyTrimmedStringSchema.optional
 const _anyObjectSchema = z.record(z.string(), z.unknown());
 const targetScopeSchema = z.enum(["project", "global"]);
 const workspaceMemoryScopeSchema = z.enum(["workspace", "user"]);
+const cwdRequestSchema = z
+  .object({
+    cwd: z.string().optional(),
+  })
+  .passthrough();
 
 export const sessionEventEnvelope = <T extends z.ZodTypeAny>(eventSchema: T) =>
   z
@@ -1324,6 +1330,14 @@ export const jsonRpcControlRequestSchemas = {
   "cowork/mcp/server/auth/authorize": mcpServerAuthAuthorizeRequestSchema,
   "cowork/mcp/server/auth/callback": mcpServerAuthCallbackRequestSchema,
   "cowork/mcp/server/auth/setApiKey": mcpServerAuthSetApiKeyRequestSchema,
+  "cowork/connectors/openai-native/list": cwdRequestSchema,
+  "cowork/connectors/openai-native/refresh": cwdRequestSchema,
+  "cowork/connectors/openai-native/setEnabled": cwdRequestSchema
+    .extend({
+      connectorId: nonEmptyTrimmedStringSchema,
+      enabled: z.boolean(),
+    })
+    .passthrough(),
   "cowork/skills/catalog/read": skillsCatalogReadRequestSchema,
   "cowork/skills/list": skillsListRequestSchema,
   "cowork/skills/read": skillsReadRequestSchema,
@@ -1379,6 +1393,13 @@ export const jsonRpcControlResultSchemas = {
   ),
   "cowork/mcp/server/auth/callback": sessionEventEnvelope(mcpAuthResultEventSchema),
   "cowork/mcp/server/auth/setApiKey": sessionEventEnvelope(mcpAuthResultEventSchema),
+  "cowork/connectors/openai-native/list": sessionEventEnvelope(openAiNativeConnectorsEventSchema),
+  "cowork/connectors/openai-native/refresh": sessionEventEnvelope(
+    openAiNativeConnectorsEventSchema,
+  ),
+  "cowork/connectors/openai-native/setEnabled": sessionEventEnvelope(
+    openAiNativeConnectorsEventSchema,
+  ),
   "cowork/skills/catalog/read": sessionEventEnvelope(skillsCatalogEventSchema),
   "cowork/skills/list": sessionEventEnvelope(skillsListEventSchema),
   "cowork/skills/read": sessionEventEnvelope(skillContentEventSchema),

@@ -360,6 +360,13 @@ export type AppStoreState = {
     code?: string,
   ) => Promise<void>;
   setWorkspaceMcpServerApiKey: (workspaceId: string, name: string, apiKey: string) => Promise<void>;
+  requestOpenAiNativeConnectors: (workspaceId: string) => Promise<void>;
+  refreshOpenAiNativeConnectors: (workspaceId: string) => Promise<void>;
+  setOpenAiNativeConnectorEnabled: (
+    workspaceId: string,
+    connectorId: string,
+    enabled: boolean,
+  ) => Promise<void>;
   requestWorkspaceBackups: (workspaceId: string) => Promise<void>;
   requestWorkspaceBackupDelta: (
     workspaceId: string,
@@ -575,6 +582,7 @@ async function ensureServerRunning(
         workspaceId,
         workspacePath: ws.path,
         yolo: ws.yolo,
+        featureFlags: get().desktopFeatureFlags,
       });
       if (getWorkspaceStartGeneration(workspaceId) !== generation) {
         return;

@@ -170,6 +170,10 @@ Currently implemented `cowork/*` methods include:
   - `cowork/mcp/server/auth/authorize`
   - `cowork/mcp/server/auth/callback`
   - `cowork/mcp/server/auth/setApiKey`
+- OpenAI native connector controls
+  - `cowork/connectors/openai-native/list`
+  - `cowork/connectors/openai-native/refresh`
+  - `cowork/connectors/openai-native/setEnabled`
 - skills controls
   - `cowork/skills/catalog/read`
   - `cowork/skills/list`
@@ -228,6 +232,22 @@ The desktop JSON-RPC path now uses this namespace so one workspace connection ca
 `cowork/session/file/upload` writes a file into the workspace uploads directory and returns a `file_uploaded` session event envelope. JSON-RPC clients can then reference that saved file from `turn/start` or `turn/steer` with an `uploadedFile` input part when the file is too large to send inline.
 
 `cowork/session/agent/inspect` is a thread-scoped, root-only read for child agents. It returns the same detailed inspection payload as the root `inspectAgent` tool: the latest child summary, the full latest assistant text, a parsed structured child report when the final assistant text includes a recognized JSON footer, and compact session/last-turn usage snapshots for the child.
+
+### OpenAI Native Connector JSON-RPC Methods
+
+OpenAI native connectors are workspace-scoped ChatGPT apps exposed to Codex through a reserved synthetic MCP server named `codex_apps`. They are experimental and disabled by default; set `COWORK_EXPERIMENTAL_OPENAI_NATIVE_CONNECTORS=1` to expose the desktop settings page and enable backend connector discovery/injection. They also require an existing `codex-cli` OAuth login. The connector controls below return an `openai_native_connectors` event inside `{ "event": ... }`.
+
+- `cowork/connectors/openai-native/list`
+  - Params: `{ "cwd"?: string }`
+  - Result event: `{ "type": "openai_native_connectors", "connectors": OpenAiNativeConnector[], "enabledConnectorIds": string[], "codexAppsMcpServerName": "codex_apps", "authenticated": boolean, "message"?: string }`
+- `cowork/connectors/openai-native/refresh`
+  - Params: `{ "cwd"?: string }`
+  - Result: same event shape as `list`, after re-reading ChatGPT connector directory state.
+- `cowork/connectors/openai-native/setEnabled`
+  - Params: `{ "cwd"?: string, "connectorId": string, "enabled": boolean }`
+  - Result: same event shape as `list`, after persisting workspace connector enablement under `.cowork/openai-native-connectors.json`.
+
+When one or more connectors are enabled, the runtime injects a streamable HTTP MCP server at the ChatGPT Codex apps endpoint. Connector MCP tools are namespaced as `mcp__codex_apps__...` and filtered to enabled connector IDs.
 
 ### Research JSON-RPC methods
 

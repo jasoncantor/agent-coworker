@@ -13,7 +13,11 @@ import {
   writeProjectMCPServersDocument,
   writeWorkspaceMCPServersDocument,
 } from "../src/mcp";
+import { writeCodexAuthMaterial } from "../src/providers/codex-auth";
+import { setOpenAiNativeConnectorEnabled } from "../src/server/connectors/openaiNativeConnectors";
+import { CODEX_APPS_MCP_SERVER_NAME } from "../src/shared/openaiNativeConnectors";
 import type { AgentConfig, MCPServerConfig } from "../src/types";
+import { getAiCoworkerPaths } from "../src/connect";
 
 function makeConfig(
   workspaceRoot: string,
@@ -215,6 +219,81 @@ describe("mcp layered snapshot", () => {
       await fs.rm(tmpHome, { recursive: true, force: true });
       await fs.rm(builtInDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("codex apps MCP bridge", () => {
+  test("loadMCPServers injects the reserved codex_apps server when a connector is enabled", async () => {
+    const tmpWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-codex-apps-workspace-"));
+    const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-codex-apps-home-"));
+    const builtInConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-codex-apps-builtin-"));
+    try {
+      const config = makeConfig(tmpWorkspace, tmpHome, builtInConfigDir);
+      config.provider = "codex-cli";
+      config.userCoworkDir = path.join(tmpHome, ".cowork");
+      config.skillsDirs = [path.join(tmpHome, ".cowork", "skills")];
+      config.experimentalFeatures = { openAiNativeConnectors: true };
+      await writeCodexAuthMaterial(getAiCoworkerPaths({ homedir: tmpHome }), {
+        issuer: "https://auth.example.invalid",
+        clientId: "client-id",
+        accessToken: "access-token",
+        refreshToken: "refresh-token",
+        accountId: "acct-1",
+        expiresAtMs: Date.now() + 10 * 60_000,
+      });
+      await setOpenAiNativeConnectorEnabled(config, "connector_gmail", true);
+
+      const servers = await loadMCPServers(config);
+      const codexApps = servers.find((server) => server.name === CODEX_APPS_MCP_SERVER_NAME);
+
+      expect(codexApps?.transport.type).toBe("http");
+      if (codexApps?.transport.type === "http") {
+        expect(codexApps.transport.url).toBe("https://chatgpt.com/backend-api/wham/apps");
+        expect(codexApps.transport.headers).toMatchObject({
+          authorization: "Bearer access-token",
+          "ChatGPT-Account-ID": "acct-1",
+        });
+      }
+    } finally {
+      await fs.rm(tmpWorkspace, { recursive: true, force: true });
+      await fs.rm(tmpHome, { recursive: true, force: true });
+      await fs.rm(builtInConfigDir, { recursive: true, force: true });
+    }
+  });
+
+  test("loadMCPTools filters codex_apps tools to enabled connector ids", async () => {
+    const { tools } = await loadMCPTools(
+      [
+        {
+          name: CODEX_APPS_MCP_SERVER_NAME,
+          transport: { type: "http", url: "https://chatgpt.com/backend-api/wham/apps" },
+          enabledConnectorIds: ["connector_gmail"],
+        } as MCPServerConfig & { enabledConnectorIds: string[] },
+      ],
+      {
+        createClient: async () => ({
+          close: async () => {},
+          tools: async () => ({
+            search_email: {
+              description: "Search Gmail",
+              connectorId: "connector_gmail",
+              _meta: { connector_id: "connector_gmail", _codex_apps: { resource_uri: "app://g" } },
+            },
+            search_files: {
+              description: "Search files",
+              connectorId: "connector_dropbox",
+              _meta: { connector_id: "connector_dropbox" },
+            },
+          }),
+        }),
+      },
+    );
+
+    expect(Object.keys(tools)).toEqual([`mcp__${CODEX_APPS_MCP_SERVER_NAME}__search_email`]);
+    expect((tools[`mcp__${CODEX_APPS_MCP_SERVER_NAME}__search_email`] as any)._meta).toEqual({
+      connector_id: "connector_gmail",
+      _codex_apps: { resource_uri: "app://g" },
+    });
   });
 });
 

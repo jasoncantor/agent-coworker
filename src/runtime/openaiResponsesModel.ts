@@ -31,7 +31,7 @@ const SUPPORTED_OPENAI_RESPONSES_MODEL_LIMITS: Record<string, SupportedResponses
 const SUPPORTED_CODEX_BACKEND_MODEL_LIMITS: Record<string, SupportedResponsesModelLimits> = {
   "gpt-5.4": { contextWindow: 272_000, maxTokens: 128_000 },
   "gpt-5.4-mini": { contextWindow: 272_000, maxTokens: 128_000 },
-  "gpt-5.5": { contextWindow: 400_000, maxTokens: 128_000 },
+  "gpt-5.5": { contextWindow: 272_000, maxTokens: 128_000 },
 };
 
 type ResolvedOpenAiResponsesModel = {
@@ -44,6 +44,7 @@ type ResolvedOpenAiResponsesModel = {
 type ResolvedCodexAuth = {
   accessToken: string;
   accountId?: string;
+  isFedrampAccount?: boolean;
 };
 
 async function resolveCodexAccessToken(
@@ -80,6 +81,7 @@ async function resolveCodexAccessToken(
   return {
     accessToken: material.accessToken,
     ...(accountId ? { accountId } : {}),
+    ...(material.isFedrampAccount ? { isFedrampAccount: true } : {}),
   };
 }
 
@@ -176,6 +178,12 @@ export async function resolveOpenAiResponsesModel(
   const codexHeaders = codexAuth.accountId
     ? { "ChatGPT-Account-ID": codexAuth.accountId }
     : undefined;
+  const codexBackendHeaders = {
+    ...(codexHeaders ?? {}),
+    ...(codexAuth.isFedrampAccount ? { "X-OpenAI-Fedramp": "true" } : {}),
+  };
+  const resolvedCodexHeaders =
+    Object.keys(codexBackendHeaders).length > 0 ? codexBackendHeaders : undefined;
 
   return {
     model: buildSupportedCodexResponsesModel({
@@ -183,10 +191,10 @@ export async function resolveOpenAiResponsesModel(
       api: "openai-codex-responses",
       provider: "openai-codex",
       baseUrl: CODEX_BACKEND_BASE_URL,
-      ...(codexHeaders ? { headers: codexHeaders } : {}),
+      ...(resolvedCodexHeaders ? { headers: resolvedCodexHeaders } : {}),
     }),
     apiKey: codexAuth.accessToken,
     ...(codexAuth.accountId ? { accountId: codexAuth.accountId } : {}),
-    ...(codexHeaders ? { headers: codexHeaders } : {}),
+    ...(resolvedCodexHeaders ? { headers: resolvedCodexHeaders } : {}),
   };
 }

@@ -162,6 +162,10 @@ const desktopFeatureFlagOverridesSchema = z
       (value) => (typeof value === "boolean" ? value : undefined),
       z.boolean().optional(),
     ),
+    openAiNativeConnectors: z.preprocess(
+      (value) => (typeof value === "boolean" ? value : undefined),
+      z.boolean().optional(),
+    ),
   })
   .passthrough()
   .optional();
@@ -170,6 +174,7 @@ export const startWorkspaceServerInputSchema: z.ZodType<StartWorkspaceServerInpu
   workspaceId: safeIdSchema,
   workspacePath: nonEmptyStringSchema,
   yolo: z.boolean(),
+  featureFlags: desktopFeatureFlagOverridesSchema.optional(),
 });
 
 export const stopWorkspaceServerInputSchema: z.ZodType<StopWorkspaceServerInput> = z.object({

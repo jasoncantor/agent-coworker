@@ -123,6 +123,29 @@ describe("shared JSON-RPC control schemas", () => {
     expect(parsed.event.files[1]?.pluginId).toBe("figma-toolkit");
   });
 
+  test("parses OpenAI native connector envelopes", () => {
+    const parsed = jsonRpcControlResultSchemas["cowork/connectors/openai-native/list"].parse({
+      event: {
+        type: "openai_native_connectors",
+        sessionId: "session-1",
+        connectors: [
+          {
+            id: "connector_gmail",
+            name: "Gmail",
+            description: "Read mail",
+            isEnabled: true,
+          },
+        ],
+        enabledConnectorIds: ["connector_gmail"],
+        codexAppsMcpServerName: "codex_apps",
+        authenticated: true,
+      },
+    });
+
+    expect(parsed.event.connectors[0]?.id).toBe("connector_gmail");
+    expect(parsed.event.enabledConnectorIds).toEqual(["connector_gmail"]);
+  });
+
   test("parses memory list envelopes", () => {
     const parsed = jsonRpcControlResultSchemas["cowork/memory/list"].parse({
       event: {

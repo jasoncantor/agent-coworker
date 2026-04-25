@@ -15,6 +15,7 @@ import {
 import {
   CODEX_BACKEND_BASE_URL,
   decodeJwtPayload,
+  extractIsFedrampAccountFromClaims,
   isTokenExpiring,
   readCodexAuthMaterial,
   refreshCodexAuthMaterial,
@@ -429,6 +430,7 @@ async function codexBackendVerification(opts: {
   idToken?: string;
   accessToken: string;
   accountId?: string;
+  isFedrampAccount?: boolean;
   fetchImpl: typeof fetch;
 }): Promise<{
   email?: string;
@@ -452,6 +454,10 @@ async function codexBackendVerification(opts: {
       (accessPayload?.["https://api.openai.com/auth"] as Record<string, unknown> | undefined)
         ?.chatgpt_account_id,
     );
+  const isFedrampAccount =
+    opts.isFedrampAccount ||
+    (idPayload ? extractIsFedrampAccountFromClaims(idPayload) : false) ||
+    (accessPayload ? extractIsFedrampAccountFromClaims(accessPayload) : false);
   if (!accountId) {
     return {
       email,
@@ -466,6 +472,7 @@ async function codexBackendVerification(opts: {
       headers: {
         authorization: `Bearer ${opts.accessToken}`,
         "chatgpt-account-id": accountId,
+        ...(isFedrampAccount ? { "x-openai-fedramp": "true" } : {}),
       },
     });
     if (!usageRes.ok) {
@@ -585,6 +592,7 @@ async function getCodexCliStatus(opts: {
     idToken: material.idToken,
     accessToken: material.accessToken,
     accountId: material.accountId,
+    isFedrampAccount: material.isFedrampAccount,
     fetchImpl: opts.fetchImpl,
   });
   const account: ProviderAccount | null =

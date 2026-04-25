@@ -7,6 +7,10 @@ import {
 } from "./schema.agents";
 import { jsonRpcBackupsRequestSchemas, jsonRpcBackupsResultSchemas } from "./schema.backups";
 import {
+  jsonRpcConnectorsRequestSchemas,
+  jsonRpcConnectorsResultSchemas,
+} from "./schema.connectors";
+import {
   jsonRpcCoreRequestSchemas,
   jsonRpcCoreResultSchemas,
   jsonRpcInitializeParamsSchema,
@@ -46,6 +50,7 @@ export const jsonRpcRequestSchemas = {
   ...jsonRpcThreadTurnRequestSchemas,
   ...jsonRpcSessionRequestSchemas,
   ...jsonRpcAgentRequestSchemas,
+  ...jsonRpcConnectorsRequestSchemas,
   ...jsonRpcProviderRequestSchemas,
   ...jsonRpcResearchRequestSchemas,
   ...jsonRpcMcpRequestSchemas,
@@ -73,6 +78,7 @@ export const jsonRpcResultSchemas = {
   ...jsonRpcThreadTurnResultSchemas,
   ...jsonRpcSessionResultSchemas,
   ...jsonRpcAgentResultSchemas,
+  ...jsonRpcConnectorsResultSchemas,
   ...jsonRpcProviderResultSchemas,
   ...jsonRpcResearchResultSchemas,
   ...jsonRpcMcpResultSchemas,

@@ -12,6 +12,7 @@ import type {
   PluginCatalogEntry,
   PluginCatalogSnapshot,
   PluginInstallPreview,
+  OpenAiNativeConnector,
   ProviderName,
   SessionEvent,
   SkillCatalogSnapshot,
@@ -177,6 +178,7 @@ export type ViewId = "chat" | "skills" | "research" | "settings";
 export type PluginViewMode = "plugins" | "skills";
 export type SettingsPageId =
   | "providers"
+  | "openAiNativeConnectors"
   | "desktop"
   | "usage"
   | "workspaces"
@@ -325,6 +327,10 @@ export type MCPServerAuthChallengeEvent = Extract<
   { type: "mcp_server_auth_challenge" }
 >;
 export type MCPServerAuthResultEvent = Extract<SessionEvent, { type: "mcp_server_auth_result" }>;
+export type OpenAiNativeConnectorsEvent = Extract<
+  SessionEvent,
+  { type: "openai_native_connectors" }
+>;
 export type SessionUsageSnapshot = NonNullable<
   Extract<SessionEvent, { type: "session_usage" }>["usage"]
 >;
@@ -381,6 +387,13 @@ export type WorkspaceRuntime = {
   mcpValidationByName: Record<string, MCPServerValidationEvent>;
   mcpLastAuthChallenge: MCPServerAuthChallengeEvent | null;
   mcpLastAuthResult: MCPServerAuthResultEvent | null;
+  openAiNativeConnectors: OpenAiNativeConnector[];
+  openAiNativeConnectorsLoading: boolean;
+  openAiNativeConnectorsError: string | null;
+  openAiNativeConnectorsAuthenticated: boolean;
+  openAiNativeConnectorsMessage: string | null;
+  openAiNativeConnectorsEnabledIds: string[];
+  openAiNativeConnectorsServerName: OpenAiNativeConnectorsEvent["codexAppsMcpServerName"] | null;
   pluginsCatalog: PluginCatalogSnapshot | null;
   selectedPluginId: string | null;
   selectedPluginScope: PluginCatalogEntry["scope"] | null;

@@ -116,7 +116,7 @@ describe("pi runtime regressions", () => {
     expect(onModelAbort).toHaveBeenCalledTimes(1);
   });
 
-  test("codex runtime model resolution preserves ChatGPT-Account-ID headers", async () => {
+  test("codex runtime model resolution preserves ChatGPT account headers", async () => {
     const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-runtime-codex-"));
     const paths = getAiCoworkerPaths({ homedir: homeDir });
     const workspaceDir = path.join(homeDir, "workspace");
@@ -126,6 +126,7 @@ describe("pi runtime regressions", () => {
       accessToken: "tok_live",
       refreshToken: "refresh_live",
       accountId: "acct_123",
+      isFedrampAccount: true,
       expiresAtMs: Date.now() + 10 * 60_000,
       issuer: "https://auth.example.invalid",
       clientId: "client-id",
@@ -141,9 +142,15 @@ describe("pi runtime regressions", () => {
     const resolved = await resolveOpenAiResponsesModel(makeParams(config));
 
     expect(resolved.apiKey).toBe("tok_live");
-    expect(resolved.headers).toEqual({ "ChatGPT-Account-ID": "acct_123" });
+    expect(resolved.headers).toEqual({
+      "ChatGPT-Account-ID": "acct_123",
+      "X-OpenAI-Fedramp": "true",
+    });
     expect(resolved.model.baseUrl).toBe(CODEX_BACKEND_BASE_URL);
-    expect(resolved.model.headers).toMatchObject({ "ChatGPT-Account-ID": "acct_123" });
+    expect(resolved.model.headers).toMatchObject({
+      "ChatGPT-Account-ID": "acct_123",
+      "X-OpenAI-Fedramp": "true",
+    });
     expect(resolved.model.contextWindow).toBe(272000);
     expect(resolved.model.maxTokens).toBe(128000);
   });
@@ -651,7 +658,7 @@ describe("pi runtime regressions", () => {
 
     expect(resolved.model.api).toBe("openai-codex-responses");
     expect(resolved.model.baseUrl).toBe(CODEX_BACKEND_BASE_URL);
-    expect(resolved.model.contextWindow).toBe(400000);
+    expect(resolved.model.contextWindow).toBe(272000);
     expect(resolved.model.maxTokens).toBe(128000);
   });
 

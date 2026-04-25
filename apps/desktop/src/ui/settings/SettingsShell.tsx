@@ -13,6 +13,7 @@ import { DesktopPage } from "./pages/DesktopPage";
 import { FeatureFlagsPage } from "./pages/FeatureFlagsPage";
 import { McpServersPage } from "./pages/McpServersPage";
 import { MemoryPage } from "./pages/MemoryPage";
+import { OpenAiNativeConnectorsPage } from "./pages/OpenAiNativeConnectorsPage";
 import { ProvidersPage } from "./pages/ProvidersPage";
 import { RemoteAccessPage } from "./pages/RemoteAccessPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
@@ -30,6 +31,10 @@ const SETTINGS_PAGE_META: Record<SettingsPageId, { title: string; description: s
   providers: {
     title: "Providers",
     description: "Connect models and see whether each provider is ready to use.",
+  },
+  openAiNativeConnectors: {
+    title: "OpenAI Native Connectors",
+    description: "Enable ChatGPT apps as native Codex tools for this workspace.",
   },
   desktop: {
     title: "Desktop",
@@ -75,17 +80,27 @@ const SETTINGS_PAGE_META: Record<SettingsPageId, { title: string; description: s
 
 export function getSettingsGroups(
   remoteAccessAvailable: boolean,
-  opts: { includeDevelopmentPages?: boolean } = {},
+  opts: { includeDevelopmentPages?: boolean; openAiNativeConnectorsAvailable?: boolean } = {},
 ): Array<{
   label: string;
   pages: SettingsPageDefinition[];
 }> {
   const includeDevelopmentPages = opts.includeDevelopmentPages ?? true;
+  const openAiNativeConnectorsAvailable = opts.openAiNativeConnectorsAvailable === true;
   return [
     {
       label: "Models & tools",
       pages: [
         { id: "providers", label: "Providers", render: () => <ProvidersPage /> },
+        ...(openAiNativeConnectorsAvailable
+          ? [
+              {
+                id: "openAiNativeConnectors",
+                label: "OpenAI connectors",
+                render: () => <OpenAiNativeConnectorsPage />,
+              } satisfies SettingsPageDefinition,
+            ]
+          : []),
         { id: "mcp", label: "MCP servers", render: () => <McpServersPage /> },
       ],
     },
@@ -211,6 +226,7 @@ function SettingsNavigation({
 export function SettingsShell() {
   const desktopFeatureFlags = useAppStore((s) => s.desktopFeatureFlags);
   const remoteAccessAvailable = desktopFeatureFlags.remoteAccess === true;
+  const openAiNativeConnectorsAvailable = desktopFeatureFlags.openAiNativeConnectors === true;
   const packaged = useAppStore((s) => s.updateState.packaged);
   const settingsPage = useAppStore((s) => s.settingsPage);
   const setSettingsPage = useAppStore((s) => s.setSettingsPage);
@@ -218,6 +234,7 @@ export function SettingsShell() {
   const sidebarWidth = useAppStore((s) => s.sidebarWidth);
   const settingsGroups = getSettingsGroups(remoteAccessAvailable, {
     includeDevelopmentPages: includeDevelopmentSettings(packaged || isPackagedDesktopApp()),
+    openAiNativeConnectorsAvailable,
   });
   const settingsPages = settingsGroups.flatMap((group) => group.pages);
   const activePage = settingsPages.find((page) => page.id === settingsPage) ?? settingsPages[0];

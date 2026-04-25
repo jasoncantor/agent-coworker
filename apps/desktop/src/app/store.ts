@@ -61,6 +61,7 @@ const initialState: AppStoreDataState = {
     workspacePicker: true,
     workspaceLifecycle: true,
     a2ui: false,
+    openAiNativeConnectors: false,
   },
   desktopFeatureFlagOverrides: {},
   updateState: createDefaultUpdaterState(),

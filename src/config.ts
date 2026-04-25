@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { getAiCoworkerPaths } from "./connect";
 import { isA2uiExperimentEnabled } from "./experimental/a2ui/flags";
+import { isOpenAiNativeConnectorsExperimentEnabled } from "./experimental/openaiNativeConnectors/flags";
 import { normalizeChildRoutingConfig } from "./models/childModelRouting";
 import {
   getResolvedModelMetadataSync,
@@ -314,10 +315,16 @@ function normalizeWorkspaceFeatureFlagLayer(
   }
 
   const parsedA2ui = asBoolean(value.a2ui);
-  if (parsedA2ui === null) {
+  const parsedOpenAiNativeConnectors = asBoolean(value.openAiNativeConnectors);
+  if (parsedA2ui === null && parsedOpenAiNativeConnectors === null) {
     return undefined;
   }
-  return { a2ui: parsedA2ui };
+  return {
+    ...(parsedA2ui !== null ? { a2ui: parsedA2ui } : {}),
+    ...(parsedOpenAiNativeConnectors !== null
+      ? { openAiNativeConnectors: parsedOpenAiNativeConnectors }
+      : {}),
+  };
 }
 
 function asNonEmptyString(v: unknown): string | undefined {
@@ -657,6 +664,7 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
 
   const a2uiExperimentEnabled = isA2uiExperimentEnabled(env);
   const enableA2ui = a2uiExperimentEnabled ? (resolvedWorkspaceA2ui ?? false) : undefined;
+  const openAiNativeConnectorsExperimentEnabled = isOpenAiNativeConnectorsExperimentEnabled(env);
 
   const backupsEnabled =
     asBoolean(env.AGENT_BACKUPS_ENABLED) ??
@@ -763,7 +771,10 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<Agent
     enableMemory,
     memoryRequireApproval,
     includeRawChunks,
-    experimentalFeatures: { a2ui: a2uiExperimentEnabled },
+    experimentalFeatures: {
+      a2ui: a2uiExperimentEnabled,
+      openAiNativeConnectors: openAiNativeConnectorsExperimentEnabled,
+    },
     ...(enableA2ui !== undefined ? { enableA2ui } : {}),
     backupsEnabled,
     observabilityEnabled,

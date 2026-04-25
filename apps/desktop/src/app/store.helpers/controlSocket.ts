@@ -934,6 +934,25 @@ export function createControlSocketHelpers(
       return;
     }
 
+    if (evt.type === "openai_native_connectors") {
+      set((s) => ({
+        workspaceRuntimeById: {
+          ...s.workspaceRuntimeById,
+          [workspaceId]: {
+            ...s.workspaceRuntimeById[workspaceId],
+            openAiNativeConnectors: evt.connectors,
+            openAiNativeConnectorsAuthenticated: evt.authenticated,
+            openAiNativeConnectorsMessage: evt.message ?? null,
+            openAiNativeConnectorsEnabledIds: evt.enabledConnectorIds,
+            openAiNativeConnectorsServerName: evt.codexAppsMcpServerName,
+            openAiNativeConnectorsLoading: false,
+            openAiNativeConnectorsError: null,
+          },
+        },
+      }));
+      return;
+    }
+
     if (evt.type === "skills_list") {
       set((s) => ({
         workspaceRuntimeById: {

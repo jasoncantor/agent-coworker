@@ -681,6 +681,7 @@ describe("openai responses runtime", () => {
         api: "openai-codex-responses",
         provider: "openai-codex",
         baseUrl: "https://chatgpt.com/backend-api/codex",
+        headers: { "X-OpenAI-Fedramp": "true" },
         reasoning: true,
         input: ["text"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -1065,6 +1066,7 @@ describe("openai responses runtime", () => {
       },
       headers: {
         authorization: "Bearer token",
+        "X-OpenAI-Fedramp": "true",
       },
       systemPrompt: "You are helpful.",
       piMessages: [{ role: "user", content: "hello" }],
@@ -1074,6 +1076,7 @@ describe("openai responses runtime", () => {
 
     expect(headers).toMatchObject({
       authorization: "Bearer token",
+      "X-OpenAI-Fedramp": "true",
       originator: "codex_cli_rs",
     });
   });

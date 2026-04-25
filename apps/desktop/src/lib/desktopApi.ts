@@ -12,6 +12,7 @@ export type StartWorkspaceServerInput = {
   workspaceId: string;
   workspacePath: string;
   yolo: boolean;
+  featureFlags?: DesktopFeatureFlagOverrides;
 };
 
 export type StopWorkspaceServerInput = {

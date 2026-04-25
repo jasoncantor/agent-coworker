@@ -12,6 +12,7 @@ import type {
   SessionKind,
 } from "../shared/agents";
 import type { OpenAiCompatibleProviderOptionsByProvider } from "../shared/openaiCompatibleOptions";
+import type { OpenAiNativeConnectorsEvent } from "../shared/openaiNativeConnectors";
 import type { SessionSnapshot } from "../shared/sessionSnapshot";
 import type {
   AgentConfig,
@@ -242,6 +243,7 @@ export type SessionEvent =
       mode?: MCPServerAuthMode;
       message: string;
     }
+  | OpenAiNativeConnectorsEvent
   | {
       type: "provider_catalog";
       sessionId: string;

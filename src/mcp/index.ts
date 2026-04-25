@@ -11,6 +11,10 @@ import { z } from "zod";
 import type { AgentConfig, MCPServerConfig } from "../types";
 import { VERSION } from "../version";
 import {
+  buildCodexAppsMcpServer,
+} from "../server/connectors/openaiNativeConnectors";
+import { CODEX_APPS_MCP_SERVER_NAME } from "../shared/openaiNativeConnectors";
+import {
   completeMCPServerOAuth,
   type MCPAuthMode,
   type MCPAuthScope,
@@ -103,10 +107,57 @@ type RuntimeMcpClientFactory = (opts: {
   name: string;
   transport: RuntimeMcpTransport;
 }) => Promise<RuntimeMcpClient>;
+type RuntimeMcpServerConfig = MCPServerConfig & {
+  enabledConnectorIds?: string[];
+};
 
 function normalizeToolArguments(input: unknown): Record<string, unknown> {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return {};
   return input as Record<string, unknown>;
+}
+
+function normalizeMcpJsonSchema(value: unknown, root = false): unknown {
+  if (typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.map((entry) => normalizeMcpJsonSchema(entry));
+  if (typeof value !== "object" || value === null) return value;
+
+  const input = value as Record<string, unknown>;
+  const output: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(input)) {
+    if (key === "properties" && typeof entry === "object" && entry !== null && !Array.isArray(entry)) {
+      output.properties = Object.fromEntries(
+        Object.entries(entry as Record<string, unknown>).map(([propName, propSchema]) => [
+          propName,
+          normalizeMcpJsonSchema(propSchema),
+        ]),
+      );
+      continue;
+    }
+    if (key === "items") {
+      output.items = normalizeMcpJsonSchema(entry);
+      continue;
+    }
+    if (key === "anyOf" || key === "oneOf" || key === "allOf") {
+      output[key] = Array.isArray(entry)
+        ? entry.map((schema) => normalizeMcpJsonSchema(schema))
+        : entry;
+      continue;
+    }
+    output[key] = normalizeMcpJsonSchema(entry);
+  }
+
+  const hasTypeLike =
+    "type" in output ||
+    "$ref" in output ||
+    "anyOf" in output ||
+    "oneOf" in output ||
+    "allOf" in output ||
+    "const" in output ||
+    "enum" in output;
+  if (!hasTypeLike) {
+    output.type = root || "properties" in output ? "object" : ["string", "number", "boolean", "object", "array", "null"];
+  }
+  return output;
 }
 
 async function createRuntimeMcpClient(opts: {
@@ -144,22 +195,35 @@ async function createRuntimeMcpClient(opts: {
 
   return {
     tools: async () => {
-      const listed = await client.listTools();
+      const listed = (await client.request({ method: "tools/list" }, z.any())) as {
+        tools?: Array<Record<string, unknown>>;
+      };
       const discovered: Record<string, unknown> = {};
       for (const entry of listed.tools ?? []) {
-        discovered[entry.name] = {
-          description: entry.description ?? `MCP tool ${entry.name}`,
-          inputSchema: entry.inputSchema ?? {
+        const name = typeof entry.name === "string" ? entry.name : "";
+        if (!name) continue;
+        const description =
+          typeof entry.description === "string" ? entry.description : `MCP tool ${name}`;
+        discovered[name] = {
+          description,
+          inputSchema: normalizeMcpJsonSchema(
+            entry.inputSchema ?? {
             type: "object",
             properties: {},
             additionalProperties: true,
-          },
+            },
+            true,
+          ),
           ...(entry.annotations ? { annotations: entry.annotations } : {}),
+          ...(entry._meta ? { _meta: entry._meta } : {}),
+          ...(entry.connector_id ? { connectorId: entry.connector_id } : {}),
+          ...(entry.connector_name ? { connectorName: entry.connector_name } : {}),
           execute: async (input: unknown) =>
             await client.callTool({
-              name: entry.name,
+              name,
               arguments: normalizeToolArguments(input),
-            }),
+              ...(entry._meta ? { _meta: entry._meta } : {}),
+            } as any),
         };
       }
       return discovered;
@@ -405,6 +469,12 @@ export async function loadMCPServers(config: AgentConfig): Promise<MCPServerConf
   const hydrated = await Promise.all(
     registry.servers.map(async (server) => await hydrateServerForRuntime(config, server)),
   );
+  if (!hydrated.some((server) => server.name === CODEX_APPS_MCP_SERVER_NAME)) {
+    const codexApps = await buildCodexAppsMcpServer(config);
+    if (codexApps) {
+      hydrated.push(codexApps);
+    }
+  }
   return hydrated;
 }
 
@@ -442,7 +512,7 @@ export async function writeProjectMCPServersDocument(
 }
 
 export async function loadMCPTools(
-  servers: MCPServerConfig[],
+  servers: RuntimeMcpServerConfig[],
   opts: {
     log?: (line: string) => void;
     createClient?: RuntimeMcpClientFactory;
@@ -496,7 +566,30 @@ export async function loadMCPTools(
         }
         const discovered = discoveredParsed.data;
 
+        const enabledConnectorIds =
+          server.name === CODEX_APPS_MCP_SERVER_NAME
+            ? new Set(server.enabledConnectorIds ?? [])
+            : null;
         for (const [name, toolDef] of Object.entries(discovered)) {
+          if (enabledConnectorIds && enabledConnectorIds.size > 0) {
+            const record =
+              typeof toolDef === "object" && toolDef !== null
+                ? (toolDef as Record<string, unknown>)
+                : {};
+            const meta =
+              typeof record._meta === "object" && record._meta !== null
+                ? (record._meta as Record<string, unknown>)
+                : {};
+            const connectorId =
+              typeof record.connectorId === "string"
+                ? record.connectorId
+                : typeof meta.connector_id === "string"
+                  ? meta.connector_id
+                  : undefined;
+            if (!connectorId || !enabledConnectorIds.has(connectorId)) {
+              continue;
+            }
+          }
           tools[`mcp__${server.name}__${name}`] = toolDef;
         }
 

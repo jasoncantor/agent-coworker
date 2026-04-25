@@ -406,6 +406,7 @@ export function createWebAdapter(): DesktopApi {
       workspacePicker: normalizedPicker,
       workspaceLifecycle: normalizedLifecycle,
       a2ui: false,
+      openAiNativeConnectors: false,
     };
   };
   const features = resolveWebDesktopFeatureFlags();

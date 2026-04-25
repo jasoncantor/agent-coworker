@@ -1,6 +1,7 @@
 import { createA2uiDockActions } from "./store.actions/a2uiDock";
 import { createWorkspaceBackupActions } from "./store.actions/backup";
 import { createBootstrapActions } from "./store.actions/bootstrap";
+import { createOpenAiNativeConnectorActions } from "./store.actions/connectors";
 import { createExplorerActions } from "./store.actions/explorer";
 import { createWorkspaceMcpActions } from "./store.actions/mcp";
 import { createWorkspaceMemoryActions } from "./store.actions/memory";
@@ -23,6 +24,7 @@ export function createAppActions(set: StoreSet, get: StoreGet): AppStoreActions 
     ...createResearchActions(set, get),
     ...createWorkspaceDefaultsActions(set, get),
     ...createWorkspaceMcpActions(set, get),
+    ...createOpenAiNativeConnectorActions(set, get),
     ...createWorkspaceMemoryActions(set, get),
     ...createProviderActions(set, get),
     ...createExplorerActions(set, get),

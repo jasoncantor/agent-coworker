@@ -83,6 +83,10 @@ mock.module("../src/lib/desktopCommands", () =>
           ? featureOverrides.workspaceLifecycle
           : true,
       a2ui: typeof featureOverrides?.a2ui === "boolean" ? featureOverrides.a2ui : false,
+      openAiNativeConnectors:
+        typeof featureOverrides?.openAiNativeConnectors === "boolean"
+          ? featureOverrides.openAiNativeConnectors
+          : false,
     }),
     isPackagedDesktopApp: () => packagedApp,
     onSystemAppearanceChanged: () => () => {},
@@ -154,6 +158,7 @@ describe("settings nav (store)", () => {
         workspacePicker: true,
         workspaceLifecycle: true,
         a2ui: false,
+        openAiNativeConnectors: false,
       },
       notifications: [],
       workspaces: [],
@@ -201,6 +206,21 @@ describe("settings nav (store)", () => {
   test("setSettingsPage accepts mcp page", () => {
     useAppStore.getState().setSettingsPage("mcp");
     expect(useAppStore.getState().settingsPage).toBe("mcp");
+  });
+
+  test("setSettingsPage accepts OpenAI native connectors page when enabled", () => {
+    useAppStore.setState({
+      desktopFeatureFlags: {
+        menuBar: true,
+        remoteAccess: true,
+        workspacePicker: true,
+        workspaceLifecycle: true,
+        a2ui: false,
+        openAiNativeConnectors: true,
+      },
+    });
+    useAppStore.getState().setSettingsPage("openAiNativeConnectors");
+    expect(useAppStore.getState().settingsPage).toBe("openAiNativeConnectors");
   });
 
   test("setSettingsPage accepts desktop page", () => {
@@ -252,6 +272,7 @@ describe("settings nav (store)", () => {
         workspacePicker: true,
         workspaceLifecycle: true,
         a2ui: false,
+        openAiNativeConnectors: false,
       },
     });
     useAppStore.getState().openSettings("remoteAccess");
@@ -291,6 +312,7 @@ describe("settings nav (store)", () => {
         workspacePicker: true,
         workspaceLifecycle: true,
         a2ui: false,
+        openAiNativeConnectors: false,
       },
       desktopFeatureFlagOverrides: {},
     });
@@ -315,6 +337,7 @@ describe("settings nav (store)", () => {
         workspacePicker: true,
         workspaceLifecycle: true,
         a2ui: false,
+        openAiNativeConnectors: false,
       },
       desktopFeatureFlagOverrides: {},
     });
@@ -324,6 +347,27 @@ describe("settings nav (store)", () => {
     expect(useAppStore.getState().desktopFeatureFlagOverrides).toEqual({ a2ui: true });
     expect(useAppStore.getState().desktopFeatureFlags.a2ui).toBe(true);
     expect(savedStates.length).toBeGreaterThan(0);
+  });
+
+  test("setDesktopFeatureFlagOverride enables OpenAI native connectors", async () => {
+    useAppStore.setState({
+      desktopFeatureFlags: {
+        menuBar: true,
+        remoteAccess: true,
+        workspacePicker: true,
+        workspaceLifecycle: true,
+        a2ui: false,
+        openAiNativeConnectors: false,
+      },
+      desktopFeatureFlagOverrides: {},
+    });
+
+    await useAppStore.getState().setDesktopFeatureFlagOverride("openAiNativeConnectors", true);
+
+    expect(useAppStore.getState().desktopFeatureFlagOverrides).toEqual({
+      openAiNativeConnectors: true,
+    });
+    expect(useAppStore.getState().desktopFeatureFlags.openAiNativeConnectors).toBe(true);
   });
 
   test("setDesktopFeatureFlagOverride keeps forced-off flags blocked in packaged builds", async () => {
@@ -339,6 +383,7 @@ describe("settings nav (store)", () => {
         workspacePicker: true,
         workspaceLifecycle: true,
         a2ui: false,
+        openAiNativeConnectors: false,
       },
       desktopFeatureFlagOverrides: { remoteAccess: false },
     });
@@ -363,6 +408,7 @@ describe("settings nav (store)", () => {
         workspacePicker: true,
         workspaceLifecycle: true,
         a2ui: false,
+        openAiNativeConnectors: false,
       },
       desktopFeatureFlagOverrides: { remoteAccess: false },
     });

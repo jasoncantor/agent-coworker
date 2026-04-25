@@ -246,10 +246,13 @@ function resolveSourceStartup(
   return { repoRoot, sourceEntry };
 }
 
-function buildServerEnv(): NodeJS.ProcessEnv {
+function buildServerEnv(featureFlags?: { openAiNativeConnectors?: boolean }): NodeJS.ProcessEnv {
   return {
     ...process.env,
     COWORK_SKIP_DEFAULT_SKILLS_BOOTSTRAP: process.env.COWORK_SKIP_DEFAULT_SKILLS_BOOTSTRAP ?? "1",
+    ...(featureFlags?.openAiNativeConnectors
+      ? { COWORK_EXPERIMENTAL_OPENAI_NATIVE_CONNECTORS: "1" }
+      : {}),
   };
 }
 
@@ -312,6 +315,7 @@ export class ServerManager {
     workspaceId: string;
     workspacePath: string;
     yolo: boolean;
+    featureFlags?: { openAiNativeConnectors?: boolean };
   }): Promise<{ url: string }> {
     const { workspaceId, workspacePath, yolo } = opts;
 
@@ -356,7 +360,7 @@ export class ServerManager {
     let previousError: unknown = null;
 
     for (let attempt = 1; attempt <= attemptCount; attempt += 1) {
-      const serverEnv = buildServerEnv();
+      const serverEnv = buildServerEnv(opts.featureFlags);
       const sourceEnvForAttempt = useSource ? buildSourceEnvForAttempt(serverEnv, attempt) : null;
       const cleanup = sourceEnvForAttempt?.cleanup ?? (() => {});
 

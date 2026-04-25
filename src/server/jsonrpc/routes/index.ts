@@ -1,6 +1,7 @@
 import { JSONRPC_ERROR_CODES } from "../protocol";
 
 import { createAgentRouteHandlers } from "./agents";
+import { createConnectorsRouteHandlers } from "./connectors";
 import { createMcpRouteHandlers } from "./mcp";
 import { createMemoryRouteHandlers } from "./memory";
 import { createPluginsRouteHandlers } from "./plugins";
@@ -25,6 +26,7 @@ export function createJsonRpcRequestRouter(
     ...createTurnRouteHandlers(context),
     ...createSessionRouteHandlers(context),
     ...createAgentRouteHandlers(context),
+    ...createConnectorsRouteHandlers(context),
     ...createProviderRouteHandlers(context),
     ...createResearchRouteHandlers(context),
     ...createMcpRouteHandlers(context),

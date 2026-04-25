@@ -8,10 +8,9 @@ import { writeTextFileAtomic } from "../utils/atomicFile";
 export const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 export const CODEX_OAUTH_ISSUER = "https://auth.openai.com";
 export const CODEX_BACKEND_BASE_URL = "https://chatgpt.com/backend-api/codex";
-// Keep this pinned to the live official Codex browser-login scope. The older
-// connector-expanded scope can trigger auth.openai.com unknown_error before the
-// localhost callback ever runs.
-export const CODEX_OAUTH_SCOPE = "openid profile email offline_access";
+// Keep this pinned to the live official Codex browser-login scope.
+export const CODEX_OAUTH_SCOPE =
+  "openid profile email offline_access api.connectors.read api.connectors.invoke";
 export const CODEX_OAUTH_ORIGINATOR = "codex_cli_rs";
 
 export type CodexAuthPaths = {
@@ -36,6 +35,7 @@ export type CodexAuthMaterial = {
   idToken?: string;
   expiresAtMs?: number;
   accountId?: string;
+  isFedrampAccount?: boolean;
   email?: string;
   planType?: string;
   updatedAt?: string;
@@ -90,6 +90,7 @@ const codexAuthDocumentSchema = z
     account: z
       .object({
         account_id: nonEmptyStringSchema.optional(),
+        chatgpt_account_is_fedramp: z.boolean().optional(),
         email: nonEmptyStringSchema.optional(),
         plan_type: nonEmptyStringSchema.optional(),
       })
@@ -103,6 +104,7 @@ const codexAuthDocumentSchema = z
 const oauthNamespaceClaimsSchema = z
   .object({
     chatgpt_account_id: nonEmptyStringSchema.optional(),
+    chatgpt_account_is_fedramp: z.boolean().optional(),
     chatgpt_plan_type: nonEmptyStringSchema.optional(),
   })
   .passthrough();
@@ -189,6 +191,16 @@ export function extractAccountIdFromClaims(claims: Record<string, unknown>): str
   if (account) return account;
 
   return undefined;
+}
+
+export function extractIsFedrampAccountFromClaims(claims: Record<string, unknown>): boolean {
+  if (claims.chatgpt_account_is_fedramp === true) return true;
+
+  const nestedAuth = parseWithSchema(
+    oauthNamespaceClaimsSchema,
+    claims["https://api.openai.com/auth"],
+  );
+  return nestedAuth?.chatgpt_account_is_fedramp === true;
 }
 
 export function extractEmailFromClaims(claims: Record<string, unknown>): string | undefined {
@@ -347,6 +359,10 @@ function parseCodexAuthJson(file: string, json: unknown): CodexAuthMaterial {
     (idClaims ? extractAccountIdFromClaims(idClaims) : undefined) ??
     (accessClaims ? extractAccountIdFromClaims(accessClaims) : undefined) ??
     doc.account?.account_id;
+  const isFedrampAccount =
+    (idClaims ? extractIsFedrampAccountFromClaims(idClaims) : false) ||
+    (accessClaims ? extractIsFedrampAccountFromClaims(accessClaims) : false) ||
+    doc.account?.chatgpt_account_is_fedramp === true;
 
   const email =
     (idClaims ? extractEmailFromClaims(idClaims) : undefined) ??
@@ -367,6 +383,7 @@ function parseCodexAuthJson(file: string, json: unknown): CodexAuthMaterial {
     idToken,
     expiresAtMs,
     accountId,
+    isFedrampAccount,
     email,
     planType,
     updatedAt: doc.updated_at ?? doc.last_refresh,
@@ -402,6 +419,11 @@ function parseLegacyCodexAuthJson(file: string, json: unknown): CodexAuthMateria
     (accessClaims ? extractAccountIdFromClaims(accessClaims) : undefined) ??
     readStringAtPath(json, ["account", "account_id"]) ??
     readStringAtPath(json, ["chatgpt_account_id"]);
+  const isFedrampAccount =
+    (idClaims ? extractIsFedrampAccountFromClaims(idClaims) : false) ||
+    (accessClaims ? extractIsFedrampAccountFromClaims(accessClaims) : false) ||
+    readValueAtPath(json, ["account", "chatgpt_account_is_fedramp"]) === true ||
+    readValueAtPath(json, ["chatgpt_account_is_fedramp"]) === true;
 
   const email =
     (idClaims ? extractEmailFromClaims(idClaims) : undefined) ??
@@ -422,6 +444,7 @@ function parseLegacyCodexAuthJson(file: string, json: unknown): CodexAuthMateria
     idToken,
     expiresAtMs,
     accountId,
+    isFedrampAccount,
     email,
     planType,
     updatedAt: readStringAtPath(json, ["updated_at"]) ?? readStringAtPath(json, ["last_refresh"]),
@@ -439,6 +462,7 @@ function formatAuthJson(material: CodexAuthMaterial): Record<string, unknown> {
 
   const account: Record<string, unknown> = {};
   if (material.accountId) account.account_id = material.accountId;
+  if (material.isFedrampAccount) account.chatgpt_account_is_fedramp = true;
   if (material.email) account.email = material.email;
   if (material.planType) account.plan_type = material.planType;
 
@@ -471,6 +495,7 @@ export async function writeCodexAuthMaterial(
     idToken: material.idToken,
     expiresAtMs: material.expiresAtMs ?? extractJwtExpiryMs(material.accessToken),
     accountId: material.accountId,
+    isFedrampAccount: material.isFedrampAccount,
     email: material.email,
     planType: material.planType,
     updatedAt: new Date().toISOString(),
@@ -552,6 +577,9 @@ export function codexMaterialFromTokenResponse(
   const accountId =
     (idClaims ? extractAccountIdFromClaims(idClaims) : undefined) ??
     (accessClaims ? extractAccountIdFromClaims(accessClaims) : undefined);
+  const isFedrampAccount =
+    (idClaims ? extractIsFedrampAccountFromClaims(idClaims) : false) ||
+    (accessClaims ? extractIsFedrampAccountFromClaims(accessClaims) : false);
   const email =
     (idClaims ? extractEmailFromClaims(idClaims) : undefined) ??
     (accessClaims ? extractEmailFromClaims(accessClaims) : undefined);
@@ -574,6 +602,7 @@ export function codexMaterialFromTokenResponse(
     idToken,
     expiresAtMs,
     accountId,
+    isFedrampAccount,
     email,
     planType,
     updatedAt: new Date().toISOString(),
@@ -651,6 +680,7 @@ export async function refreshCodexAuthMaterial(opts: {
     refreshToken: refreshed.refreshToken ?? opts.material.refreshToken,
     idToken: refreshed.idToken ?? opts.material.idToken,
     accountId: refreshed.accountId ?? opts.material.accountId,
+    isFedrampAccount: refreshed.isFedrampAccount || opts.material.isFedrampAccount,
     email: refreshed.email ?? opts.material.email,
     planType: refreshed.planType ?? opts.material.planType,
   });

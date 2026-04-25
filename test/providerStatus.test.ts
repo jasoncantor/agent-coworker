@@ -293,6 +293,9 @@ describe("getProviderStatuses", () => {
       iss: "https://auth.example.com",
       email: "jwt@example.com",
       chatgpt_account_id: "acct-123",
+      "https://api.openai.com/auth": {
+        chatgpt_account_is_fedramp: true,
+      },
     });
     const accessToken = "access-token";
 
@@ -316,6 +319,7 @@ describe("getProviderStatuses", () => {
       if (u === "https://chatgpt.com/backend-api/wham/usage") {
         expect(init?.headers?.authorization).toBe(`Bearer ${accessToken}`);
         expect(init?.headers?.["chatgpt-account-id"]).toBe("acct-123");
+        expect(init?.headers?.["x-openai-fedramp"]).toBe("true");
         return new Response(
           JSON.stringify({
             account_id: "acct-123",

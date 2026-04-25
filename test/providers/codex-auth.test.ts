@@ -12,6 +12,7 @@ import {
   ensureCodexAuthDirWritable,
   extractAccountIdFromClaims,
   extractEmailFromClaims,
+  extractIsFedrampAccountFromClaims,
   extractJwtExpiryMs,
   extractPlanTypeFromClaims,
   readCodexAuthMaterial,
@@ -90,6 +91,26 @@ describe("codex auth claim parsing", () => {
       }),
     ).toBe("pro");
   });
+
+  test("extractIsFedrampAccountFromClaims reads direct and nested auth claims", () => {
+    expect(
+      extractIsFedrampAccountFromClaims({
+        chatgpt_account_is_fedramp: true,
+      }),
+    ).toBe(true);
+
+    expect(
+      extractIsFedrampAccountFromClaims({
+        "https://api.openai.com/auth": { chatgpt_account_is_fedramp: true },
+      }),
+    ).toBe(true);
+
+    expect(
+      extractIsFedrampAccountFromClaims({
+        "https://api.openai.com/auth": { chatgpt_account_is_fedramp: false },
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("codex auth token response parsing", () => {
@@ -103,6 +124,7 @@ describe("codex auth token response parsing", () => {
     const idToken = makeJwt({
       "https://api.openai.com/auth": {
         chatgpt_account_id: "acct-id",
+        chatgpt_account_is_fedramp: true,
         chatgpt_plan_type: "pro",
       },
       "https://api.openai.com/profile": {
@@ -123,6 +145,7 @@ describe("codex auth token response parsing", () => {
     expect(material.idToken).toBe(idToken);
     expect(material.refreshToken).toBe("refresh-1");
     expect(material.accountId).toBe("acct-id");
+    expect(material.isFedrampAccount).toBe(true);
     expect(material.email).toBe("id@example.com");
     expect(material.planType).toBe("pro");
     expect(material.expiresAtMs).toBeDefined();
@@ -162,6 +185,7 @@ describe("codex auth token response parsing", () => {
       idToken: makeJwt({
         "https://api.openai.com/auth": {
           chatgpt_account_id: "acct-existing",
+          chatgpt_account_is_fedramp: true,
           chatgpt_plan_type: "enterprise",
         },
         "https://api.openai.com/profile": {
@@ -169,6 +193,7 @@ describe("codex auth token response parsing", () => {
         },
       }),
       accountId: "acct-existing",
+      isFedrampAccount: true,
       email: "existing@example.com",
       planType: "enterprise",
     };
@@ -189,6 +214,7 @@ describe("codex auth token response parsing", () => {
     expect(refreshed.refreshToken).toBe("refresh-token-existing");
     expect(refreshed.idToken).toBe(material.idToken);
     expect(refreshed.accountId).toBe("acct-existing");
+    expect(refreshed.isFedrampAccount).toBe(true);
     expect(refreshed.email).toBe("existing@example.com");
     expect(refreshed.planType).toBe("enterprise");
 
@@ -197,6 +223,7 @@ describe("codex auth token response parsing", () => {
     expect(persisted.tokens.refresh_token).toBe("refresh-token-existing");
     expect(persisted.tokens.id_token).toBe(material.idToken);
     expect(persisted.account.account_id).toBe("acct-existing");
+    expect(persisted.account.chatgpt_account_is_fedramp).toBe(true);
     expect(persisted.account.email).toBe("existing@example.com");
     expect(persisted.account.plan_type).toBe("enterprise");
   });

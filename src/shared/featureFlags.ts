@@ -4,6 +4,7 @@ export const FEATURE_FLAG_IDS = [
   "workspacePicker",
   "workspaceLifecycle",
   "a2ui",
+  "openAiNativeConnectors",
 ] as const;
 
 export type FeatureFlagId = (typeof FEATURE_FLAG_IDS)[number];
@@ -59,6 +60,13 @@ export const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlagId, FeatureFlagDefiniti
     defaultEnabled: false,
     experimentalEnv: "COWORK_EXPERIMENTAL_A2UI",
   },
+  openAiNativeConnectors: {
+    id: "openAiNativeConnectors",
+    label: "OpenAI native connectors",
+    description: "Enable the OpenAI Native Connectors settings view and Codex apps tooling.",
+    defaultEnabled: false,
+    restartRequired: true,
+  },
 };
 
 function parseBooleanFlag(value: string | undefined): boolean | null {
@@ -95,6 +103,7 @@ export function resolveFeatureFlags(options: ResolveFeatureFlagsOptions): Featur
     workspacePicker: FEATURE_FLAG_DEFINITIONS.workspacePicker.defaultEnabled,
     workspaceLifecycle: FEATURE_FLAG_DEFINITIONS.workspaceLifecycle.defaultEnabled,
     a2ui: FEATURE_FLAG_DEFINITIONS.a2ui.defaultEnabled,
+    openAiNativeConnectors: FEATURE_FLAG_DEFINITIONS.openAiNativeConnectors.defaultEnabled,
   };
 
   for (const flagId of FEATURE_FLAG_IDS) {

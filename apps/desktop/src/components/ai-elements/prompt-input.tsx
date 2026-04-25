@@ -22,7 +22,7 @@ type PromptInputRootProps = ComponentProps<"fieldset"> & {
   fileDrop?: PromptInputFileDropOptions;
 };
 
-export function PromptInputRoot({ className, fileDrop, ...props }: PromptInputRootProps) {
+export function PromptInputRoot({ className, fileDrop, children, ...props }: PromptInputRootProps) {
   const [dragActive, setDragActive] = useState(false);
   const dropEnabled = Boolean(fileDrop) && !fileDrop?.disabled;
 
@@ -86,11 +86,14 @@ export function PromptInputRoot({ className, fileDrop, ...props }: PromptInputRo
       onDragOver={onDragOver}
       onDrop={onDrop}
       className={cn(
-        "app-shadow-surface relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col rounded-[28px] border border-border/45 bg-panel px-3 py-2.5 transition-shadow focus-within:shadow-[var(--shadow-overlay)]",
+        "app-shadow-surface relative mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col rounded-[28px] border border-border/45 bg-panel p-0 transition-shadow focus-within:shadow-[var(--shadow-overlay)]",
         dropEnabled && dragActive && "ring-2 ring-primary/30 ring-offset-2 ring-offset-background",
         className,
       )}
-    />
+    >
+      {/* Fieldsets use an internal formatting box; a real flex wrapper pins the footer to the bottom. */}
+      <div className="flex min-h-0 w-full flex-1 flex-col px-3 py-2.5">{children}</div>
+    </fieldset>
   );
 }
 
@@ -168,7 +171,13 @@ export const PromptInputForm = forwardRef<HTMLFormElement, ComponentProps<"form"
 
 export const PromptInputBody = forwardRef<HTMLDivElement, ComponentProps<"div">>(
   function PromptInputBody({ className, ...props }, ref) {
-    return <div ref={ref} className={cn("flex min-h-0 flex-1 px-0.5", className)} {...props} />;
+    return (
+      <div
+        ref={ref}
+        className={cn("flex min-h-0 flex-1 flex-col px-0.5", className)}
+        {...props}
+      />
+    );
   },
 );
 
@@ -178,7 +187,7 @@ export const PromptInputFooter = forwardRef<HTMLDivElement, ComponentProps<"div"
       <div
         ref={ref}
         className={cn(
-          "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-0.5 pt-1",
+          "mt-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-0.5 pt-1",
           className,
         )}
         {...props}

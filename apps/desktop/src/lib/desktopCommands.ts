@@ -36,6 +36,7 @@ function getDefaultDesktopFeatureFlags(): DesktopFeatureFlags {
     workspacePicker: false,
     workspaceLifecycle: false,
     a2ui: false,
+    openAiNativeConnectors: false,
   };
 }
 
@@ -74,6 +75,7 @@ export async function startWorkspaceServer(opts: {
   workspaceId: string;
   workspacePath: string;
   yolo: boolean;
+  featureFlags?: DesktopFeatureFlagOverrides;
 }): Promise<{ url: string }> {
   return await requireDesktopApi().startWorkspaceServer(opts);
 }

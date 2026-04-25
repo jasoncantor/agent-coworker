@@ -220,6 +220,9 @@ async function resolveCodexAuthHeaders(config: AgentConfig): Promise<HeaderMap> 
   if (material.accountId?.trim()) {
     headers["ChatGPT-Account-ID"] = material.accountId.trim();
   }
+  if (material.isFedrampAccount) {
+    headers["X-OpenAI-Fedramp"] = "true";
+  }
   return headers;
 }
 

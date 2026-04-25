@@ -18,6 +18,7 @@ async function writeCodexAuth(
   overrides: Partial<{
     accessToken: string;
     accountId: string;
+    isFedrampAccount: boolean;
     expiresAtMs: number;
   }> = {},
 ) {
@@ -34,6 +35,7 @@ async function writeCodexAuth(
     },
     account: {
       account_id: overrides.accountId ?? "acct-123",
+      ...(overrides.isFedrampAccount ? { chatgpt_account_is_fedramp: true } : {}),
     },
   });
 }
@@ -148,11 +150,11 @@ describe("provider model adapters", () => {
     expect(headers.authorization).toBe("Bearer sk-abc");
   });
 
-  test("Codex adapter falls back to Cowork auth and propagates ChatGPT-Account-ID", async () => {
+  test("Codex adapter falls back to Cowork auth and propagates ChatGPT account headers", async () => {
     const { home, tmp } = await makeTmpDirs();
     try {
       await withEnv("HOME", home, async () => {
-        await writeCodexAuth(home);
+        await writeCodexAuth(home, { isFedrampAccount: true });
         const workspaceDir = path.join(tmp, "workspace");
         await fs.mkdir(workspaceDir, { recursive: true });
         const config = makeConfig({
@@ -165,6 +167,7 @@ describe("provider model adapters", () => {
 
         expect(headers.authorization).toBe("Bearer codex-token");
         expect(headers["ChatGPT-Account-ID"]).toBe("acct-123");
+        expect(headers["X-OpenAI-Fedramp"]).toBe("true");
       });
     } finally {
       await fs.rm(tmp, { recursive: true, force: true });

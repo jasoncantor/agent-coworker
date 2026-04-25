@@ -14,6 +14,10 @@ export function isSettingsPageAvailable(
     return false;
   }
 
+  if (page === "openAiNativeConnectors" && opts.desktopFeatures.openAiNativeConnectors !== true) {
+    return false;
+  }
+
   if (opts.packaged && DEVELOPMENT_ONLY_SETTINGS_PAGES.has(page)) {
     return false;
   }

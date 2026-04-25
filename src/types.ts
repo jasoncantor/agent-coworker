@@ -110,10 +110,12 @@ export interface UserProfile {
 
 export type WorkspaceFeatureFlagOverrides = {
   a2ui?: boolean;
+  openAiNativeConnectors?: boolean;
 };
 
 export type WorkspaceFeatureFlags = {
   a2ui?: boolean;
+  openAiNativeConnectors?: boolean;
 };
 
 export interface AgentConfig {
@@ -196,6 +198,7 @@ export interface AgentConfig {
   /** Internal experiment gates resolved from environment. Not persisted. */
   experimentalFeatures?: {
     a2ui?: boolean;
+    openAiNativeConnectors?: boolean;
   };
 
   /**

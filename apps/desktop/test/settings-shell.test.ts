@@ -9,6 +9,14 @@ describe("settings shell", () => {
     const pageIds = getSettingsGroups(true).flatMap((group) => group.pages.map((page) => page.id));
     expect(pageIds).toContain("remoteAccess");
     expect(pageIds).toContain("featureFlags");
+    expect(pageIds).not.toContain("openAiNativeConnectors");
+  });
+
+  test("shows OpenAI native connectors only when the feature is enabled", () => {
+    const pageIds = getSettingsGroups(true, { openAiNativeConnectorsAvailable: true }).flatMap(
+      (group) => group.pages.map((page) => page.id),
+    );
+    expect(pageIds).toContain("openAiNativeConnectors");
   });
 
   test("hides development-only settings in packaged builds", () => {
@@ -19,6 +27,7 @@ describe("settings shell", () => {
     expect(pageIds).toContain("developer");
     expect(pageIds).not.toContain("remoteAccess");
     expect(pageIds).toContain("providers");
+    expect(pageIds).not.toContain("openAiNativeConnectors");
   });
 
   test("hides remote access when the feature is disabled", () => {
