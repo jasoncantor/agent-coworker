@@ -67,6 +67,14 @@ import {
   type ValidationIssue,
   validateWithOptionalRepair,
 } from "./rawLoopValidation";
+import {
+  isoSafeNow,
+  maskApiKey,
+  pad2,
+  safeJsonStringify,
+  safePathComponent,
+  safeStamp,
+} from "./rawLoopUtils";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 
@@ -289,34 +297,6 @@ type RawLoopAgentControlDeps = {
   now?: () => string;
   getConnectedProviders?: () => Promise<readonly ProviderName[]>;
 };
-
-function isoSafeNow() {
-  return new Date().toISOString();
-}
-
-function safeStamp(d = new Date()): string {
-  return d.toISOString().replace(/[:.]/g, "-");
-}
-
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-function safeJsonStringify(v: unknown): string {
-  const seen = new WeakSet<object>();
-  return JSON.stringify(
-    v,
-    (_k, value) => {
-      if (typeof value === "bigint") return value.toString();
-      if (typeof value === "object" && value !== null) {
-        if (seen.has(value)) return "[Circular]";
-        seen.add(value);
-      }
-      return value;
-    },
-    2,
-  );
-}
 
 function defaultHarnessContextForRun(
   run: Pick<RunSpec, "id" | "provider" | "model">,
@@ -972,19 +952,6 @@ function extractRetryDelayMs(err: unknown): number | null {
   }
 
   return null;
-}
-
-function maskApiKey(value: string): string {
-  if (!value) return "";
-  if (value.length <= 8) return "*".repeat(Math.max(4, value.length));
-  return `${value.slice(0, 4)}...${value.slice(-4)}`;
-}
-
-function safePathComponent(value: string): string {
-  return value
-    .replace(/[^a-zA-Z0-9._-]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
 }
 
 async function listFilesRecursive(dir: string): Promise<string[]> {

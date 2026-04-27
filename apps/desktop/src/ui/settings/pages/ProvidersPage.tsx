@@ -21,168 +21,31 @@ import {
 } from "../../../lib/providerDisplayNames";
 import { compareProviderNamesForSettings } from "../../../lib/providerOrdering";
 import { cn } from "../../../lib/utils";
-import type { ProviderName, SessionEvent } from "../../../lib/wsProtocol";
+import type { ProviderName } from "../../../lib/wsProtocol";
 import { PROVIDER_NAMES } from "../../../lib/wsProtocol";
 import { useOptionalSettingsChrome } from "../SettingsChromeContext";
+import {
+  describeLmStudioCard,
+  EXA_AUTH_METHOD_ID,
+  EXA_SECTION_ID,
+  formatAccount,
+  formatDurationSeconds,
+  formatRateLimitName,
+  PARALLEL_AUTH_METHOD_ID,
+  PARALLEL_SECTION_ID,
+  providerStatusLabel,
+  remainingPercentFromWindow,
+  usedPercentFromWindow,
+  type ProviderAuthMethod,
+  type ProviderCatalogEntry,
+  type ProviderStatus,
+} from "./providersPageUtils";
 
-type ProviderAuthMethod = Extract<
-  SessionEvent,
-  { type: "provider_auth_methods" }
->["methods"][string][number];
-type ProviderCatalogEntry = Extract<SessionEvent, { type: "provider_catalog" }>["all"][number];
-type ProviderStatus = Extract<SessionEvent, { type: "provider_status" }>["providers"][number];
-
-const EXA_AUTH_METHOD_ID = "exa_api_key";
-const PARALLEL_AUTH_METHOD_ID = "parallel_api_key";
-export const EXA_SECTION_ID = "provider:exa-search";
-export const PARALLEL_SECTION_ID = "provider:parallel-search";
+export { EXA_SECTION_ID, PARALLEL_SECTION_ID } from "./providersPageUtils";
 
 type ProvidersPageProps = {
   initialExpandedSectionId?: string | null;
 };
-
-function formatAccount(account: any): string {
-  const name = typeof account?.name === "string" ? account.name.trim() : "";
-  const email = typeof account?.email === "string" ? account.email.trim() : "";
-  if (name && email) return `${name} <${email}>`;
-  return name || email || "";
-}
-
-function providerStatusLabel(status: any): string {
-  if (!status) return "Not connected";
-  if (
-    Array.isArray(status.usage?.rateLimits) &&
-    status.usage.rateLimits.some(
-      (entry: any) =>
-        (entry?.limitReached === true || entry?.allowed === false) && !isUsingCredits(entry),
-    )
-  ) {
-    return "Rate limited";
-  }
-  if (status.verified) return "Connected";
-  if (status.authorized) return "Connected";
-  if (status.mode === "oauth_pending") return "Pending";
-  return "Not connected";
-}
-
-function lmStudioStatusMessage(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function lmStudioStatusKind(opts: {
-  enabled: boolean;
-  status?: ProviderStatus;
-  catalogEntry?: ProviderCatalogEntry;
-}): "disabled" | "connected" | "no-models" | "unavailable" | "checking" {
-  if (!opts.enabled) return "disabled";
-  if (opts.catalogEntry?.state === "empty") return "no-models";
-  if (opts.catalogEntry?.state === "unreachable") return "unavailable";
-  if (opts.status?.mode === "error") return "unavailable";
-  if (lmStudioStatusMessage(opts.status?.message).toLowerCase().includes("no llms are available")) {
-    return "no-models";
-  }
-  if (opts.status?.authorized || opts.status?.verified) return "connected";
-  return "checking";
-}
-
-function describeLmStudioCard(opts: {
-  enabled: boolean;
-  status?: ProviderStatus;
-  catalogEntry?: ProviderCatalogEntry;
-  visibleModelCount: number;
-  totalModelCount: number;
-}): {
-  badgeLabel: string;
-  subtitle: string;
-  emptyStateMessage: string;
-} {
-  const statusMessage = lmStudioStatusMessage(opts.status?.message);
-  const catalogMessage = lmStudioStatusMessage(opts.catalogEntry?.message);
-  const anyMessage = catalogMessage || statusMessage;
-  const noModelsMessage =
-    anyMessage || "LM Studio is reachable, but it is not exposing any LLMs right now.";
-  const kind = lmStudioStatusKind(opts);
-
-  if (kind === "disabled") {
-    return {
-      badgeLabel: "Disabled",
-      subtitle: "Connect once to show LM Studio in Cowork.",
-      emptyStateMessage: "Refresh once LM Studio is running to discover available models.",
-    };
-  }
-
-  if (kind === "no-models") {
-    return {
-      badgeLabel: "No models",
-      subtitle: noModelsMessage,
-      emptyStateMessage: "LM Studio is reachable, but it is not exposing any LLMs right now.",
-    };
-  }
-
-  if (kind === "unavailable") {
-    return {
-      badgeLabel: "Unavailable",
-      subtitle: anyMessage || "Unable to reach your local LM Studio server.",
-      emptyStateMessage: "Refresh once LM Studio is running to discover available models.",
-    };
-  }
-
-  if (kind === "connected") {
-    return {
-      badgeLabel: "Connected",
-      subtitle:
-        opts.totalModelCount > 0
-          ? `${opts.visibleModelCount}/${opts.totalModelCount} model${opts.totalModelCount === 1 ? "" : "s"} shown in chat`
-          : noModelsMessage,
-      emptyStateMessage: "LM Studio is reachable, but it is not exposing any LLMs right now.",
-    };
-  }
-
-  return {
-    badgeLabel: "Checking",
-    subtitle: anyMessage || "Checking your local LM Studio server.",
-    emptyStateMessage: "Refresh once LM Studio is running to discover available models.",
-  };
-}
-
-function formatRateLimitName(entry: any): string {
-  const raw: string =
-    typeof entry?.limitName === "string" && entry.limitName.trim() ? entry.limitName.trim() : "";
-  if (raw) return raw;
-  const limitId: string =
-    typeof entry?.limitId === "string" && entry.limitId.trim() ? entry.limitId.trim() : "";
-  if (!limitId) return "Unknown";
-  return limitId
-    .split(/[_-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatDurationSeconds(totalSeconds: unknown): string {
-  if (typeof totalSeconds !== "number" || !Number.isFinite(totalSeconds) || totalSeconds < 0)
-    return "unknown";
-  if (totalSeconds < 60) return `${Math.round(totalSeconds)}s`;
-  if (totalSeconds < 3600) return `${Math.round(totalSeconds / 60)}m`;
-  if (totalSeconds < 86400) return `${Math.round(totalSeconds / 3600)}h`;
-  return `${Math.round(totalSeconds / 86400)}d`;
-}
-
-function clampPercent(value: number): number {
-  return Math.max(0, Math.min(100, value));
-}
-
-function usedPercentFromWindow(window: any): number | null {
-  if (!window || typeof window !== "object") return null;
-  if (typeof window.usedPercent !== "number" || !Number.isFinite(window.usedPercent)) return null;
-  return clampPercent(window.usedPercent);
-}
-
-function remainingPercentFromWindow(window: any): number | null {
-  const usedPercent = usedPercentFromWindow(window);
-  if (usedPercent === null) return null;
-  return clampPercent(100 - usedPercent);
-}
 
 function formatWindowMeta(window: any): string {
   if (!window || typeof window !== "object") return "No usage data";
