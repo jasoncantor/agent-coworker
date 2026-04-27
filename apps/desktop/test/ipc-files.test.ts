@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { DESKTOP_IPC_CHANNELS } from "../src/lib/desktopApi";
+import { createElectronMock } from "./helpers/mockElectron";
 
 const showSaveDialogMock = mock(async () => ({
   canceled: true,
@@ -15,7 +16,7 @@ let filesModuleImportNonce = 0;
 
 async function loadRegisterFilesIpc() {
   mock.restore();
-  mock.module("electron", () => ({
+  mock.module("electron", () => createElectronMock({
     app: {
       getPath(name: string) {
         return getDownloadsPathMock(name);
