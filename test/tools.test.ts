@@ -682,6 +682,75 @@ describe("bash tool", () => {
     expect(res.exitCode).toBe(130);
     expect(res.stderr.toLowerCase()).toContain("aborted");
   });
+
+  test("applies default 5 minute timeout when not specified", async () => {
+    const dir = await tmpDir();
+    const t: any = createBashTool(makeCtx(dir));
+    bashInternal.setRunShellCommandForTests(async (opts) => {
+      expect(opts.timeoutMs).toBe(300_000);
+      return { stdout: "ok", stderr: "", exitCode: 0 };
+    });
+    const res = await t.execute({ command: "sleep 1" });
+    expect(res.stdout).toBe("ok");
+  });
+
+  test("uses custom timeout when timeoutSeconds is provided", async () => {
+    const dir = await tmpDir();
+    const t: any = createBashTool(makeCtx(dir));
+    bashInternal.setRunShellCommandForTests(async (opts) => {
+      expect(opts.timeoutMs).toBe(120_000);
+      return { stdout: "ok", stderr: "", exitCode: 0 };
+    });
+    const res = await t.execute({ command: "sleep 1", timeoutSeconds: 120 });
+    expect(res.stdout).toBe("ok");
+  });
+
+  test("caps timeout at maximum allowed value", async () => {
+    const dir = await tmpDir();
+    const t: any = createBashTool(makeCtx(dir));
+    bashInternal.setRunShellCommandForTests(async (opts) => {
+      expect(opts.timeoutMs).toBe(600_000);
+      return { stdout: "ok", stderr: "", exitCode: 0 };
+    });
+    const res = await t.execute({ command: "sleep 1", timeoutSeconds: 9999 });
+    expect(res.stdout).toBe("ok");
+  });
+
+  test("returns timeout error when command exceeds timeout", async () => {
+    const dir = await tmpDir();
+    bashInternal.setRunShellCommandForTests(async () => ({
+      stdout: "",
+      stderr: "Command timed out after 1s. The child process was terminated.",
+      exitCode: 124,
+      errorCode: "TIMEOUT",
+    }));
+    const t: any = createBashTool(makeCtx(dir));
+    const res = await t.execute({ command: "sleep 10", timeoutSeconds: 1 });
+    expect(res.exitCode).toBe(124);
+    expect(res.stderr).toContain("timed out");
+  });
+
+  test("redacts secrets in tool log output", async () => {
+    const dir = await tmpDir();
+    const logs: string[] = [];
+    const ctx = makeCtx(dir);
+    ctx.log = (line: string) => logs.push(line);
+
+    bashInternal.setRunShellCommandForTests(async () => ({
+      stdout: "api-key=sk-abc1234567890abcdef",
+      stderr: "token=supersecrettoken123",
+      exitCode: 0,
+    }));
+
+    const t: any = createBashTool(ctx);
+    await t.execute({ command: "echo secrets" });
+
+    const toolLog = logs.find((l) => l.includes("tool< bash"));
+    expect(toolLog).toBeDefined();
+    expect(toolLog).not.toContain("sk-abc1234567890abcdef");
+    expect(toolLog).not.toContain("supersecrettoken123");
+    expect(toolLog).toContain("***REDACTED***");
+  });
 });
 
 // ---------------------------------------------------------------------------
