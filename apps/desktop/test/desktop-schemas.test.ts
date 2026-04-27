@@ -5,6 +5,7 @@ import {
   desktopMenuCommandSchema,
   mobileRelayBridgeStateSchema,
   mobileRelayStartInputSchema,
+  openExternalUrlInputSchema,
   persistedStateInputSchema,
   showQuickChatWindowInputSchema,
   updaterStateSchema,
@@ -190,5 +191,43 @@ describe("desktop persisted-state schema defaults", () => {
 
     expect(parsed.status).toBe("pairing");
     expect(parsed.pairingPayload?.macDeviceId).toBe("mac-1");
+  });
+});
+
+describe("openExternalUrlInputSchema", () => {
+  test("accepts http, https, and mailto URLs", () => {
+    expect(openExternalUrlInputSchema.parse({ url: "https://example.com" }).url).toBe(
+      "https://example.com",
+    );
+    expect(openExternalUrlInputSchema.parse({ url: "http://localhost:3000" }).url).toBe(
+      "http://localhost:3000",
+    );
+    expect(openExternalUrlInputSchema.parse({ url: "mailto:user@example.com" }).url).toBe(
+      "mailto:user@example.com",
+    );
+  });
+
+  test("rejects file scheme", () => {
+    expect(() => openExternalUrlInputSchema.parse({ url: "file:///etc/passwd" })).toThrow();
+  });
+
+  test("rejects javascript scheme", () => {
+    expect(() => openExternalUrlInputSchema.parse({ url: "javascript:alert(1)" })).toThrow();
+  });
+
+  test("rejects data scheme", () => {
+    expect(() =>
+      openExternalUrlInputSchema.parse({ url: "data:text/html,<script>alert(1)</script>" }),
+    ).toThrow();
+  });
+
+  test("rejects custom app protocols", () => {
+    expect(() => openExternalUrlInputSchema.parse({ url: "myapp://open/something" })).toThrow();
+    expect(() => openExternalUrlInputSchema.parse({ url: "slack://channel?id=123" })).toThrow();
+  });
+
+  test("rejects malformed URLs", () => {
+    expect(() => openExternalUrlInputSchema.parse({ url: "not a url" })).toThrow();
+    expect(() => openExternalUrlInputSchema.parse({ url: "" })).toThrow();
   });
 });

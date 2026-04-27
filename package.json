@@ -60,7 +60,7 @@
     "harness:run": "bun packages/harness/src/run_raw_agent_loops.ts --report-only",
     "test": "bun test",
     "test:stable": "bun packages/harness/src/run_tests_stable.ts",
-    "clean": "rm -rf dist/ apps/desktop/out/ apps/desktop/release/ apps/desktop/resources/binaries/ .tsbuildinfo .tsbuildinfo-desktop",
+    "clean": "rm -rf dist/ apps/desktop/out/ apps/desktop/release/ apps/desktop/resources/binaries/ .tsbuildinfo-harness apps/desktop/.tsbuildinfo-desktop",
     "typecheck": "bunx tsc --noEmit && bun run --cwd packages/harness typecheck && bunx tsc --noEmit -p apps/desktop/tsconfig.json",
     "typecheck:desktop": "bunx tsc --noEmit -p apps/desktop/tsconfig.json",
     "lint": "bunx biome lint .",

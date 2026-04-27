@@ -42,11 +42,23 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Check for tracked build artifacts
+        run: |
+          tracked_tsbuildinfo=$(git ls-files | grep -c '\.tsbuildinfo' || true)
+          if [ "$tracked_tsbuildinfo" -gt 0 ]; then
+            echo "Error: Found tracked .tsbuildinfo files (should be gitignored):"
+            git ls-files | grep '\.tsbuildinfo'
+            exit 1
+          fi
+
       - name: Docs consistency check
         run: bun run docs:check
 
       - name: Typecheck
         run: bun run typecheck
+
+      - name: Lint & format check
+        run: bun run check
 
   test:
     name: Tests

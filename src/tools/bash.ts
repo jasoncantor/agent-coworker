@@ -5,11 +5,32 @@ import { getShellCommandPolicyViolation } from "../server/agents/commandPolicy";
 import type { ToolContext } from "./context";
 import { defineTool } from "./defineTool";
 
+const DEFAULT_TIMEOUT_SECONDS = 300; // 5 minutes
+const MAX_TIMEOUT_SECONDS = 600; // 10 minutes
+
+// Patterns that may indicate secrets in command output
+const SECRET_PATTERNS = [
+  /(?:api[_-]?key|apikey|token|password|secret|auth[_-]?token)["']?\s*[:=]\s*["']?[\w\-./+=]{8,}/gi,
+  /(?:bearer|basic)\s+[\w\-./+=]{10,}/gi,
+  /(?:sk-[a-zA-Z0-9]{20,})/g,
+];
+
+function redactSecrets(text: string): string {
+  let result = text;
+  for (const pattern of SECRET_PATTERNS) {
+    result = result.replace(pattern, (match) => {
+      const prefix = match.slice(0, Math.min(4, match.length));
+      return `${prefix}***REDACTED***`;
+    });
+  }
+  return result;
+}
+
 type ExecResult = { stdout: string; stderr: string; exitCode: number; errorCode?: string };
 type ExecRunner = (
   file: string,
   args: string[],
-  opts: { cwd: string; maxBuffer: number; signal?: AbortSignal },
+  opts: { cwd: string; maxBuffer: number; signal?: AbortSignal; timeoutMs?: number },
 ) => Promise<ExecResult>;
 
 const abortByNameSchema = z.object({ name: z.literal("AbortError") }).passthrough();
@@ -18,9 +39,10 @@ const errorCodeSchema = z.object({ code: z.union([z.string(), z.number()]) }).pa
 function execFileAsync(
   file: string,
   args: string[],
-  opts: { cwd: string; maxBuffer: number; signal?: AbortSignal },
+  opts: { cwd: string; maxBuffer: number; signal?: AbortSignal; timeoutMs?: number },
 ): Promise<ExecResult> {
   return new Promise((resolve) => {
+    let timedOut = false;
     execFile(
       file,
       args,
@@ -28,12 +50,37 @@ function execFileAsync(
         cwd: opts.cwd,
         maxBuffer: opts.maxBuffer,
         windowsHide: true,
+        ...(opts.timeoutMs ? { timeout: opts.timeoutMs, killSignal: "SIGTERM" } : {}),
         ...(opts.signal ? { signal: opts.signal } : {}),
       },
       (err, stdout, stderr) => {
         const isAbortByName = abortByNameSchema.safeParse(err).success;
         const parsedErrorCode = errorCodeSchema.safeParse(err);
         const code = parsedErrorCode.success ? parsedErrorCode.data.code : undefined;
+
+        // Detect timeout: Node sets killed=true and signal='SIGTERM' on timeout
+        if (
+          err &&
+          "killed" in err &&
+          err.killed === true &&
+          "signal" in err &&
+          err.signal === "SIGTERM" &&
+          opts.timeoutMs
+        ) {
+          timedOut = true;
+        }
+
+        if (timedOut) {
+          const timeoutSeconds = (opts.timeoutMs ?? 0) / 1000;
+          resolve({
+            stdout: String(stdout ?? ""),
+            stderr: `Command timed out after ${timeoutSeconds}s. The child process was terminated.`,
+            exitCode: 124,
+            errorCode: "TIMEOUT",
+          });
+          return;
+        }
+
         if (isAbortByName || code === "ABORT_ERR") {
           resolve({
             stdout: String(stdout ?? ""),
@@ -60,6 +107,7 @@ async function runShellCommand(opts: {
   command: string;
   cwd: string;
   abortSignal?: AbortSignal;
+  timeoutMs?: number;
 }): Promise<ExecResult> {
   return await runShellCommandWithExec({
     ...opts,
@@ -69,7 +117,12 @@ async function runShellCommand(opts: {
 }
 
 let runShellCommandOverrideForTests:
-  | ((opts: { command: string; cwd: string; abortSignal?: AbortSignal }) => Promise<ExecResult>)
+  | ((opts: {
+      command: string;
+      cwd: string;
+      abortSignal?: AbortSignal;
+      timeoutMs?: number;
+    }) => Promise<ExecResult>)
   | null = null;
 
 function buildShellExecutionPlan(
@@ -103,6 +156,7 @@ async function runShellCommandWithExec(opts: {
   command: string;
   cwd: string;
   abortSignal?: AbortSignal;
+  timeoutMs?: number;
   platform: NodeJS.Platform;
   execRunner: ExecRunner;
 }): Promise<ExecResult> {
@@ -114,6 +168,7 @@ async function runShellCommandWithExec(opts: {
       cwd: opts.cwd,
       maxBuffer,
       signal: opts.abortSignal,
+      timeoutMs: opts.timeoutMs,
     });
     if (result.errorCode !== "ENOENT") return result;
   }
@@ -145,7 +200,9 @@ Rules:
 - Prefer absolute paths; avoid cd
 - On Windows, do not rely on \`&&\`, \`export\`, or \`source\`; use PowerShell syntax such as \`;\`, \`$env:NAME = "value"\`, and separate tool calls when that is clearer
 - On Windows, prefer \`py -3\` or \`python\` for Python commands
-- Large text output may be saved to the workspace scratchpad when overflow protection is enabled`;
+- Large text output may be saved to the workspace scratchpad when overflow protection is enabled
+
+Timeout: commands default to a ${DEFAULT_TIMEOUT_SECONDS}s timeout and are killed if they exceed it. You may request up to ${MAX_TIMEOUT_SECONDS}s for explicitly long-running operations.`;
 }
 
 export function createBashTool(ctx: ToolContext) {
@@ -153,9 +210,23 @@ export function createBashTool(ctx: ToolContext) {
     description: buildBashToolDescription(),
     inputSchema: z.object({
       command: z.string().describe("The shell command to execute"),
+      timeoutSeconds: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_TIMEOUT_SECONDS)
+        .optional()
+        .describe(
+          `Maximum time to allow the command to run in seconds. Defaults to ${DEFAULT_TIMEOUT_SECONDS}s; max ${MAX_TIMEOUT_SECONDS}s.`,
+        ),
     }),
-    execute: async ({ command }: { command: string }) => {
-      ctx.log(`tool> bash ${JSON.stringify({ command })}`);
+    execute: async ({ command, timeoutSeconds }: { command: string; timeoutSeconds?: number }) => {
+      const resolvedTimeoutSeconds = Math.min(
+        timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS,
+        MAX_TIMEOUT_SECONDS,
+      );
+      const timeoutMs = resolvedTimeoutSeconds * 1000;
+      ctx.log(`tool> bash ${JSON.stringify({ command, timeoutSeconds: resolvedTimeoutSeconds })}`);
 
       if (ctx.abortSignal?.aborted) {
         const res = { stdout: "", stderr: "Command aborted.", exitCode: 130 };
@@ -188,13 +259,19 @@ export function createBashTool(ctx: ToolContext) {
           command,
           cwd: ctx.config.workingDirectory,
           abortSignal: ctx.abortSignal,
+          timeoutMs,
         }).then(({ stdout, stderr, exitCode }) => {
           const res = {
             stdout: String(stdout ?? ""),
             stderr: String(stderr ?? ""),
             exitCode,
           };
-          ctx.log(`tool< bash ${JSON.stringify(res)}`);
+          const redactedRes = {
+            stdout: redactSecrets(res.stdout),
+            stderr: redactSecrets(res.stderr),
+            exitCode: res.exitCode,
+          };
+          ctx.log(`tool< bash ${JSON.stringify(redactedRes)}`);
           resolve(res);
         });
       });
@@ -211,6 +288,7 @@ export const __internal = {
       command: string;
       cwd: string;
       abortSignal?: AbortSignal;
+      timeoutMs?: number;
     }) => Promise<ExecResult>,
   ) {
     runShellCommandOverrideForTests = runner;

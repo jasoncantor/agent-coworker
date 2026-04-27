@@ -1,6 +1,10 @@
+import path from "node:path";
+
 import { app, type IpcMainInvokeEvent } from "electron";
 
 import { isTrustedDesktopSenderUrl } from "../services/ipcSecurity";
+
+const PACKAGED_RENDERER_DIR = path.resolve(path.join(__dirname, "../renderer"));
 
 export function resolveSenderUrl(event: IpcMainInvokeEvent): string {
   const senderFrameUrl = event.senderFrame?.url?.trim();
@@ -16,6 +20,7 @@ export function isTrustedSender(event: IpcMainInvokeEvent): boolean {
     isPackaged: app.isPackaged,
     electronRendererUrl: process.env.ELECTRON_RENDERER_URL,
     desktopRendererPort: process.env.COWORK_DESKTOP_RENDERER_PORT,
+    packagedRendererDir: app.isPackaged ? PACKAGED_RENDERER_DIR : undefined,
   });
 }
 

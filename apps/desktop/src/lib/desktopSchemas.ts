@@ -222,7 +222,16 @@ export const saveExportedFileInputSchema: z.ZodType<SaveExportedFileInput> = z.o
 });
 export const preferredFileAppInputSchema: z.ZodType<PreferredFileAppInput> = sharedPathSchema;
 export const openExternalUrlInputSchema: z.ZodType<OpenExternalUrlInput> = z.object({
-  url: nonEmptyStringSchema,
+  url: nonEmptyStringSchema.refine((value) => {
+    try {
+      const parsed = new URL(value);
+      return (
+        parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "mailto:"
+      );
+    } catch {
+      return false;
+    }
+  }, "URL must use http:, https:, or mailto: scheme"),
 });
 export const previewOSFileInputSchema: z.ZodType<PreviewOSFileInput> = sharedPathSchema;
 export const readFileInputSchema: z.ZodType<ReadFileInput> = sharedPathSchema;

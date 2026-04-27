@@ -257,6 +257,7 @@ describe("bash read-only shell policy", () => {
       command: "bun run typecheck",
       cwd: dir,
       abortSignal: undefined,
+      timeoutMs: 300000,
     });
   });
 });

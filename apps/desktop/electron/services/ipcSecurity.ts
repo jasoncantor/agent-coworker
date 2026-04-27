@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { resolveDesktopRendererUrl } from "./rendererUrl";
 import { assertPathWithinRoots } from "./validation";
@@ -8,6 +9,7 @@ type TrustedSenderOpts = {
   isPackaged: boolean;
   electronRendererUrl: string | undefined;
   desktopRendererPort: string | undefined;
+  packagedRendererDir?: string;
 };
 
 export function isTrustedDesktopSenderUrl(senderUrl: string, opts: TrustedSenderOpts): boolean {
@@ -16,7 +18,23 @@ export function isTrustedDesktopSenderUrl(senderUrl: string, opts: TrustedSender
   }
 
   if (opts.isPackaged) {
-    return senderUrl.startsWith("file://");
+    if (!senderUrl.startsWith("file://")) {
+      return false;
+    }
+    if (!opts.packagedRendererDir) {
+      return false;
+    }
+    try {
+      const parsed = new URL(senderUrl);
+      if (parsed.protocol !== "file:") {
+        return false;
+      }
+      const resolvedPath = path.resolve(fileURLToPath(parsed));
+      const relative = path.relative(opts.packagedRendererDir, resolvedPath);
+      return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+    } catch {
+      return false;
+    }
   }
 
   const { url: trustedUrl } = resolveDesktopRendererUrl(
