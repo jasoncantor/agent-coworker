@@ -62,6 +62,19 @@ export function registerSystemIpc(context: DesktopIpcModuleContext): void {
     DESKTOP_IPC_CHANNELS.openExternalUrl,
     async (_event, args: OpenExternalUrlInput) => {
       const input = parseWithSchema(openExternalUrlInputSchema, args, "openExternalUrl options");
+      // Defense-in-depth: validate URL scheme before opening external link
+      let parsed: URL;
+      try {
+        parsed = new URL(input.url);
+      } catch {
+        throw new Error(`Invalid URL: ${input.url}`);
+      }
+      const allowedProtocols = ["http:", "https:", "mailto:"];
+      if (!allowedProtocols.includes(parsed.protocol)) {
+        throw new Error(
+          `Blocked disallowed URL scheme: ${parsed.protocol} (allowed: ${allowedProtocols.join(", ")})`,
+        );
+      }
       await shell.openExternal(input.url);
     },
   );
