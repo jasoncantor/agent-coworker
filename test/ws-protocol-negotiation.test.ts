@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveWsProtocol, splitWebSocketSubprotocolHeader } from "../src/server/wsProtocol/negotiation";
+import {
+  resolveWsProtocol,
+  splitWebSocketSubprotocolHeader,
+} from "../src/server/wsProtocol/negotiation";
 
 describe("WebSocket protocol negotiation", () => {
   test("splits websocket subprotocol header", () => {

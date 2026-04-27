@@ -140,8 +140,7 @@ export async function persistProjectConfigPatch(
   runtimeProviderOptions?: AgentConfig["providerOptions"],
   opts: { a2uiExperimentEnabled?: boolean } = {},
 ): Promise<void> {
-  const a2uiExperimentEnabled =
-    opts.a2uiExperimentEnabled === true || isA2uiExperimentEnabled();
+  const a2uiExperimentEnabled = opts.a2uiExperimentEnabled === true || isA2uiExperimentEnabled();
   const entries = Object.entries(patch).filter(
     ([key, value]) =>
       key !== "clearToolOutputOverflowChars" &&
@@ -231,7 +230,10 @@ export function mergeConfigPatch(config: AgentConfig, patch: ProjectConfigPatch)
   } = patch;
   const a2uiExperimentEnabled = isA2uiExperimentActive(config);
   const configPatch = a2uiExperimentEnabled
-    ? { ...configPatchBase, ...(featureFlagsPatch !== undefined ? { featureFlags: featureFlagsPatch } : {}) }
+    ? {
+        ...configPatchBase,
+        ...(featureFlagsPatch !== undefined ? { featureFlags: featureFlagsPatch } : {}),
+      }
     : configPatchBase;
   const next: AgentConfig = { ...config, ...configPatch };
   if (patch.provider !== undefined && patch.provider !== config.provider) {

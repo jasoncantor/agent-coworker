@@ -1,4 +1,3 @@
-import type { SessionEvent } from "../../server/protocol";
 import { JSONRPC_ERROR_CODES } from "../../server/jsonrpc/protocol";
 import {
   captureBindingOutcome,
@@ -9,6 +8,7 @@ import type {
   JsonRpcRequestHandlerMap,
   JsonRpcRouteContext,
 } from "../../server/jsonrpc/routes/types";
+import type { SessionEvent } from "../../server/protocol";
 import { formatA2uiActionDeliveryText, jsonRpcA2uiRequestSchemas } from "./schema";
 
 type JsonRpcTurnStartOutcome =

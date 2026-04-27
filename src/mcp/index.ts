@@ -7,13 +7,10 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod";
-
+import { buildCodexAppsMcpServer } from "../server/connectors/openaiNativeConnectors";
+import { CODEX_APPS_MCP_SERVER_NAME } from "../shared/openaiNativeConnectors";
 import type { AgentConfig, MCPServerConfig } from "../types";
 import { VERSION } from "../version";
-import {
-  buildCodexAppsMcpServer,
-} from "../server/connectors/openaiNativeConnectors";
-import { CODEX_APPS_MCP_SERVER_NAME } from "../shared/openaiNativeConnectors";
 import {
   completeMCPServerOAuth,
   type MCPAuthMode,
@@ -124,7 +121,12 @@ function normalizeMcpJsonSchema(value: unknown, root = false): unknown {
   const input = value as Record<string, unknown>;
   const output: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(input)) {
-    if (key === "properties" && typeof entry === "object" && entry !== null && !Array.isArray(entry)) {
+    if (
+      key === "properties" &&
+      typeof entry === "object" &&
+      entry !== null &&
+      !Array.isArray(entry)
+    ) {
       output.properties = Object.fromEntries(
         Object.entries(entry as Record<string, unknown>).map(([propName, propSchema]) => [
           propName,
@@ -155,7 +157,10 @@ function normalizeMcpJsonSchema(value: unknown, root = false): unknown {
     "const" in output ||
     "enum" in output;
   if (!hasTypeLike) {
-    output.type = root || "properties" in output ? "object" : ["string", "number", "boolean", "object", "array", "null"];
+    output.type =
+      root || "properties" in output
+        ? "object"
+        : ["string", "number", "boolean", "object", "array", "null"];
   }
   return output;
 }
@@ -208,9 +213,9 @@ async function createRuntimeMcpClient(opts: {
           description,
           inputSchema: normalizeMcpJsonSchema(
             entry.inputSchema ?? {
-            type: "object",
-            properties: {},
-            additionalProperties: true,
+              type: "object",
+              properties: {},
+              additionalProperties: true,
             },
             true,
           ),

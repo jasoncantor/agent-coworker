@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 const workflowPath = new URL("../.github/workflows/ci.yml", import.meta.url);
-const stableTestRunnerPath = new URL("../packages/harness/src/run_tests_stable.ts", import.meta.url);
+const stableTestRunnerPath = new URL(
+  "../packages/harness/src/run_tests_stable.ts",
+  import.meta.url,
+);
 const workflow = readFileSync(workflowPath, "utf8");
 const stableTestRunner = readFileSync(stableTestRunnerPath, "utf8");
 

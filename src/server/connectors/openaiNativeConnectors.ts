@@ -6,10 +6,10 @@ import { getAiCoworkerPaths } from "../../connect";
 import { resolveOpenAiNativeConnectorsConfig } from "../../experimental/openaiNativeConnectors/flags";
 import {
   CODEX_BACKEND_BASE_URL,
+  type CodexAuthMaterial,
   isTokenExpiring,
   readCodexAuthMaterial,
   refreshCodexAuthMaterialCoalesced,
-  type CodexAuthMaterial,
 } from "../../providers/codex-auth";
 import {
   CODEX_APPS_MCP_SERVER_NAME,
@@ -26,7 +26,9 @@ const CHATGPT_BACKEND_BASE_URL = CODEX_BACKEND_BASE_URL.replace(/\/codex\/?$/, "
 const nonEmptyStringSchema = z.string().trim().min(1);
 const nullableStringSchema = z.string().nullish();
 const nullableRecordSchema = z.record(z.string(), z.unknown()).nullish();
-const connectorLabelsSchema = z.union([z.array(z.string()), z.record(z.string(), z.string())]).nullish();
+const connectorLabelsSchema = z
+  .union([z.array(z.string()), z.record(z.string(), z.string())])
+  .nullish();
 const connectorConfigSchema = z
   .object({
     version: z.literal(1),
@@ -394,7 +396,11 @@ export async function listOpenAiNativeConnectors(opts: {
       : await listAccessibleConnectors({ material, connectorConfig });
 
   return {
-    connectors: mergeConnectors([...accessibleConnectors, ...directoryConnectors, ...workspaceConnectors]),
+    connectors: mergeConnectors([
+      ...accessibleConnectors,
+      ...directoryConnectors,
+      ...workspaceConnectors,
+    ]),
     enabledConnectorIds: enabledConnectorIds.filter((id) =>
       accessibleConnectors.some((connector) => connector.id === id),
     ),

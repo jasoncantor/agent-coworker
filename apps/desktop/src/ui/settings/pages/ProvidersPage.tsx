@@ -33,12 +33,12 @@ import {
   formatRateLimitName,
   PARALLEL_AUTH_METHOD_ID,
   PARALLEL_SECTION_ID,
-  providerStatusLabel,
-  remainingPercentFromWindow,
-  usedPercentFromWindow,
   type ProviderAuthMethod,
   type ProviderCatalogEntry,
   type ProviderStatus,
+  providerStatusLabel,
+  remainingPercentFromWindow,
+  usedPercentFromWindow,
 } from "./providersPageUtils";
 
 export { EXA_SECTION_ID, PARALLEL_SECTION_ID } from "./providersPageUtils";

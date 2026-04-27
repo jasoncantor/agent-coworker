@@ -1,8 +1,8 @@
 import { createAgentServerRuntime, type StartAgentServerOptions } from "./runtime/ServerRuntime";
+import type { StartServerSocketData } from "./startServer/types";
 import { handleWebDesktopRoute } from "./webDesktopRoutes";
 import { WebDesktopService } from "./webDesktopService";
 import { resolveWsProtocol, splitWebSocketSubprotocolHeader } from "./wsProtocol/negotiation";
-import type { StartServerSocketData } from "./startServer/types";
 
 export type { StartAgentServerOptions } from "./runtime/ServerRuntime";
 

@@ -70,7 +70,9 @@ export function MenuBarUtilityShell({ init, ready, startupError }: MenuBarUtilit
                     "h-full min-h-[2.5rem] w-full min-w-0 flex-col justify-center gap-0.5 rounded-md px-1 py-0 text-[10px] font-medium leading-tight text-foreground shadow-none",
                     "border border-border/50 bg-primary/10 hover:bg-primary/[0.14] hover:text-foreground",
                   )}
-                  onClick={() => void showQuickChatWindow({ newThread: true }).then(() => windowClose())}
+                  onClick={() =>
+                    void showQuickChatWindow({ newThread: true }).then(() => windowClose())
+                  }
                 >
                   <MessageSquarePlusIcon className="h-3.5 w-3.5 shrink-0 opacity-90" />
                   <span className="line-clamp-2 w-full text-balance text-center">New chat</span>

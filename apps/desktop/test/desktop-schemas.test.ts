@@ -196,9 +196,15 @@ describe("desktop persisted-state schema defaults", () => {
 
 describe("openExternalUrlInputSchema", () => {
   test("accepts http, https, and mailto URLs", () => {
-    expect(openExternalUrlInputSchema.parse({ url: "https://example.com" }).url).toBe("https://example.com");
-    expect(openExternalUrlInputSchema.parse({ url: "http://localhost:3000" }).url).toBe("http://localhost:3000");
-    expect(openExternalUrlInputSchema.parse({ url: "mailto:user@example.com" }).url).toBe("mailto:user@example.com");
+    expect(openExternalUrlInputSchema.parse({ url: "https://example.com" }).url).toBe(
+      "https://example.com",
+    );
+    expect(openExternalUrlInputSchema.parse({ url: "http://localhost:3000" }).url).toBe(
+      "http://localhost:3000",
+    );
+    expect(openExternalUrlInputSchema.parse({ url: "mailto:user@example.com" }).url).toBe(
+      "mailto:user@example.com",
+    );
   });
 
   test("rejects file scheme", () => {
@@ -210,7 +216,9 @@ describe("openExternalUrlInputSchema", () => {
   });
 
   test("rejects data scheme", () => {
-    expect(() => openExternalUrlInputSchema.parse({ url: "data:text/html,<script>alert(1)</script>" })).toThrow();
+    expect(() =>
+      openExternalUrlInputSchema.parse({ url: "data:text/html,<script>alert(1)</script>" }),
+    ).toThrow();
   });
 
   test("rejects custom app protocols", () => {

@@ -711,7 +711,7 @@ export function BackupPage(props: BackupPageProps = {}) {
   useEffect(() => {
     if (!workspace?.id || !runtime?.controlSessionId) return;
     runInitialRefresh();
-  }, [workspace?.id, runtime?.controlSessionId, workspaceBackupsEnabled]);
+  }, [workspace?.id, runtime?.controlSessionId]);
 
   const entries = runtime?.workspaceBackups ?? [];
   const sortedEntries = sortByUpdated(entries);

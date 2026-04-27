@@ -59,7 +59,14 @@ function execFileAsync(
         const code = parsedErrorCode.success ? parsedErrorCode.data.code : undefined;
 
         // Detect timeout: Node sets killed=true and signal='SIGTERM' on timeout
-        if (err && "killed" in err && err.killed === true && "signal" in err && err.signal === "SIGTERM" && opts.timeoutMs) {
+        if (
+          err &&
+          "killed" in err &&
+          err.killed === true &&
+          "signal" in err &&
+          err.signal === "SIGTERM" &&
+          opts.timeoutMs
+        ) {
           timedOut = true;
         }
 

@@ -4,9 +4,8 @@ import type {
 } from "../../../../src/shared/featureFlags";
 import desktopPackage from "../../package.json";
 import type { HydratedTranscriptSnapshot, PersistedState, TranscriptEvent } from "../app/types";
-export {
-  DEFAULT_QUICK_CHAT_SHORTCUT_ACCELERATOR as QUICK_CHAT_SHORTCUT_ACCELERATOR,
-} from "./quickChatShortcut";
+
+export { DEFAULT_QUICK_CHAT_SHORTCUT_ACCELERATOR as QUICK_CHAT_SHORTCUT_ACCELERATOR } from "./quickChatShortcut";
 
 export type StartWorkspaceServerInput = {
   workspaceId: string;

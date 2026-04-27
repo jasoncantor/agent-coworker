@@ -27,7 +27,8 @@ export const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlagId, FeatureFlagDefiniti
   menuBar: {
     id: "menuBar",
     label: "Menu bar / tray",
-    description: "Keep Cowork available from the macOS menu bar or Windows system tray, including the quick chat global shortcut.",
+    description:
+      "Keep Cowork available from the macOS menu bar or Windows system tray, including the quick chat global shortcut.",
     defaultEnabled: true,
   },
   remoteAccess: {

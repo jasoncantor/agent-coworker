@@ -1,13 +1,12 @@
 import { describe, expect, test } from "bun:test";
-
+import { createA2uiRouteHandlers } from "../../src/experimental/a2ui/routes";
 import { JSONRPC_ERROR_CODES } from "../../src/server/jsonrpc/protocol";
-import { jsonRpcRequestSchemas } from "../../src/server/jsonrpc/schema";
 import {
   createJsonRpcRequestRouter,
   type JsonRpcRouteContext,
 } from "../../src/server/jsonrpc/routes";
+import { jsonRpcRequestSchemas } from "../../src/server/jsonrpc/schema";
 import type { SessionEvent } from "../../src/server/protocol";
-import { createA2uiRouteHandlers } from "../../src/experimental/a2ui/routes";
 
 type SessionMock = {
   id: string;

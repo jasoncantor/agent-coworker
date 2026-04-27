@@ -1,6 +1,6 @@
+import { isA2uiExperimentEnabled } from "../../experimental/a2ui/flags";
 import { normalizeChildRoutingConfig } from "../../models/childModelRouting";
 import { getObservabilityHealth } from "../../observability/runtime";
-import { isA2uiExperimentEnabled } from "../../experimental/a2ui/flags";
 import {
   mergeEditableOpenAiCompatibleProviderOptions,
   pickEditableOpenAiCompatibleProviderOptions,

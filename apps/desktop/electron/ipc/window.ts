@@ -22,7 +22,9 @@ type ActiveWindowDrag = {
 
 type DesktopWindowMode = "main" | "quick-chat" | "utility";
 
-function resolveDesktopWindowMode(event: { sender?: { getURL?: () => string } }): DesktopWindowMode {
+function resolveDesktopWindowMode(event: {
+  sender?: { getURL?: () => string };
+}): DesktopWindowMode {
   const rawUrl = typeof event.sender?.getURL === "function" ? event.sender.getURL() : "";
   if (!rawUrl) {
     return "main";
@@ -102,7 +104,10 @@ export function registerWindowIpc(context: DesktopIpcModuleContext): void {
       return;
     }
 
-    if (resolveDesktopWindowMode(event) !== "main" && deps.shouldKeepPopupWindowsAlive?.() === true) {
+    if (
+      resolveDesktopWindowMode(event) !== "main" &&
+      deps.shouldKeepPopupWindowsAlive?.() === true
+    ) {
       win.hide();
       return;
     }
@@ -159,8 +164,15 @@ export function registerWindowIpc(context: DesktopIpcModuleContext): void {
     return deps.consumePendingMenuCommands();
   });
 
-  handleDesktopInvoke(DESKTOP_IPC_CHANNELS.showQuickChatWindow, async (_event, args?: ShowQuickChatWindowInput) => {
-    const input = parseWithSchema(showQuickChatWindowInputSchema, args ?? {}, "showQuickChatWindow options");
-    await deps.showQuickChatWindow(input);
-  });
+  handleDesktopInvoke(
+    DESKTOP_IPC_CHANNELS.showQuickChatWindow,
+    async (_event, args?: ShowQuickChatWindowInput) => {
+      const input = parseWithSchema(
+        showQuickChatWindowInputSchema,
+        args ?? {},
+        "showQuickChatWindow options",
+      );
+      await deps.showQuickChatWindow(input);
+    },
+  );
 }

@@ -1,4 +1,5 @@
 import { saveState } from "../../lib/desktopCommands";
+import { getDesktopWindowMode } from "../../lib/windowMode";
 import { saveDesktopStateCache } from "../localStateCache";
 import { normalizePersistedProviderState } from "../persistedProviderState";
 import { resolvePluginManagementWorkspaceId } from "../pluginManagement";
@@ -6,7 +7,6 @@ import { normalizePersistedProviderUiState } from "../providerUiState";
 import type { AppStoreState } from "../store.helpers";
 import type { CachedDesktopUiState, PersistedState } from "../types";
 import { RUNTIME } from "./runtimeState";
-import { getDesktopWindowMode } from "../../lib/windowMode";
 
 const PERSIST_DEBOUNCE_MS = 300;
 const DESKTOP_CACHE_DEBOUNCE_MS = 120;

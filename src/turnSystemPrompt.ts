@@ -1,11 +1,10 @@
 import path from "node:path";
-
+import { renderHarnessContextSection } from "./sessionContext/renderHarnessContextSection";
 import type { AgentConfig, HarnessContextState } from "./types";
 import {
   deriveActiveWorkspaceContext,
   renderActiveWorkspaceContextSection,
 } from "./workspace/context";
-import { renderHarnessContextSection } from "./sessionContext/renderHarnessContextSection";
 
 const MCP_NAMESPACING_TOKEN = "`mcp__{serverName}__{toolName}`";
 
@@ -67,7 +66,10 @@ function rewriteLegacyProjectPathGuidance(
       `\`${path.join(context.projectCoworkDir, "mcp-servers.json")}\``,
     )
     .replaceAll("`.agent/config.json`", `\`${path.join(context.projectCoworkDir, "config.json")}\``)
-    .replaceAll("`.cowork/config.json`", `\`${path.join(context.projectCoworkDir, "config.json")}\``)
+    .replaceAll(
+      "`.cowork/config.json`",
+      `\`${path.join(context.projectCoworkDir, "config.json")}\``,
+    )
     .replaceAll(
       "`.agent/skills/{name}/SKILL.md`",
       `\`${path.join(context.projectCoworkDir, "skills", "{name}", "SKILL.md")}\``,

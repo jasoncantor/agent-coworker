@@ -5,14 +5,15 @@ import type {
 } from "../../../../src/server/research/types";
 import type { DesktopFeatureFlagOverrides } from "../../../../src/shared/featureFlags";
 import type { SessionFeedItem } from "../../../../src/shared/sessionSnapshot";
+import { normalizeQuickChatShortcutAccelerator } from "../lib/quickChatShortcut";
 import type {
   ApprovalRiskCode,
   ChildModelRoutingMode,
   ConfigSubset,
+  OpenAiNativeConnector,
   PluginCatalogEntry,
   PluginCatalogSnapshot,
   PluginInstallPreview,
-  OpenAiNativeConnector,
   ProviderName,
   SessionEvent,
   SkillCatalogSnapshot,
@@ -22,7 +23,6 @@ import type {
   SkillUpdateCheckResult,
 } from "../lib/wsProtocol";
 import type { WorkspaceProviderOptions } from "./openaiCompatibleProviderOptions";
-import { normalizeQuickChatShortcutAccelerator } from "../lib/quickChatShortcut";
 
 export type WorkspaceUserProfile = {
   instructions: string;
@@ -168,7 +168,9 @@ export function normalizeDesktopSettings(value?: PersistedDesktopSettings | null
     quickChat: {
       iconEnabled: value?.quickChat?.iconEnabled !== false,
       shortcutEnabled: value?.quickChat?.shortcutEnabled === true,
-      shortcutAccelerator: normalizeQuickChatShortcutAccelerator(value?.quickChat?.shortcutAccelerator),
+      shortcutAccelerator: normalizeQuickChatShortcutAccelerator(
+        value?.quickChat?.shortcutAccelerator,
+      ),
     },
   };
 }

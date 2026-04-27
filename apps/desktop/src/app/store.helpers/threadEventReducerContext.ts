@@ -1,10 +1,6 @@
 import type { SessionEvent } from "../../lib/wsProtocol";
-import type {
-  Notification,
-  ThreadAgentSummary,
-  ThreadTitleSource,
-} from "../types";
 import type { StoreGet } from "../store.helpers";
+import type { Notification, ThreadAgentSummary, ThreadTitleSource } from "../types";
 
 export const MAX_FEED_ITEMS = 2000;
 

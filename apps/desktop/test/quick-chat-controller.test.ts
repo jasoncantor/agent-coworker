@@ -1,7 +1,6 @@
-import path from "node:path";
-import { EventEmitter } from "node:events";
-
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { EventEmitter } from "node:events";
+import path from "node:path";
 
 import { resolveTrayIconPath } from "../electron/services/trayIcon";
 import { createTrayMaskBitmap } from "../electron/services/trayImage";
@@ -180,13 +179,18 @@ describe("resolveTrayIconPath", () => {
   });
 
   test("uses the packaged resources tray asset on Windows", () => {
-    const resolvedPath = resolveTrayIconPath("C:\\Program Files\\Cowork\\resources\\app.asar\\out\\main", {
-      isPackaged: true,
-      platform: "win32",
-      resourcesPath: "C:\\Program Files\\Cowork\\resources",
-    });
+    const resolvedPath = resolveTrayIconPath(
+      "C:\\Program Files\\Cowork\\resources\\app.asar\\out\\main",
+      {
+        isPackaged: true,
+        platform: "win32",
+        resourcesPath: "C:\\Program Files\\Cowork\\resources",
+      },
+    );
 
-    expect(resolvedPath).toBe(path.join("C:\\Program Files\\Cowork\\resources", "tray", "icon.ico"));
+    expect(resolvedPath).toBe(
+      path.win32.join("C:\\Program Files\\Cowork\\resources", "tray", "icon.ico"),
+    );
   });
 
   test("prefers the desktop build directory when running from out/main", () => {
@@ -194,10 +198,13 @@ describe("resolveTrayIconPath", () => {
     const resolvedPath = resolveTrayIconPath(rootDir, {
       isPackaged: false,
       platform: "darwin",
-      pathExists: (candidatePath) => candidatePath === "/Users/jasoncantor/Downloads/agent-coworker/apps/desktop/build/icon.png",
+      pathExists: (candidatePath) =>
+        candidatePath === "/Users/jasoncantor/Downloads/agent-coworker/apps/desktop/build/icon.png",
     });
 
-    expect(resolvedPath).toBe("/Users/jasoncantor/Downloads/agent-coworker/apps/desktop/build/icon.png");
+    expect(resolvedPath).toBe(
+      "/Users/jasoncantor/Downloads/agent-coworker/apps/desktop/build/icon.png",
+    );
   });
 
   test("falls back to the primary dev candidate when probing cannot find the asset", () => {
@@ -208,21 +215,17 @@ describe("resolveTrayIconPath", () => {
       pathExists: () => false,
     });
 
-    expect(resolvedPath).toBe("/Users/jasoncantor/Downloads/agent-coworker/apps/desktop/build/icon.png");
+    expect(resolvedPath).toBe(
+      "/Users/jasoncantor/Downloads/agent-coworker/apps/desktop/build/icon.png",
+    );
   });
 
   test("builds a black alpha mask for macOS tray icons", () => {
-    const bitmap = Buffer.from([
-      255, 255, 255, 255,
-      0, 0, 0, 255,
-    ]);
+    const bitmap = Buffer.from([255, 255, 255, 255, 0, 0, 0, 255]);
 
     const masked = createTrayMaskBitmap(bitmap);
 
-    expect([...masked]).toEqual([
-      0, 0, 0, 0,
-      0, 0, 0, 255,
-    ]);
+    expect([...masked]).toEqual([0, 0, 0, 0, 0, 0, 0, 255]);
   });
 
   test("opens the utility window when the tray icon is clicked", async () => {

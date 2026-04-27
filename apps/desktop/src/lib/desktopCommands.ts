@@ -12,8 +12,8 @@ import type {
   DesktopNotificationInput,
   ExplorerEntry,
   ReadFileForPreviewOutput,
-  ShowQuickChatWindowInput,
   SetWindowAppearanceInput,
+  ShowQuickChatWindowInput,
   SystemAppearance,
   UpdaterState,
 } from "./desktopApi";

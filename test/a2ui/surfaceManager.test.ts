@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionEvent } from "../../src/server/protocol";
-import { A2uiSurfaceManager, type A2uiEnvelope } from "../../src/experimental/a2ui";
+import { type A2uiEnvelope, A2uiSurfaceManager } from "../../src/experimental/a2ui";
 import { A2UI_BASIC_CATALOG_ID } from "../../src/experimental/a2ui/component";
+import type { SessionEvent } from "../../src/server/protocol";
 
 function createManager() {
   const events: SessionEvent[] = [];

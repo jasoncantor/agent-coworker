@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { CHILD_MODEL_ROUTING_MODES, PROVIDER_NAMES } from "../types";
 import { GOOGLE_THINKING_LEVEL_VALUES } from "./googleThinking";
-import { openAiNativeConnectorsEventSchema } from "./openaiNativeConnectors";
 import {
   CODEX_WEB_SEARCH_BACKEND_VALUES,
   CODEX_WEB_SEARCH_CONTEXT_SIZE_VALUES,
@@ -11,6 +10,7 @@ import {
   OPENAI_REASONING_SUMMARY_VALUES,
   OPENAI_TEXT_VERBOSITY_VALUES,
 } from "./openaiCompatibleOptions";
+import { openAiNativeConnectorsEventSchema } from "./openaiNativeConnectors";
 
 const providerNameSchema = z.enum(PROVIDER_NAMES);
 const childModelRoutingModeSchema = z.enum(CHILD_MODEL_ROUTING_MODES);
@@ -47,9 +47,7 @@ const userProfileSchema = z
   })
   .passthrough();
 
-const workspaceFeatureFlagOverridesSchema = z
-  .object({})
-  .passthrough();
+const workspaceFeatureFlagOverridesSchema = z.object({}).passthrough();
 
 const providerOptionsLocationSchema = z
   .object({
@@ -387,12 +385,7 @@ export const mcpServerConfigSchema = z
   })
   .passthrough();
 
-export const mcpSessionEventSourceSchema = z.enum([
-  "workspace",
-  "user",
-  "system",
-  "plugin",
-]);
+export const mcpSessionEventSourceSchema = z.enum(["workspace", "user", "system", "plugin"]);
 
 export const mcpServerAuthModeSchema = z.enum([
   "none",
@@ -1414,7 +1407,9 @@ export const jsonRpcControlResultSchemas = {
   "cowork/skills/installation/delete": sessionEventEnvelope(skillsCatalogEventSchema),
   "cowork/skills/installation/update": sessionEventEnvelope(skillsCatalogEventSchema),
   "cowork/skills/installation/copy": sessionEventEnvelope(skillsCatalogEventSchema),
-  "cowork/skills/installation/checkUpdate": sessionEventEnvelope(skillInstallUpdateCheckEventSchema),
+  "cowork/skills/installation/checkUpdate": sessionEventEnvelope(
+    skillInstallUpdateCheckEventSchema,
+  ),
   "cowork/plugins/catalog/read": sessionEventEnvelope(pluginsCatalogEventSchema),
   "cowork/plugins/read": sessionEventEnvelope(pluginDetailEventSchema),
   "cowork/plugins/enable": sessionEventsEnvelope(pluginMutationResultEventSchema),

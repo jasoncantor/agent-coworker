@@ -61,7 +61,10 @@ mock.module("electron", () => createElectronMock());
 const { registerWindowIpc } = await import("../electron/ipc/window");
 
 class FakeWebContents extends EventEmitter {
-  constructor(readonly id: number, private readonly url = "file:///renderer/index.html") {
+  constructor(
+    readonly id: number,
+    private readonly url = "file:///renderer/index.html",
+  ) {
     super();
   }
 
@@ -104,7 +107,10 @@ function createFakeWindow(x = 40, y = 50): FakeWindow {
 }
 
 function createHandlers(options: { shouldKeepPopupWindowsAlive?: () => boolean } = {}) {
-  const handlers = new Map<string, (event: { sender: FakeWebContents }, args?: unknown) => unknown>();
+  const handlers = new Map<
+    string,
+    (event: { sender: FakeWebContents }, args?: unknown) => unknown
+  >();
   const showMainWindow = mock(async () => {});
   const consumePendingMenuCommands = mock(() => ["openSettings"] as const);
   const showQuickChatWindow = mock(async () => {});
@@ -145,10 +151,7 @@ describe("window IPC", () => {
 
     sender.emit("destroyed");
 
-    handlers.get(DESKTOP_IPC_CHANNELS.windowDragMove)?.(
-      { sender },
-      { screenX: 140, screenY: 150 },
-    );
+    handlers.get(DESKTOP_IPC_CHANNELS.windowDragMove)?.({ sender }, { screenX: 140, screenY: 150 });
 
     expect(win.setPositionCalls).toEqual([]);
   });
@@ -175,11 +178,14 @@ describe("window IPC", () => {
   });
 
   test("exposes show window IPC actions", async () => {
-    const { handlers, consumePendingMenuCommands, showMainWindow, showQuickChatWindow } = createHandlers();
+    const { handlers, consumePendingMenuCommands, showMainWindow, showQuickChatWindow } =
+      createHandlers();
     const sender = new FakeWebContents(21);
 
     await handlers.get(DESKTOP_IPC_CHANNELS.showMainWindow)?.({ sender });
-    expect(await handlers.get(DESKTOP_IPC_CHANNELS.consumePendingMenuCommands)?.({ sender })).toEqual(["openSettings"]);
+    expect(
+      await handlers.get(DESKTOP_IPC_CHANNELS.consumePendingMenuCommands)?.({ sender }),
+    ).toEqual(["openSettings"]);
     await handlers.get(DESKTOP_IPC_CHANNELS.showQuickChatWindow)?.(
       { sender },
       { threadId: "thread-21", newThread: true },

@@ -13,10 +13,10 @@ import {
 import { CHILD_MODEL_ROUTING_MODES, PROVIDER_NAMES } from "../../types";
 
 import {
-  sessionEventEnvelope,
-  sessionEventsEnvelope,
   nonEmptyTrimmedStringSchema,
   optionalNonEmptyTrimmedStringSchema,
+  sessionEventEnvelope,
+  sessionEventsEnvelope,
 } from "./schema.shared";
 
 const providerNameSchema = z.enum(PROVIDER_NAMES);
@@ -30,9 +30,7 @@ const userProfileSchema = z
   })
   .passthrough();
 
-const workspaceFeatureFlagOverridesSchema = z
-  .object({})
-  .passthrough();
+const workspaceFeatureFlagOverridesSchema = z.object({}).passthrough();
 
 const providerOptionsLocationSchema = z
   .object({

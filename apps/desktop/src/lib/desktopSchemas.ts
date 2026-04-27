@@ -11,7 +11,6 @@ import {
   OPENAI_TEXT_VERBOSITY_VALUES,
 } from "../../../../src/shared/openaiCompatibleOptions";
 import type { PersistedState } from "../app/types";
-import { normalizeQuickChatShortcutAccelerator } from "./quickChatShortcut";
 import type {
   ConfirmActionInput,
   ContextMenuItem,
@@ -32,8 +31,8 @@ import type {
   RevealPathInput,
   SaveExportedFileInput,
   SetWindowAppearanceInput,
-  ShowQuickChatWindowInput,
   ShowContextMenuInput,
+  ShowQuickChatWindowInput,
   StartWorkspaceServerInput,
   StopWorkspaceServerInput,
   SystemAppearance,
@@ -44,6 +43,7 @@ import type {
   UpdaterState,
   WindowDragPointInput,
 } from "./desktopApi";
+import { normalizeQuickChatShortcutAccelerator } from "./quickChatShortcut";
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,256}$/;
 const invalidPathSegmentPattern = /[/\\\0]/;
@@ -226,9 +226,7 @@ export const openExternalUrlInputSchema: z.ZodType<OpenExternalUrlInput> = z.obj
     try {
       const parsed = new URL(value);
       return (
-        parsed.protocol === "http:" ||
-        parsed.protocol === "https:" ||
-        parsed.protocol === "mailto:"
+        parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "mailto:"
       );
     } catch {
       return false;
@@ -386,9 +384,7 @@ const persistedDesktopSettingsSchema = z
         shortcutAccelerator: z
           .preprocess(
             (value) =>
-              typeof value === "string"
-                ? normalizeQuickChatShortcutAccelerator(value)
-                : undefined,
+              typeof value === "string" ? normalizeQuickChatShortcutAccelerator(value) : undefined,
             z.string().optional(),
           )
           .optional(),

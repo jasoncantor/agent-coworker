@@ -818,7 +818,8 @@ export class TurnExecutionManager {
         abortSignal: this.context.state.abortController?.signal,
         includeRawChunks,
         costTracker: this.context.state.costTracker ?? undefined,
-        ...(resolveExperimentalA2uiConfig(this.context.state.config) && this.deps.getA2uiSurfaceManager
+        ...(resolveExperimentalA2uiConfig(this.context.state.config) &&
+        this.deps.getA2uiSurfaceManager
           ? {
               applyA2uiEnvelope: (
                 envelope: unknown,

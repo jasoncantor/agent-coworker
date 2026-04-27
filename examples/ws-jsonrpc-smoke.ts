@@ -60,7 +60,9 @@ async function main() {
   };
 
   ws.onmessage = (event) => {
-    const message = JSON.parse(typeof event.data === "string" ? event.data : "") as JsonRpcSmokeMessage;
+    const message = JSON.parse(
+      typeof event.data === "string" ? event.data : "",
+    ) as JsonRpcSmokeMessage;
     console.log(JSON.stringify(message));
 
     if (message.id === 1) {

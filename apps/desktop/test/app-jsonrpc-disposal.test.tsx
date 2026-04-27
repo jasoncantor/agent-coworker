@@ -369,9 +369,7 @@ describe("App JSON-RPC shutdown disposal", () => {
         await flushAsyncWork();
       });
 
-      expect(
-        harness.dom.window.document.querySelector('[aria-label="Onboarding"]'),
-      ).toBeNull();
+      expect(harness.dom.window.document.querySelector('[aria-label="Onboarding"]')).toBeNull();
     } finally {
       if (root) {
         await act(async () => {

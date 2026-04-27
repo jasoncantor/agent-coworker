@@ -1,8 +1,7 @@
 import path from "node:path";
-
-import * as electron from "electron";
 import type { BrowserWindow, Rectangle, Tray } from "electron";
-
+import * as electron from "electron";
+import { resolveDesktopFeatureFlags } from "../../../../src/shared/featureFlags";
 import type { PersistedState } from "../../src/app/types";
 import { normalizeDesktopSettings } from "../../src/app/types";
 import type { ShowQuickChatWindowInput } from "../../src/lib/desktopApi";
@@ -10,7 +9,6 @@ import {
   DEFAULT_QUICK_CHAT_SHORTCUT_ACCELERATOR,
   formatQuickChatShortcutLabel,
 } from "../../src/lib/quickChatShortcut";
-import { resolveDesktopFeatureFlags } from "../../../../src/shared/featureFlags";
 import { createTrayMaskBitmap } from "./trayImage";
 
 const QUICK_CHAT_WINDOW_EDGE_PADDING = 12;
@@ -31,12 +29,13 @@ type QuickChatControllerOptions = {
   createUtilityWindow: () => Promise<BrowserWindow>;
 };
 
-const shortcutBridge = "globalShortcut" in electron
-  ? electron.globalShortcut
-  : {
-      register: () => false,
-      unregister: () => {},
-    };
+const shortcutBridge =
+  "globalShortcut" in electron
+    ? electron.globalShortcut
+    : {
+        register: () => false,
+        unregister: () => {},
+      };
 
 export class QuickChatController {
   private readonly appName: string;
@@ -44,8 +43,13 @@ export class QuickChatController {
   private readonly trayIconPath: string;
   private readonly getMainWindow: () => BrowserWindow | null;
   private readonly createMainWindow: () => Promise<BrowserWindow>;
-  private readonly createQuickChatWindow: (opts?: ShowQuickChatWindowInput) => Promise<BrowserWindow>;
-  private readonly retargetQuickChatWindow: (win: BrowserWindow, opts?: ShowQuickChatWindowInput) => Promise<void>;
+  private readonly createQuickChatWindow: (
+    opts?: ShowQuickChatWindowInput,
+  ) => Promise<BrowserWindow>;
+  private readonly retargetQuickChatWindow: (
+    win: BrowserWindow,
+    opts?: ShowQuickChatWindowInput,
+  ) => Promise<void>;
   private readonly createUtilityWindow: () => Promise<BrowserWindow>;
 
   private tray: Tray | null = null;
@@ -94,9 +98,10 @@ export class QuickChatController {
     this.hideUtilityWindow();
     this.hideQuickChatWindow();
     const existingWindow = this.getMainWindow();
-    const win = existingWindow && !existingWindow.isDestroyed()
-      ? existingWindow
-      : await this.createMainWindow();
+    const win =
+      existingWindow && !existingWindow.isDestroyed()
+        ? existingWindow
+        : await this.createMainWindow();
     if (win.isMinimized()) {
       win.restore();
     }
@@ -104,7 +109,9 @@ export class QuickChatController {
     win.focus();
   }
 
-  async showQuickChatWindow(opts: ShowQuickChatWindowInput & { anchorBounds?: Rectangle } = {}): Promise<void> {
+  async showQuickChatWindow(
+    opts: ShowQuickChatWindowInput & { anchorBounds?: Rectangle } = {},
+  ): Promise<void> {
     this.hideUtilityWindow();
     const win = await this.ensureQuickChatWindow(opts);
     this.positionPopupWindow(win, opts.anchorBounds ?? this.tray?.getBounds());
@@ -160,7 +167,11 @@ export class QuickChatController {
   }
 
   shouldKeepPopupWindowsAlive(): boolean {
-    return (this.platform === "darwin" || this.platform === "win32") && this.menuBarEnabled && this.tray !== null;
+    return (
+      (this.platform === "darwin" || this.platform === "win32") &&
+      this.menuBarEnabled &&
+      this.tray !== null
+    );
   }
 
   private syncShortcutRegistration(): void {
@@ -174,7 +185,9 @@ export class QuickChatController {
         void this.toggleQuickChatWindow();
       });
       if (!registered) {
-        console.warn(`[desktop] Quick chat shortcut is unavailable: ${this.quickChatShortcutAccelerator}`);
+        console.warn(
+          `[desktop] Quick chat shortcut is unavailable: ${this.quickChatShortcutAccelerator}`,
+        );
         return;
       }
       this.registeredShortcutAccelerator = this.quickChatShortcutAccelerator;
@@ -269,12 +282,14 @@ export class QuickChatController {
   }
 
   private buildTrayIcon() {
-    const iconPathCandidates = path.extname(this.trayIconPath).toLowerCase() === ".ico"
-      ? [this.trayIconPath, `${this.trayIconPath.slice(0, -4)}.png`]
-      : [this.trayIconPath];
-    const image = iconPathCandidates
-      .map((candidatePath) => electron.nativeImage.createFromPath(candidatePath))
-      .find((candidateImage) => !candidateImage.isEmpty()) ?? electron.nativeImage.createEmpty();
+    const iconPathCandidates =
+      path.extname(this.trayIconPath).toLowerCase() === ".ico"
+        ? [this.trayIconPath, `${this.trayIconPath.slice(0, -4)}.png`]
+        : [this.trayIconPath];
+    const image =
+      iconPathCandidates
+        .map((candidatePath) => electron.nativeImage.createFromPath(candidatePath))
+        .find((candidateImage) => !candidateImage.isEmpty()) ?? electron.nativeImage.createEmpty();
     if (image.isEmpty()) {
       console.warn(`[desktop] Tray icon asset was not found: ${this.trayIconPath}`);
     }
@@ -282,11 +297,14 @@ export class QuickChatController {
     if (this.platform === "darwin" && !resized.isEmpty()) {
       const { width, height } = resized.getSize();
       if (width > 0 && height > 0) {
-        const templated = electron.nativeImage.createFromBitmap(createTrayMaskBitmap(resized.toBitmap()), {
-          width,
-          height,
-          scaleFactor: 1,
-        });
+        const templated = electron.nativeImage.createFromBitmap(
+          createTrayMaskBitmap(resized.toBitmap()),
+          {
+            width,
+            height,
+            scaleFactor: 1,
+          },
+        );
         templated.setTemplateImage(true);
         return templated;
       }
@@ -302,7 +320,9 @@ export class QuickChatController {
       return this.quickChatWindow;
     }
 
-    const win = await this.createQuickChatWindow(opts.threadId || opts.newThread ? opts : undefined);
+    const win = await this.createQuickChatWindow(
+      opts.threadId || opts.newThread ? opts : undefined,
+    );
     this.quickChatWindow = win;
     win.on("close", (event) => {
       if (this.quitting || !this.shouldKeepPopupWindowsAlive()) {
@@ -386,7 +406,7 @@ export class QuickChatController {
 
     if (anchorBounds) {
       if (this.platform === "darwin") {
-        x = Math.round(anchorBounds.x + (anchorBounds.width / 2) - (currentBounds.width / 2));
+        x = Math.round(anchorBounds.x + anchorBounds.width / 2 - currentBounds.width / 2);
         y = Math.round(anchorBounds.y + anchorBounds.height + QUICK_CHAT_WINDOW_OFFSET);
       } else {
         x = Math.round(anchorBounds.x + anchorBounds.width - currentBounds.width);
@@ -397,7 +417,8 @@ export class QuickChatController {
     const minX = workArea.x + QUICK_CHAT_WINDOW_EDGE_PADDING;
     const maxX = workArea.x + workArea.width - currentBounds.width - QUICK_CHAT_WINDOW_EDGE_PADDING;
     const minY = workArea.y + QUICK_CHAT_WINDOW_EDGE_PADDING;
-    const maxY = workArea.y + workArea.height - currentBounds.height - QUICK_CHAT_WINDOW_EDGE_PADDING;
+    const maxY =
+      workArea.y + workArea.height - currentBounds.height - QUICK_CHAT_WINDOW_EDGE_PADDING;
 
     win.setBounds({
       ...currentBounds,

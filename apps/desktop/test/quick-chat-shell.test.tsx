@@ -18,11 +18,13 @@ describe("quick chat shell", () => {
       const root = createRoot(container);
 
       await act(async () => {
-        root.render(createElement(QuickChatShell, {
-          init: async () => {},
-          ready: false,
-          startupError: null,
-        }));
+        root.render(
+          createElement(QuickChatShell, {
+            init: async () => {},
+            ready: false,
+            startupError: null,
+          }),
+        );
       });
 
       const surface = container.querySelector(".app-surface-overlay");

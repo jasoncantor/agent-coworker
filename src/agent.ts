@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { getModel as realGetModel } from "./config";
-import { buildTurnSystemPrompt } from "./turnSystemPrompt";
 import { loadMCPServers, loadMCPTools } from "./mcp";
 import { buildRuntimeTelemetrySettings } from "./observability/runtime";
 import { buildGooglePrepareStep } from "./providers/googleReplay";
@@ -19,6 +18,7 @@ import type { AgentRole } from "./shared/agents";
 import type { ProviderContinuationState } from "./shared/providerContinuation";
 import type { AgentControl } from "./tools";
 import { createTools } from "./tools";
+import { buildTurnSystemPrompt } from "./turnSystemPrompt";
 import type { AgentConfig, HarnessContextState, ModelMessage, TodoItem } from "./types";
 
 const MAX_STREAM_SETTLE_TICKS = 64;

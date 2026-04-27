@@ -84,7 +84,9 @@ describe("desktop application menu", () => {
     );
 
     const fileMenu = template.find((item: any) => item.label === "File");
-    const quickChatEntry = fileMenu?.submenu?.find((entry: any) => entry.label === "Open Quick Chat");
+    const quickChatEntry = fileMenu?.submenu?.find(
+      (entry: any) => entry.label === "Open Quick Chat",
+    );
     expect(quickChatEntry).toBeTruthy();
     quickChatEntry?.click?.();
     expect(openedQuickChat).toBe(1);

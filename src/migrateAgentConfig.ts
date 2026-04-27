@@ -323,10 +323,9 @@ async function migrateScope(paths: ScopePaths): Promise<AgentConfigMigrationScop
   return result;
 }
 
-export async function migrateAgentConfig(opts: {
-  cwd?: string;
-  homedir?: string;
-} = {}): Promise<AgentConfigMigrationResult> {
+export async function migrateAgentConfig(
+  opts: { cwd?: string; homedir?: string } = {},
+): Promise<AgentConfigMigrationResult> {
   const cwd = path.resolve(opts.cwd ?? process.cwd());
   const homedir = path.resolve(opts.homedir ?? os.homedir());
   const scopes = await Promise.all([

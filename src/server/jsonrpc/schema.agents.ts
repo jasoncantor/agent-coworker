@@ -12,9 +12,9 @@ import {
 } from "../../shared/agents";
 import { AGENT_WAIT_MODE_VALUES } from "../agents/types";
 import {
-  sessionEventEnvelope,
   nonEmptyTrimmedStringSchema,
   optionalNonEmptyTrimmedStringSchema,
+  sessionEventEnvelope,
 } from "./schema.shared";
 
 export const agentListEventSchema = z

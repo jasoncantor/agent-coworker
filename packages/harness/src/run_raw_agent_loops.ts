@@ -8,7 +8,6 @@ import { z } from "zod";
 import { runTurnWithDeps } from "../../../src/agent";
 import { loadConfig } from "../../../src/config";
 import { getAiCoworkerPaths } from "../../../src/connect";
-import { normalizeHarnessContextPayload } from "../../../src/sessionContext/HarnessContextStore";
 import { emitObservabilityEvent } from "../../../src/observability/otel";
 import { getObservabilityHealth } from "../../../src/observability/runtime";
 import { loadSystemPromptWithSkills } from "../../../src/prompt";
@@ -20,6 +19,7 @@ import { parseChildAgentReport } from "../../../src/server/agents/reportParser";
 import { getAgentRoleDefinition } from "../../../src/server/agents/roles";
 import { StatusBus } from "../../../src/server/agents/StatusBus";
 import type { SessionUsageSnapshot, TurnUsage } from "../../../src/session/costTracker";
+import { normalizeHarnessContextPayload } from "../../../src/sessionContext/HarnessContextStore";
 import {
   type AgentInspectResult,
   type AgentReasoningEffort,
@@ -62,12 +62,6 @@ import type {
 } from "../../../src/types";
 import { isProviderName } from "../../../src/types";
 import {
-  buildPathArtifactAssertions,
-  type FinalContract,
-  type ValidationIssue,
-  validateWithOptionalRepair,
-} from "./rawLoopValidation";
-import {
   isoSafeNow,
   maskApiKey,
   pad2,
@@ -75,6 +69,12 @@ import {
   safePathComponent,
   safeStamp,
 } from "./rawLoopUtils";
+import {
+  buildPathArtifactAssertions,
+  type FinalContract,
+  type ValidationIssue,
+  validateWithOptionalRepair,
+} from "./rawLoopValidation";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 
@@ -915,15 +915,12 @@ function extractRetryDelayMs(err: unknown): number | null {
   const errorRecord = isPlainObject(err) ? err : {};
 
   // Common structured-ish fields.
-  const directMs =
-    errorRecord.retryAfterMs ?? errorRecord.retryDelayMs ?? errorRecord.retry_ms;
+  const directMs = errorRecord.retryAfterMs ?? errorRecord.retryDelayMs ?? errorRecord.retry_ms;
   if (typeof directMs === "number" && Number.isFinite(directMs) && directMs > 0)
     return Math.ceil(directMs);
 
   const directSeconds =
-    errorRecord.retryAfterSeconds ??
-    errorRecord.retryDelaySeconds ??
-    errorRecord.retry_after;
+    errorRecord.retryAfterSeconds ?? errorRecord.retryDelaySeconds ?? errorRecord.retry_after;
   if (typeof directSeconds === "number" && Number.isFinite(directSeconds) && directSeconds > 0) {
     return Math.ceil(directSeconds * 1000);
   }
@@ -1016,7 +1013,8 @@ function resolveAnthropicAlias(
     const candidates = availableIds.filter((id) => id.startsWith("claude-opus-4-6-"));
     if (candidates.length > 0) {
       const resolvedModel = candidates.slice().sort().at(-1);
-      if (!resolvedModel) return { requestedModel, resolvedModel: requestedModel, resolvedFrom: "fallback" };
+      if (!resolvedModel)
+        return { requestedModel, resolvedModel: requestedModel, resolvedFrom: "fallback" };
       return { requestedModel, resolvedModel, resolvedFrom: "alias" };
     }
     if (availableIds.includes("claude-opus-4-6")) {
@@ -1029,7 +1027,8 @@ function resolveAnthropicAlias(
     const candidates = availableIds.filter((id) => id.startsWith("claude-sonnet-4-6-"));
     if (candidates.length > 0) {
       const resolvedModel = candidates.slice().sort().at(-1);
-      if (!resolvedModel) return { requestedModel, resolvedModel: requestedModel, resolvedFrom: "fallback" };
+      if (!resolvedModel)
+        return { requestedModel, resolvedModel: requestedModel, resolvedFrom: "fallback" };
       return { requestedModel, resolvedModel, resolvedFrom: "alias" };
     }
     if (availableIds.includes("claude-sonnet-4-6")) {
@@ -1046,7 +1045,8 @@ function resolveAnthropicAlias(
   const candidates = availableIds.filter((id) => id.startsWith("claude-haiku-4-5-"));
   if (candidates.length > 0) {
     const resolvedModel = candidates.slice().sort().at(-1);
-    if (!resolvedModel) return { requestedModel, resolvedModel: requestedModel, resolvedFrom: "fallback" };
+    if (!resolvedModel)
+      return { requestedModel, resolvedModel: requestedModel, resolvedFrom: "fallback" };
     return { requestedModel, resolvedModel, resolvedFrom: "alias" };
   }
 
@@ -1063,10 +1063,7 @@ function cloneRecord(record: JsonRecord | undefined): JsonRecord {
   return JSON.parse(JSON.stringify(record)) as JsonRecord;
 }
 
-function deepMergeRecords(
-  base: JsonRecord,
-  override: JsonRecord,
-): JsonRecord {
+function deepMergeRecords(base: JsonRecord, override: JsonRecord): JsonRecord {
   const out: JsonRecord = { ...base };
   for (const [k, v] of Object.entries(override)) {
     if (isPlainObject(out[k]) && isPlainObject(v)) {
@@ -1078,10 +1075,7 @@ function deepMergeRecords(
   return out;
 }
 
-function mergeProviderOptions(
-  defaults: JsonRecord,
-  override?: JsonRecord,
-): JsonRecord {
+function mergeProviderOptions(defaults: JsonRecord, override?: JsonRecord): JsonRecord {
   const merged = cloneRecord(defaults);
   if (!override) return merged;
   return deepMergeRecords(merged, override);

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { getAiCoworkerPaths } from "../src/connect";
 import {
   DEFAULT_MCP_SERVERS_DOCUMENT,
   loadMCPServers,
@@ -17,7 +18,6 @@ import { writeCodexAuthMaterial } from "../src/providers/codex-auth";
 import { setOpenAiNativeConnectorEnabled } from "../src/server/connectors/openaiNativeConnectors";
 import { CODEX_APPS_MCP_SERVER_NAME } from "../src/shared/openaiNativeConnectors";
 import type { AgentConfig, MCPServerConfig } from "../src/types";
-import { getAiCoworkerPaths } from "../src/connect";
 
 function makeConfig(
   workspaceRoot: string,

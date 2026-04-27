@@ -105,7 +105,9 @@ function showUpdateReadyNotification(state: UpdaterState): void {
   const isWindows = process.platform === "win32";
   const notification = new Notification({
     title: "Update ready",
-    body: version ? `Cowork ${version} is ready. Restart to install.` : "Cowork update is ready. Restart to install.",
+    body: version
+      ? `Cowork ${version} is ready. Restart to install.`
+      : "Cowork update is ready. Restart to install.",
     silent: false,
     ...(isWindows
       ? {
@@ -140,17 +142,24 @@ function showUpdateReadyNotification(state: UpdaterState): void {
 async function sendMenuCommand(command: DesktopMenuCommand): Promise<void> {
   const existingMainWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
   const target = await ensureMainWindow();
-  menuCommandDispatcher.dispatch(command, existingMainWindow ? {
-    send(nextCommand) {
-      target.webContents.send(DESKTOP_EVENT_CHANNELS.menuCommand, nextCommand);
-    },
-  } : null);
+  menuCommandDispatcher.dispatch(
+    command,
+    existingMainWindow
+      ? {
+          send(nextCommand) {
+            target.webContents.send(DESKTOP_EVENT_CHANNELS.menuCommand, nextCommand);
+          },
+        }
+      : null,
+  );
 }
 
 function isExternalUrl(rawUrl: string): boolean {
   try {
     const parsed = new URL(rawUrl);
-    return parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "mailto:";
+    return (
+      parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "mailto:"
+    );
   } catch {
     return false;
   }
@@ -173,7 +182,7 @@ function isTrustedRendererNavigation(rawUrl: string): boolean {
 
   const { url } = resolveDesktopRendererUrl(
     process.env.ELECTRON_RENDERER_URL,
-    process.env.COWORK_DESKTOP_RENDERER_PORT
+    process.env.COWORK_DESKTOP_RENDERER_PORT,
   );
 
   try {
@@ -249,16 +258,20 @@ async function maybeRunPackagedSmoke(): Promise<boolean> {
     await fs.mkdir(path.dirname(smokeConfig.outputPath), { recursive: true });
     await fs.writeFile(
       smokeConfig.outputPath,
-      `${JSON.stringify({
-        ok: true,
-        type: "server_listening",
-        promptLoaded: true,
-        turnCompleted: true,
-        url: listening.url,
-        platform: process.platform,
-        arch: process.arch,
-      }, null, 2)}\n`,
-      "utf8"
+      `${JSON.stringify(
+        {
+          ok: true,
+          type: "server_listening",
+          promptLoaded: true,
+          turnCompleted: true,
+          url: listening.url,
+          platform: process.platform,
+          arch: process.arch,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
     );
     await serverManager.stopWorkspaceServer(workspaceId);
     app.exit(0);
@@ -267,13 +280,17 @@ async function maybeRunPackagedSmoke(): Promise<boolean> {
     await fs.mkdir(path.dirname(smokeConfig.outputPath), { recursive: true });
     await fs.writeFile(
       smokeConfig.outputPath,
-      `${JSON.stringify({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-        platform: process.platform,
-        arch: process.arch,
-      }, null, 2)}\n`,
-      "utf8"
+      `${JSON.stringify(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          platform: process.platform,
+          arch: process.arch,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
     );
     try {
       await serverManager.stopWorkspaceServer(workspaceId);
@@ -293,7 +310,7 @@ async function loadRendererWindow(
   if (!app.isPackaged) {
     const { url, warning } = resolveDesktopRendererUrl(
       process.env.ELECTRON_RENDERER_URL,
-      process.env.COWORK_DESKTOP_RENDERER_PORT
+      process.env.COWORK_DESKTOP_RENDERER_PORT,
     );
     if (warning) {
       console.warn(`[desktop] ${warning}`);
@@ -375,11 +392,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
         { role: "selectAll" },
       );
     } else if (hasSelection) {
-      menuItems.push(
-        { role: "copy" },
-        { type: "separator" },
-        { role: "selectAll" },
-      );
+      menuItems.push({ role: "copy" }, { type: "separator" }, { role: "selectAll" });
     } else {
       menuItems.push({ role: "selectAll" });
     }
@@ -461,7 +474,10 @@ async function createQuickChatWindow(opts?: ShowQuickChatWindowInput): Promise<B
   return win;
 }
 
-async function retargetQuickChatWindow(win: BrowserWindow, opts?: ShowQuickChatWindowInput): Promise<void> {
+async function retargetQuickChatWindow(
+  win: BrowserWindow,
+  opts?: ShowQuickChatWindowInput,
+): Promise<void> {
   await loadRendererWindow(win, "quick-chat", quickChatWindowQuery(opts));
 }
 
@@ -584,7 +600,8 @@ if (!gotSingleInstanceLock) {
       showMainWindow: () => quickChatController?.showMainWindow(),
       consumePendingMenuCommands: () => menuCommandDispatcher.drainPending(),
       showQuickChatWindow: (opts) => quickChatController?.showQuickChatWindow(opts),
-      shouldKeepPopupWindowsAlive: () => quickChatController?.shouldKeepPopupWindowsAlive() === true,
+      shouldKeepPopupWindowsAlive: () =>
+        quickChatController?.shouldKeepPopupWindowsAlive() === true,
       applyPersistedState: (state) => {
         quickChatController?.applyPersistedState(state);
       },
@@ -632,13 +649,18 @@ if (!gotSingleInstanceLock) {
       stopAllServers: () => serverManager.stopAll(),
       quit: () => app.quit(),
       onError: (error) => {
-        console.error(`[desktop] Failed to stop workspace servers during shutdown: ${String(error)}`);
+        console.error(
+          `[desktop] Failed to stop workspace servers during shutdown: ${String(error)}`,
+        );
       },
-    })
+    }),
   );
 
   app.on("window-all-closed", () => {
-    if (process.platform === "linux" || (process.platform === "win32" && !quickChatController?.hasTray())) {
+    if (
+      process.platform === "linux" ||
+      (process.platform === "win32" && !quickChatController?.hasTray())
+    ) {
       app.quit();
     }
   });

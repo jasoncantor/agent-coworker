@@ -4,8 +4,14 @@ export type ProviderAuthMethod = Extract<
   SessionEvent,
   { type: "provider_auth_methods" }
 >["methods"][string][number];
-export type ProviderCatalogEntry = Extract<SessionEvent, { type: "provider_catalog" }>["all"][number];
-export type ProviderStatus = Extract<SessionEvent, { type: "provider_status" }>["providers"][number];
+export type ProviderCatalogEntry = Extract<
+  SessionEvent,
+  { type: "provider_catalog" }
+>["all"][number];
+export type ProviderStatus = Extract<
+  SessionEvent,
+  { type: "provider_status" }
+>["providers"][number];
 
 export const EXA_AUTH_METHOD_ID = "exa_api_key";
 export const PARALLEL_AUTH_METHOD_ID = "parallel_api_key";

@@ -880,9 +880,9 @@ describe("JSON-RPC projectors", () => {
         "First step.",
         "Second step.",
       ]);
-      expect(
-        new Set(liveCompletedReasoning.map((message) => message.params?.item?.id)).size,
-      ).toBe(2);
+      expect(new Set(liveCompletedReasoning.map((message) => message.params?.item?.id)).size).toBe(
+        2,
+      );
 
       const liveCompletedTools = outbound
         .filter((message) => message.method === "item/completed")
