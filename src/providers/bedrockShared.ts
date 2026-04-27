@@ -53,6 +53,7 @@ type BedrockClientConfig = {
     sessionToken?: string;
   };
   token?: { token: string };
+  bearerToken?: string;
 };
 
 type CachedBedrockModel = ProviderCatalogModelEntry & {
@@ -298,6 +299,7 @@ export function bedrockClientConfig(
     };
   }
   if (auth.methodId === "api_key" && auth.apiKey) {
+    config.bearerToken = auth.apiKey;
     config.token = { token: auth.apiKey };
   }
   return config;

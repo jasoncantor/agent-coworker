@@ -187,6 +187,7 @@ describe("pi runtime provider option mapping", () => {
               environment: "dev",
               team: "core",
             },
+            thinkingDisplay: "omitted",
             temperature: 0.3,
             maxTokens: 2048,
           },
@@ -202,6 +203,7 @@ describe("pi runtime provider option mapping", () => {
     expect(mapped.thinkingBudgets).toEqual({ low: 1024, medium: 4096 });
     expect(mapped.interleavedThinking).toBe(false);
     expect(mapped.requestMetadata).toEqual({ environment: "dev", team: "core" });
+    expect(mapped.thinkingDisplay).toBe("omitted");
     expect(mapped.temperature).toBe(0.3);
     expect(mapped.maxTokens).toBe(2048);
   });

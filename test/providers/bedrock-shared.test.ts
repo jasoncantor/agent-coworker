@@ -80,6 +80,21 @@ describe("providers/bedrockShared", () => {
     expect(typeof client.config.credentialDefaultProvider).toBe("function");
   });
 
+  test("maps saved Bedrock API keys to PI bearer token options", () => {
+    expect(
+      bedrockClientConfig({
+        methodId: "api_key",
+        source: "saved",
+        apiKey: "bedrock-api-key-1234",
+        region: "us-west-2",
+      }),
+    ).toEqual({
+      bearerToken: "bedrock-api-key-1234",
+      token: { token: "bedrock-api-key-1234" },
+      region: "us-west-2",
+    });
+  });
+
   test("does not force a default region for saved aws_default auth", async () => {
     const home = await makeTmpHome();
     const paths = getAiCoworkerPaths({ homedir: home });

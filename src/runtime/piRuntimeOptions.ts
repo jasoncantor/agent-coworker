@@ -192,6 +192,9 @@ export function buildPiStreamOptions(
     const reasoning = asNonEmptyString(providerSection.reasoning);
     if (reasoning) options.reasoning = reasoning;
 
+    const thinkingDisplay = asNonEmptyString(providerSection.thinkingDisplay);
+    if (thinkingDisplay) options.thinkingDisplay = thinkingDisplay;
+
     const thinkingBudgets = asRecord(providerSection.thinkingBudgets);
     if (thinkingBudgets) {
       const minimalBudget = asFiniteNumber(thinkingBudgets.minimal);

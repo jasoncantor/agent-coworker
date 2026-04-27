@@ -51,16 +51,33 @@ export const streamBedrock = (model, context, options = {}) => {
     const config = {
       profile: options.profile,
       ...(options.credentials ? { credentials: options.credentials } : {}),
-      ...(options.token ? { token: options.token } : {}),
-      ...(options.token ? { authSchemePreference: ["httpBearerAuth"] } : {}),
     };
+    const configuredRegion = getConfiguredBedrockRegion(options);
+    const hasConfiguredProfile = hasConfiguredBedrockProfile(options);
+    const endpointRegion = getStandardBedrockEndpointRegion(model.baseUrl);
+    const useExplicitEndpoint = shouldUseExplicitBedrockEndpoint(
+      model.baseUrl,
+      configuredRegion,
+      hasConfiguredProfile,
+    );
+    if (useExplicitEndpoint) {
+      config.endpoint = model.baseUrl;
+    }
+
+    const bearerToken =
+      options.bearerToken ||
+      options.token?.token ||
+      (typeof process !== "undefined" ? process.env.AWS_BEARER_TOKEN_BEDROCK : undefined);
+    const useBearerToken =
+      bearerToken !== undefined &&
+      (typeof process === "undefined" || process.env.AWS_BEDROCK_SKIP_AUTH !== "1");
 
     if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-      const explicitRegion =
-        options.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
-      if (explicitRegion) {
-        config.region = explicitRegion;
-      } else if (!process.env.AWS_PROFILE && !options.profile) {
+      if (configuredRegion) {
+        config.region = configuredRegion;
+      } else if (endpointRegion && useExplicitEndpoint) {
+        config.region = endpointRegion;
+      } else if (!hasConfiguredProfile) {
         config.region = "us-east-1";
       }
       if (process.env.AWS_BEDROCK_SKIP_AUTH === "1") {
@@ -89,7 +106,13 @@ export const streamBedrock = (model, context, options = {}) => {
         config.requestHandler = new nodeHttpHandler.NodeHttpHandler();
       }
     } else {
-      config.region = options.region || "us-east-1";
+      config.region =
+        configuredRegion || (endpointRegion && useExplicitEndpoint ? endpointRegion : undefined) || "us-east-1";
+    }
+
+    if (useBearerToken) {
+      config.token = { token: bearerToken };
+      config.authSchemePreference = ["httpBearerAuth"];
     }
 
     try {
@@ -99,7 +122,10 @@ export const streamBedrock = (model, context, options = {}) => {
         modelId: model.id,
         messages: convertMessages(context, model, cacheRetention),
         system: buildSystemPrompt(context.systemPrompt, model, cacheRetention),
-        inferenceConfig: { maxTokens: options.maxTokens, temperature: options.temperature },
+        inferenceConfig: {
+          ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
+          ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+        },
         toolConfig: convertToolConfig(context.tools, options.toolChoice),
         additionalModelRequestFields: buildAdditionalModelRequestFields(model, options),
         ...(options.requestMetadata !== undefined
@@ -112,6 +138,16 @@ export const streamBedrock = (model, context, options = {}) => {
       }
       const command = new ConverseStreamCommand(commandInput);
       const response = await client.send(command, { abortSignal: options.signal });
+      if (response.$metadata.httpStatusCode !== undefined) {
+        const responseHeaders = {};
+        if (response.$metadata.requestId) {
+          responseHeaders["x-amzn-requestid"] = response.$metadata.requestId;
+        }
+        await options?.onResponse?.(
+          { status: response.$metadata.httpStatusCode, headers: responseHeaders },
+          model,
+        );
+      }
       for await (const item of response.stream) {
         if (item.messageStart) {
           if (item.messageStart.role !== ConversationRole.ASSISTANT) {
@@ -193,6 +229,7 @@ export const streamSimpleBedrock = (model, context, options) => {
       ...(options?.token ? { token: options.token } : {}),
       ...(options?.toolChoice ? { toolChoice: options.toolChoice } : {}),
       ...(options?.requestMetadata ? { requestMetadata: options.requestMetadata } : {}),
+      ...(options?.thinkingDisplay ? { thinkingDisplay: options.thinkingDisplay } : {}),
       ...(options?.interleavedThinking !== undefined
         ? { interleavedThinking: options.interleavedThinking }
         : {}),
@@ -210,6 +247,7 @@ export const streamSimpleBedrock = (model, context, options) => {
         ...(options?.token ? { token: options.token } : {}),
         ...(options?.toolChoice ? { toolChoice: options.toolChoice } : {}),
         ...(options?.requestMetadata ? { requestMetadata: options.requestMetadata } : {}),
+        ...(options?.thinkingDisplay ? { thinkingDisplay: options.thinkingDisplay } : {}),
         ...(options?.interleavedThinking !== undefined
           ? { interleavedThinking: options.interleavedThinking }
           : {}),
@@ -235,6 +273,7 @@ export const streamSimpleBedrock = (model, context, options) => {
       ...(options?.token ? { token: options.token } : {}),
       ...(options?.toolChoice ? { toolChoice: options.toolChoice } : {}),
       ...(options?.requestMetadata ? { requestMetadata: options.requestMetadata } : {}),
+      ...(options?.thinkingDisplay ? { thinkingDisplay: options.thinkingDisplay } : {}),
       ...(options?.interleavedThinking !== undefined
         ? { interleavedThinking: options.interleavedThinking }
         : {}),
@@ -250,6 +289,7 @@ export const streamSimpleBedrock = (model, context, options) => {
     ...(options?.token ? { token: options.token } : {}),
     ...(options?.toolChoice ? { toolChoice: options.toolChoice } : {}),
     ...(options?.requestMetadata ? { requestMetadata: options.requestMetadata } : {}),
+    ...(options?.thinkingDisplay ? { thinkingDisplay: options.thinkingDisplay } : {}),
     ...(options?.interleavedThinking !== undefined
       ? { interleavedThinking: options.interleavedThinking }
       : {}),
@@ -372,6 +412,8 @@ function supportsAdaptiveThinking(modelId) {
   return (
     modelId.includes("opus-4-6") ||
     modelId.includes("opus-4.6") ||
+    modelId.includes("opus-4-7") ||
+    modelId.includes("opus-4.7") ||
     modelId.includes("sonnet-4-6") ||
     modelId.includes("sonnet-4.6")
   );
@@ -387,7 +429,13 @@ function mapThinkingLevelToEffort(level, modelId) {
     case "high":
       return "high";
     case "xhigh":
-      return modelId.includes("opus-4-6") || modelId.includes("opus-4.6") ? "max" : "high";
+      if (modelId.includes("opus-4-6") || modelId.includes("opus-4.6")) {
+        return "max";
+      }
+      if (modelId.includes("opus-4-7") || modelId.includes("opus-4.7")) {
+        return "xhigh";
+      }
+      return "high";
     default:
       return "high";
   }
@@ -613,14 +661,66 @@ function mapStopReason(reason) {
   }
 }
 
+function getConfiguredBedrockRegion(options) {
+  if (typeof process === "undefined") {
+    return options.region;
+  }
+  return options.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || undefined;
+}
+
+function hasConfiguredBedrockProfile(options) {
+  if (options.profile) {
+    return true;
+  }
+  if (typeof process === "undefined") {
+    return false;
+  }
+  return Boolean(process.env.AWS_PROFILE);
+}
+
+function getStandardBedrockEndpointRegion(baseUrl) {
+  if (!baseUrl) {
+    return undefined;
+  }
+  try {
+    const { hostname } = new URL(baseUrl);
+    const match = hostname
+      .toLowerCase()
+      .match(/^bedrock-runtime(?:-fips)?\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$/);
+    return match?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+function shouldUseExplicitBedrockEndpoint(baseUrl, configuredRegion, hasConfiguredProfile) {
+  const endpointRegion = getStandardBedrockEndpointRegion(baseUrl);
+  if (!endpointRegion) {
+    return true;
+  }
+  return !configuredRegion && !hasConfiguredProfile;
+}
+
+function isGovCloudBedrockTarget(model, options) {
+  const region = getConfiguredBedrockRegion(options);
+  if (region?.toLowerCase().startsWith("us-gov-")) {
+    return true;
+  }
+  const modelId = model.id.toLowerCase();
+  return modelId.startsWith("us-gov.") || modelId.startsWith("arn:aws-us-gov:");
+}
+
 function buildAdditionalModelRequestFields(model, options) {
   if (!options.reasoning || !model.reasoning) {
     return undefined;
   }
   if (model.id.includes("anthropic.claude") || model.id.includes("anthropic/claude")) {
+    const display = isGovCloudBedrockTarget(model, options)
+      ? undefined
+      : (options.thinkingDisplay ?? "summarized");
     const result = supportsAdaptiveThinking(model.id)
       ? {
-          thinking: { type: "adaptive" },
+          thinking: { type: "adaptive", ...(display !== undefined ? { display } : {}) },
           output_config: { effort: mapThinkingLevelToEffort(options.reasoning, model.id) },
         }
       : (() => {
@@ -637,6 +737,7 @@ function buildAdditionalModelRequestFields(model, options) {
             thinking: {
               type: "enabled",
               budget_tokens: budget,
+              ...(display !== undefined ? { display } : {}),
             },
           };
         })();
