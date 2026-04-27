@@ -6,6 +6,7 @@ dist/
 coverage/
 .nyc_output/
 *.tsbuildinfo
+.tsbuildinfo-*
 
 # Frontend tooling caches
 **/.vite/

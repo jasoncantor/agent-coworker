@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   isTrustedDesktopSenderUrl,
@@ -30,17 +31,57 @@ describe("desktop IPC security helpers", () => {
     ).toBe(false);
   });
 
-  test("accepts only file:// senders when packaged", () => {
+  test("accepts only file:// senders within renderer dir when packaged", () => {
+    const appRoot = path.join(os.tmpdir(), "Cowork.app", "Contents", "Resources");
+    const rendererDir = path.join(appRoot, "renderer");
+
     expect(
-      isTrustedDesktopSenderUrl("file:///Applications/Cowork.app/Contents/Resources/index.html", {
+      isTrustedDesktopSenderUrl(pathToFileURL(path.join(rendererDir, "index.html")).href, {
         isPackaged: true,
         electronRendererUrl: undefined,
         desktopRendererPort: undefined,
+        packagedRendererDir: rendererDir,
       }),
     ).toBe(true);
 
     expect(
+      isTrustedDesktopSenderUrl(pathToFileURL(path.join(rendererDir, "nested", "page.html")).href, {
+        isPackaged: true,
+        electronRendererUrl: undefined,
+        desktopRendererPort: undefined,
+        packagedRendererDir: rendererDir,
+      }),
+    ).toBe(true);
+
+    expect(
+      isTrustedDesktopSenderUrl(pathToFileURL(path.join(os.tmpdir(), "anything.html")).href, {
+        isPackaged: true,
+        electronRendererUrl: undefined,
+        desktopRendererPort: undefined,
+        packagedRendererDir: rendererDir,
+      }),
+    ).toBe(false);
+
+    expect(
+      isTrustedDesktopSenderUrl(pathToFileURL(path.join(appRoot, "index.html")).href, {
+        isPackaged: true,
+        electronRendererUrl: undefined,
+        desktopRendererPort: undefined,
+        packagedRendererDir: rendererDir,
+      }),
+    ).toBe(false);
+
+    expect(
       isTrustedDesktopSenderUrl("https://example.com", {
+        isPackaged: true,
+        electronRendererUrl: undefined,
+        desktopRendererPort: undefined,
+        packagedRendererDir: rendererDir,
+      }),
+    ).toBe(false);
+
+    expect(
+      isTrustedDesktopSenderUrl(pathToFileURL(path.join(rendererDir, "index.html")).href, {
         isPackaged: true,
         electronRendererUrl: undefined,
         desktopRendererPort: undefined,
