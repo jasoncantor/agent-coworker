@@ -56,10 +56,10 @@ describe("normalizeChildRoutingConfig", () => {
   });
 
   test("same-provider parsing accepts model ids that contain colons", () => {
-    const parsed = parseChildModelRef("amazon.nova-2-lite-v1:0", "bedrock", "test child model");
+    const parsed = parseChildModelRef("amazon.nova-lite-v1:0", "bedrock", "test child model");
     expect(parsed.provider).toBe("bedrock");
-    expect(parsed.modelId).toBe("amazon.nova-2-lite-v1:0");
-    expect(parsed.ref).toBe("bedrock:amazon.nova-2-lite-v1:0");
+    expect(parsed.modelId).toBe("amazon.nova-lite-v1:0");
+    expect(parsed.ref).toBe("bedrock:amazon.nova-lite-v1:0");
     expect(parsed.explicitProvider).toBe(false);
   });
 });

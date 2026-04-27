@@ -56,9 +56,6 @@ const glm5 = {
 const kimi25 = {
   bestFor: "coding, math, and general reasoning when you want a strong all-around open model",
 } as const;
-const kimi26 = {
-  bestFor: "long-horizon coding, multimodal agent work, and strong all-around open-model reasoning",
-} as const;
 const qwenAdvanced = {
   bestFor: "advanced reasoning, coding, and agentic tasks that benefit from a larger Qwen model",
 } as const;
@@ -90,10 +87,9 @@ const CHILD_AGENT_MODEL_INFO_BY_KEY: Readonly<Record<string, ChildAgentModelInfo
   [key("anthropic", "claude-sonnet-4-5")]: claudeBalanced,
   [key("anthropic", "claude-haiku-4-5")]: claudeFast,
 
-  [key("bedrock", "amazon.nova-2-lite-v1:0")]: fastGeneral,
-  [key("bedrock", "anthropic.claude-opus-4-6-v1")]: claudeFrontier,
-  [key("bedrock", "anthropic.claude-opus-4-7")]: claudeFrontier,
-  [key("bedrock", "anthropic.claude-sonnet-4-6")]: claudeBalanced,
+  [key("bedrock", "amazon.nova-lite-v1:0")]: fastGeneral,
+  [key("bedrock", "amazon.nova-micro-v1:0")]: fastGeneral,
+  [key("bedrock", "anthropic.claude-3-5-haiku-20241022-v1:0")]: claudeFast,
 
   [key("google", "gemini-3.1-pro-preview")]: geminiPro,
   [key("google", "gemini-3.1-pro-preview-customtools")]: geminiPro,
@@ -103,14 +99,12 @@ const CHILD_AGENT_MODEL_INFO_BY_KEY: Readonly<Record<string, ChildAgentModelInfo
   [key("nvidia", "nvidia/nemotron-3-super-120b-a12b")]: openReasoner,
 
   [key("together", "zai-org/GLM-5")]: glm5,
-  [key("fireworks", "accounts/fireworks/models/deepseek-v4-pro")]: openReasoner,
   [key("fireworks", "accounts/fireworks/models/glm-5")]: glm5,
   [key("opencode-go", "glm-5")]: glm5,
   [key("opencode-zen", "glm-5")]: glm5,
 
   [key("together", "moonshotai/Kimi-K2.5")]: kimi25,
   [key("fireworks", "accounts/fireworks/models/kimi-k2p5")]: kimi25,
-  [key("fireworks", "accounts/fireworks/models/kimi-k2p6")]: kimi26,
   [key("fireworks", "accounts/fireworks/routers/kimi-k2p5-turbo")]: kimi25,
   [key("opencode-go", "kimi-k2.5")]: kimi25,
   [key("opencode-zen", "kimi-k2.5")]: kimi25,

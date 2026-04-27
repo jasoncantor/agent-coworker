@@ -88,23 +88,6 @@ describe("pricing", () => {
       expect(glm!.outputPerMillion).toBe(3.2);
     });
 
-    it("resolves exact match for new fireworks models", () => {
-      const deepseek = resolveModelPricing(
-        "fireworks",
-        "accounts/fireworks/models/deepseek-v4-pro",
-      );
-      expect(deepseek).not.toBeNull();
-      expect(deepseek!.inputPerMillion).toBe(1.74);
-      expect(deepseek!.outputPerMillion).toBe(3.48);
-      expect(deepseek!.cachedInputPerMillion).toBe(0.14);
-
-      const kimi = resolveModelPricing("fireworks", "accounts/fireworks/models/kimi-k2p6");
-      expect(kimi).not.toBeNull();
-      expect(kimi!.inputPerMillion).toBe(0.95);
-      expect(kimi!.outputPerMillion).toBe(4);
-      expect(kimi!.cachedInputPerMillion).toBe(0.16);
-    });
-
     it("returns null for nvidia models without local pricing", () => {
       expect(resolveModelPricing("nvidia", "nvidia/nemotron-3-super-120b-a12b")).toBeNull();
     });

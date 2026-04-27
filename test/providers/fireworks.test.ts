@@ -42,8 +42,8 @@ describe("Fireworks AI provider", () => {
 
     await writeJson(path.join(cwd, ".cowork", "config.json"), {
       provider: "fireworks",
-      model: "accounts/fireworks/models/kimi-k2p6",
-      preferredChildModel: "accounts/fireworks/models/kimi-k2p6",
+      model: "accounts/fireworks/models/kimi-k2p5",
+      preferredChildModel: "accounts/fireworks/models/kimi-k2p5",
     });
 
     const cfg = await loadConfig({
@@ -54,7 +54,7 @@ describe("Fireworks AI provider", () => {
     });
 
     expect(cfg.provider).toBe("fireworks");
-    expect(cfg.model).toBe("accounts/fireworks/models/kimi-k2p6");
+    expect(cfg.model).toBe("accounts/fireworks/models/kimi-k2p5");
     expect(cfg.runtime).toBe("pi");
   });
 });

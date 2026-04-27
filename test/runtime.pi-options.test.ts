@@ -170,8 +170,8 @@ describe("pi runtime provider option mapping", () => {
     const params = makeParams(
       makeConfig({
         provider: "bedrock",
-        model: "amazon.nova-2-lite-v1:0",
-        preferredChildModel: "amazon.nova-2-lite-v1:0",
+        model: "amazon.nova-lite-v1:0",
+        preferredChildModel: "amazon.nova-lite-v1:0",
         providerOptions: {
           bedrock: {
             region: "us-west-2",

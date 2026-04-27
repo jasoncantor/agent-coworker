@@ -7,17 +7,14 @@ import anthropicClaudeSonnet46 from "../../config/models/anthropic/claude-sonnet
 import basetenMoonshotAiKimiK25 from "../../config/models/baseten/moonshotai-kimi-k2.5.json";
 import basetenNvidiaNemotron120bA12b from "../../config/models/baseten/nvidia-nemotron-120b-a12b.json";
 import basetenZaiOrgGlm5 from "../../config/models/baseten/zai-org-glm-5.json";
-import bedrockAmazonNova2LiteV10 from "../../config/models/bedrock/amazon.nova-2-lite-v1-0.json";
-import bedrockAnthropicClaudeOpus46V1 from "../../config/models/bedrock/anthropic.claude-opus-4-6-v1.json";
-import bedrockAnthropicClaudeOpus47 from "../../config/models/bedrock/anthropic.claude-opus-4-7.json";
-import bedrockAnthropicClaudeSonnet46 from "../../config/models/bedrock/anthropic.claude-sonnet-4-6.json";
+import bedrockAmazonNovaLiteV10 from "../../config/models/bedrock/amazon.nova-lite-v1-0.json";
+import bedrockAmazonNovaMicroV10 from "../../config/models/bedrock/amazon.nova-micro-v1-0.json";
+import bedrockAnthropicClaude35Haiku20241022V10 from "../../config/models/bedrock/anthropic.claude-3-5-haiku-20241022-v1-0.json";
 import codexCliGpt54 from "../../config/models/codex-cli/gpt-5.4.json";
 import codexCliGpt54Mini from "../../config/models/codex-cli/gpt-5.4-mini.json";
 import codexCliGpt55 from "../../config/models/codex-cli/gpt-5.5.json";
-import fireworksDeepseekV4Pro from "../../config/models/fireworks/accounts-fireworks-models-deepseek-v4-pro.json";
 import fireworksGlm5 from "../../config/models/fireworks/accounts-fireworks-models-glm-5.json";
 import fireworksKimiK2p5 from "../../config/models/fireworks/accounts-fireworks-models-kimi-k2p5.json";
-import fireworksKimiK2p6 from "../../config/models/fireworks/accounts-fireworks-models-kimi-k2p6.json";
 import fireworksMinimaxM2p5 from "../../config/models/fireworks/accounts-fireworks-models-minimax-m2p5.json";
 import fireworksKimiK2p5Turbo from "../../config/models/fireworks/accounts-fireworks-routers-kimi-k2p5-turbo.json";
 import googleGemini31FlashLitePreview from "../../config/models/google/gemini-3.1-flash-lite-preview.json";
@@ -84,20 +81,17 @@ const RAW_MODEL_REGISTRY_ENTRIES = [
   anthropicClaudeOpus46,
   anthropicClaudeSonnet45,
   anthropicClaudeSonnet46,
-  bedrockAmazonNova2LiteV10,
-  bedrockAnthropicClaudeOpus46V1,
-  bedrockAnthropicClaudeOpus47,
-  bedrockAnthropicClaudeSonnet46,
+  bedrockAmazonNovaLiteV10,
+  bedrockAmazonNovaMicroV10,
+  bedrockAnthropicClaude35Haiku20241022V10,
   basetenMoonshotAiKimiK25,
   basetenNvidiaNemotron120bA12b,
   basetenZaiOrgGlm5,
   codexCliGpt55,
   codexCliGpt54,
   codexCliGpt54Mini,
-  fireworksDeepseekV4Pro,
   fireworksGlm5,
   fireworksKimiK2p5,
-  fireworksKimiK2p6,
   fireworksKimiK2p5Turbo,
   fireworksMinimaxM2p5,
   googleGemini3FlashPreview,

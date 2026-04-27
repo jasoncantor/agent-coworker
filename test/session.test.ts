@@ -2150,11 +2150,11 @@ describe("AgentSession", () => {
           {
             id: "bedrock",
             name: "Amazon Bedrock",
-            models: ["amazon.nova-2-lite-v1:0"],
-            defaultModel: "amazon.nova-2-lite-v1:0",
+            models: ["amazon.nova-lite-v1:0"],
+            defaultModel: "amazon.nova-lite-v1:0",
           },
         ],
-        default: { bedrock: "amazon.nova-2-lite-v1:0" },
+        default: { bedrock: "amazon.nova-lite-v1:0" },
         connected: ["bedrock"],
       }));
       const getProviderStatusesImpl = mock(async () => [
@@ -2173,7 +2173,7 @@ describe("AgentSession", () => {
         config: {
           ...makeConfig("/tmp/test-session"),
           provider: "bedrock",
-          model: "amazon.nova-2-lite-v1:0",
+          model: "amazon.nova-lite-v1:0",
           userCoworkDir: path.join(home, ".cowork"),
         },
         getAiCoworkerPathsImpl: mock(({ homedir }: { homedir?: string } = {}) => ({
