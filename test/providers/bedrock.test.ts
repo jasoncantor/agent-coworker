@@ -67,8 +67,8 @@ describe("bedrock provider", () => {
     });
 
     expect(cfg.provider).toBe("bedrock");
-    expect(cfg.model).toBe("amazon.nova-lite-v1:0");
-    expect(cfg.preferredChildModel).toBe("amazon.nova-lite-v1:0");
+    expect(cfg.model).toBe("amazon.nova-2-lite-v1:0");
+    expect(cfg.preferredChildModel).toBe("amazon.nova-2-lite-v1:0");
   });
 
   test("resolves the default Bedrock model from the requested homedir context", async () => {
@@ -144,6 +144,6 @@ describe("bedrock provider", () => {
     const model = getModel(cfg) as any;
     expect(model.specificationVersion).toBe("v3");
     expect(model.provider).toBe("amazon-bedrock.converse");
-    expect(model.modelId).toBe("amazon.nova-lite-v1:0");
+    expect(model.modelId).toBe("amazon.nova-2-lite-v1:0");
   });
 });

@@ -198,6 +198,12 @@ describe("providers/connectionCatalog", () => {
       name: "Fireworks AI",
       models: [
         {
+          id: "accounts/fireworks/models/deepseek-v4-pro",
+          displayName: "DeepSeek-V4-Pro",
+          knowledgeCutoff: "Unknown",
+          supportsImageInput: false,
+        },
+        {
           id: "accounts/fireworks/models/glm-5",
           displayName: "GLM 5",
           knowledgeCutoff: "Unknown",
@@ -206,6 +212,12 @@ describe("providers/connectionCatalog", () => {
         {
           id: "accounts/fireworks/models/kimi-k2p5",
           displayName: "Kimi K2.5",
+          knowledgeCutoff: "Unknown",
+          supportsImageInput: true,
+        },
+        {
+          id: "accounts/fireworks/models/kimi-k2p6",
+          displayName: "Kimi K2.6",
           knowledgeCutoff: "Unknown",
           supportsImageInput: true,
         },

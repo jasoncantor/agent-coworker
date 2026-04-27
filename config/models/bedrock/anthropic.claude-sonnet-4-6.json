@@ -1,8 +1,8 @@
 {
-  "id": "anthropic.claude-3-5-haiku-20241022-v1:0",
+  "id": "anthropic.claude-sonnet-4-6",
   "provider": "bedrock",
-  "displayName": "Claude 3.5 Haiku (Bedrock)",
-  "knowledgeCutoff": "Unknown",
+  "displayName": "Claude Sonnet 4.6 (Bedrock)",
+  "knowledgeCutoff": "August 2025",
   "supportsImageInput": true,
   "promptTemplate": "system.md",
   "providerOptionsDefaults": {},

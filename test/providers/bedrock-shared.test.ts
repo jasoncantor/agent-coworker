@@ -163,8 +163,8 @@ describe("providers/bedrockShared", () => {
     });
 
     expect(snapshot.connected).toBe(false);
-    expect(snapshot.defaultModel).toBe("amazon.nova-lite-v1:0");
-    expect(snapshot.models.some((model) => model.id === "amazon.nova-lite-v1:0")).toBe(true);
+    expect(snapshot.defaultModel).toBe("amazon.nova-2-lite-v1:0");
+    expect(snapshot.models.some((model) => model.id === "amazon.nova-2-lite-v1:0")).toBe(true);
     expect(snapshot.message).toContain("Configure Amazon Bedrock credentials");
   });
 

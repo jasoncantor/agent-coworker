@@ -88,6 +88,11 @@ const BASE_PRICING_TABLE: Record<string, ModelPricing> = {
     inputPerMillion: 1,
     outputPerMillion: 3.2,
   },
+  "fireworks:accounts/fireworks/models/deepseek-v4-pro": {
+    inputPerMillion: 1.74,
+    outputPerMillion: 3.48,
+    cachedInputPerMillion: 0.14,
+  },
   "fireworks:accounts/fireworks/models/glm-5": {
     inputPerMillion: 1,
     outputPerMillion: 3.2,
@@ -95,6 +100,11 @@ const BASE_PRICING_TABLE: Record<string, ModelPricing> = {
   "fireworks:accounts/fireworks/models/kimi-k2p5": {
     inputPerMillion: 0.6,
     outputPerMillion: 3,
+  },
+  "fireworks:accounts/fireworks/models/kimi-k2p6": {
+    inputPerMillion: 0.95,
+    outputPerMillion: 4,
+    cachedInputPerMillion: 0.16,
   },
   "fireworks:accounts/fireworks/models/minimax-m2p5": {
     inputPerMillion: 0.3,

@@ -1,7 +1,9 @@
 type FireworksModelId =
+  | "accounts/fireworks/models/deepseek-v4-pro"
   | "accounts/fireworks/models/minimax-m2p5"
   | "accounts/fireworks/models/glm-5"
   | "accounts/fireworks/models/kimi-k2p5"
+  | "accounts/fireworks/models/kimi-k2p6"
   | "accounts/fireworks/routers/kimi-k2p5-turbo";
 
 type FireworksModelSpec = {
@@ -20,11 +22,22 @@ type FireworksModelSpec = {
 
 const FIREWORKS_INFERENCE_BASE_URL = "https://api.fireworks.ai/inference/v1";
 
-// Capability and pricing align with the OpenCode Zen entries for the same model families
-// (MiniMax M2.5, GLM-5, Kimi K2.5). Fireworks publishes per-model endpoints under
-// accounts/fireworks/models/...; keep conservative limits where the vendor does not
-// document an explicit max output.
+// Fireworks publishes per-model endpoints under accounts/fireworks/models/...;
+// keep conservative limits where the vendor does not document an explicit max output.
 const FIREWORKS_MODEL_SPECS: Record<FireworksModelId, FireworksModelSpec> = {
+  "accounts/fireworks/models/deepseek-v4-pro": {
+    id: "accounts/fireworks/models/deepseek-v4-pro",
+    name: "DeepSeek-V4-Pro",
+    baseUrl: FIREWORKS_INFERENCE_BASE_URL,
+    reasoning: true,
+    input: ["text"],
+    contextWindow: 1_048_576,
+    maxTokens: 65_536,
+    pricing: {
+      input: 1.74,
+      output: 3.48,
+    },
+  },
   "accounts/fireworks/models/minimax-m2p5": {
     id: "accounts/fireworks/models/minimax-m2p5",
     name: "MiniMax M2.5",
@@ -62,6 +75,19 @@ const FIREWORKS_MODEL_SPECS: Record<FireworksModelId, FireworksModelSpec> = {
     pricing: {
       input: 0.6,
       output: 3,
+    },
+  },
+  "accounts/fireworks/models/kimi-k2p6": {
+    id: "accounts/fireworks/models/kimi-k2p6",
+    name: "Kimi K2.6",
+    baseUrl: FIREWORKS_INFERENCE_BASE_URL,
+    reasoning: true,
+    input: ["text", "image"],
+    contextWindow: 262_144,
+    maxTokens: 65_536,
+    pricing: {
+      input: 0.95,
+      output: 4,
     },
   },
   "accounts/fireworks/routers/kimi-k2p5-turbo": {

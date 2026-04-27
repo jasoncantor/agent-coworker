@@ -1,7 +1,7 @@
 {
-  "id": "amazon.nova-micro-v1:0",
-  "provider": "bedrock",
-  "displayName": "Amazon Nova Micro",
+  "id": "accounts/fireworks/models/deepseek-v4-pro",
+  "provider": "fireworks",
+  "displayName": "DeepSeek-V4-Pro",
   "knowledgeCutoff": "Unknown",
   "supportsImageInput": false,
   "promptTemplate": "system.md",
