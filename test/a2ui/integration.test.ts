@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { A2uiSurfaceManager, createA2uiTool } from "../../src/experimental/a2ui";
 import { createConversationProjection } from "../../src/server/projection/conversationProjection";
 import type { SessionEvent } from "../../src/server/protocol";
-import { A2uiSurfaceManager, createA2uiTool } from "../../src/experimental/a2ui";
 import type { ProjectedItem } from "../../src/shared/projectedItems";
 import {
   applyProjectedItemCompleted,

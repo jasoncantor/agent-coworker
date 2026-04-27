@@ -683,10 +683,9 @@ export class SessionDbRepository {
 
   listResearch(opts?: { workspacePath?: string | null }): PersistedResearchRecord[] {
     const workspacePath = opts?.workspacePath ? canonicalWorkspacePath(opts.workspacePath) : null;
-    const rows = (
-      this.db
-        .query(
-          `SELECT
+    const rows = this.db
+      .query(
+        `SELECT
              id,
              workspace_path,
              parent_research_id,
@@ -706,25 +705,24 @@ export class SessionDbRepository {
              error
            FROM research
            ORDER BY updated_at DESC`,
-        )
-        .all()
-    ) as Array<Record<string, unknown>>;
+      )
+      .all() as Array<Record<string, unknown>>;
 
     return rows
       .map((row) => this.mapResearchRow(row))
       .filter((row) =>
         workspacePath
-          ? typeof row.workspacePath === "string" && sameWorkspacePath(row.workspacePath, workspacePath)
+          ? typeof row.workspacePath === "string" &&
+            sameWorkspacePath(row.workspacePath, workspacePath)
           : true,
       );
   }
 
   listRunningResearch(opts?: { workspacePath?: string | null }): PersistedResearchRecord[] {
     const workspacePath = opts?.workspacePath ? canonicalWorkspacePath(opts.workspacePath) : null;
-    const rows = (
-      this.db
-        .query(
-          `SELECT
+    const rows = this.db
+      .query(
+        `SELECT
              id,
              workspace_path,
              parent_research_id,
@@ -745,15 +743,15 @@ export class SessionDbRepository {
            FROM research
            WHERE status IN ('pending', 'running')
            ORDER BY updated_at DESC`,
-        )
-        .all()
-    ) as Array<Record<string, unknown>>;
+      )
+      .all() as Array<Record<string, unknown>>;
 
     return rows
       .map((row) => this.mapResearchRow(row))
       .filter((row) =>
         workspacePath
-          ? typeof row.workspacePath === "string" && sameWorkspacePath(row.workspacePath, workspacePath)
+          ? typeof row.workspacePath === "string" &&
+            sameWorkspacePath(row.workspacePath, workspacePath)
           : true,
       );
   }
@@ -763,10 +761,9 @@ export class SessionDbRepository {
     opts?: { workspacePath?: string | null },
   ): PersistedResearchRecord | null {
     const workspacePath = opts?.workspacePath ? canonicalWorkspacePath(opts.workspacePath) : null;
-    const row = (
-      this.db
-        .query(
-          `SELECT
+    const row = this.db
+      .query(
+        `SELECT
              id,
              workspace_path,
              parent_research_id,
@@ -787,9 +784,8 @@ export class SessionDbRepository {
            FROM research
            WHERE id = ?
            LIMIT 1`,
-        )
-        .get(researchId)
-    ) as Record<string, unknown> | null;
+      )
+      .get(researchId) as Record<string, unknown> | null;
 
     if (!row) {
       return null;
@@ -797,7 +793,10 @@ export class SessionDbRepository {
     const mapped = this.mapResearchRow(row);
     if (
       workspacePath &&
-      !(typeof mapped.workspacePath === "string" && sameWorkspacePath(mapped.workspacePath, workspacePath))
+      !(
+        typeof mapped.workspacePath === "string" &&
+        sameWorkspacePath(mapped.workspacePath, workspacePath)
+      )
     ) {
       return null;
     }

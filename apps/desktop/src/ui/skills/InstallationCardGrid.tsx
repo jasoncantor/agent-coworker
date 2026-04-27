@@ -1,8 +1,8 @@
+import { CheckIcon } from "lucide-react";
 import { Badge } from "../../components/ui/badge";
 import { Card } from "../../components/ui/card";
-import { CheckIcon } from "lucide-react";
 import type { SkillInstallationEntry } from "../../lib/wsProtocol";
-import { scopeLabel, stateTone, SkillIcon } from "./utils";
+import { SkillIcon, scopeLabel, stateTone } from "./utils";
 
 export function InstallationCardGrid({
   installations,
@@ -64,15 +64,22 @@ export function InstallationCardGrid({
               </div>
               <div className="mt-auto flex items-center gap-2">
                 {!isEffective && (
-                  <Badge variant={stateTone(installation.state)} className="text-[10px] px-1.5 py-0">
+                  <Badge
+                    variant={stateTone(installation.state)}
+                    className="text-[10px] px-1.5 py-0"
+                  >
                     {installation.state}
                   </Badge>
                 )}
                 {!installation.writable && (
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">Read-only</Badge>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                    Read-only
+                  </Badge>
                 )}
                 {installation.plugin && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Plugin</Badge>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                    Plugin
+                  </Badge>
                 )}
               </div>
             </Card>

@@ -328,7 +328,9 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
                             : "text-foreground/82 hover:border-border/35 hover:bg-foreground/[0.035] hover:text-foreground",
                         )}
                         onClick={() => selectThread(thread.id)}
-                        onContextMenu={(event) => onThreadContextMenu(event, thread.id, displayTitle)}
+                        onContextMenu={(event) =>
+                          onThreadContextMenu(event, thread.id, displayTitle)
+                        }
                         onDoubleClick={() => onStartEditing(thread.id, displayTitle)}
                         type="button"
                         variant="ghost"
@@ -341,10 +343,15 @@ const SidebarWorkspaceItem = memo(function SidebarWorkspaceItem({
 
                         <span className="flex shrink-0 items-center gap-2 pl-2">
                           {busy ? (
-                            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" aria-hidden="true" />
+                            <span
+                              className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"
+                              aria-hidden="true"
+                            />
                           ) : null}
                           {ageLabel ? (
-                            <span className="text-[11px] font-medium text-muted-foreground">{ageLabel}</span>
+                            <span className="text-[11px] font-medium text-muted-foreground">
+                              {ageLabel}
+                            </span>
                           ) : null}
                         </span>
                       </Button>

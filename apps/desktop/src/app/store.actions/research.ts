@@ -72,8 +72,7 @@ function isResearchRecord(value: unknown): value is ResearchRecord {
 
 function isConfirmedJsonRpcError(error: unknown): error is Error & { jsonRpcCode: number } {
   return (
-    error instanceof Error &&
-    typeof (error as { jsonRpcCode?: unknown }).jsonRpcCode === "number"
+    error instanceof Error && typeof (error as { jsonRpcCode?: unknown }).jsonRpcCode === "number"
   );
 }
 

@@ -16,34 +16,36 @@ let filesModuleImportNonce = 0;
 
 async function loadRegisterFilesIpc() {
   mock.restore();
-  mock.module("electron", () => createElectronMock({
-    app: {
-      getPath(name: string) {
-        return getDownloadsPathMock(name);
+  mock.module("electron", () =>
+    createElectronMock({
+      app: {
+        getPath(name: string) {
+          return getDownloadsPathMock(name);
+        },
       },
-    },
-    clipboard: {
-      writeText() {},
-    },
-    dialog: {
-      showSaveDialog(...args: unknown[]) {
-        return showSaveDialogMock(...args);
+      clipboard: {
+        writeText() {},
       },
-    },
-    shell: {
-      openPath: async () => "",
-      showItemInFolder() {},
-      trashItem: async () => {},
-    },
-    BrowserWindow: {
-      fromWebContents() {
-        return null;
+      dialog: {
+        showSaveDialog(...args: unknown[]) {
+          return showSaveDialogMock(...args);
+        },
       },
-      getFocusedWindow() {
-        return null;
+      shell: {
+        openPath: async () => "",
+        showItemInFolder() {},
+        trashItem: async () => {},
       },
-    },
-  }));
+      BrowserWindow: {
+        fromWebContents() {
+          return null;
+        },
+        getFocusedWindow() {
+          return null;
+        },
+      },
+    }),
+  );
 
   const module = await import(`../electron/ipc/files?ipc-files-test=${filesModuleImportNonce++}`);
   mock.restore();

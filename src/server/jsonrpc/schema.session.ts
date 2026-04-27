@@ -10,9 +10,9 @@ import {
 } from "./schema.sessionRuntime";
 import {
   anyObjectSchema,
-  sessionEventEnvelope,
   nonEmptyTrimmedStringSchema,
   optionalNonEmptyTrimmedStringSchema,
+  sessionEventEnvelope,
 } from "./schema.shared";
 
 export const sessionInfoEventSchema = z

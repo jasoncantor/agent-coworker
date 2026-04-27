@@ -57,8 +57,7 @@ const kimi25 = {
   bestFor: "coding, math, and general reasoning when you want a strong all-around open model",
 } as const;
 const kimi26 = {
-  bestFor:
-    "long-horizon coding, multimodal agent work, and strong all-around open-model reasoning",
+  bestFor: "long-horizon coding, multimodal agent work, and strong all-around open-model reasoning",
 } as const;
 const qwenAdvanced = {
   bestFor: "advanced reasoning, coding, and agentic tasks that benefit from a larger Qwen model",

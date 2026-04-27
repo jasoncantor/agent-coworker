@@ -1,10 +1,6 @@
 import type { MCPServerConfig, PluginScope } from "../../types";
 
-export type MCPServerSource =
-  | "workspace"
-  | "user"
-  | "system"
-  | "plugin";
+export type MCPServerSource = "workspace" | "user" | "system" | "plugin";
 
 export interface MCPRegistryServer extends MCPServerConfig {
   source: MCPServerSource;

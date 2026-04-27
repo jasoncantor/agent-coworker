@@ -47,11 +47,7 @@ import type { PersistedSessionSummary } from "./sessionStore";
 
 export { ASK_SKIP_TOKEN } from "../shared/ask";
 
-export type MCPServerEventSource =
-  | "workspace"
-  | "user"
-  | "system"
-  | "plugin";
+export type MCPServerEventSource = "workspace" | "user" | "system" | "plugin";
 export type MCPServerAuthMode =
   | "none"
   | "missing"

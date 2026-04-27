@@ -666,14 +666,7 @@ async function launchWorkspaceServer(opts: {
   workspacePath: string;
   yolo: boolean;
 }): Promise<SourceWorkspaceServerLaunch> {
-  const args = [
-    opts.sourceEntry,
-    "--dir",
-    opts.workspacePath,
-    "--port",
-    "0",
-    "--json",
-  ];
+  const args = [opts.sourceEntry, "--dir", opts.workspacePath, "--port", "0", "--json"];
   if (opts.yolo) {
     args.push("--yolo");
   }

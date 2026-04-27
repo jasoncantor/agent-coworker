@@ -608,5 +608,4 @@ describe("mcp config registry", () => {
       await fs.rm(builtInConfigDir, { recursive: true, force: true });
     }
   });
-
 });

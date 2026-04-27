@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 
 import { getAiCoworkerPaths } from "../src/connect";
+import { writeCodexAuthMaterial } from "../src/providers/codex-auth";
 import {
   listOpenAiNativeConnectors,
   openAiNativeConnectorsConfigPath,
   setOpenAiNativeConnectorEnabled,
 } from "../src/server/connectors/openaiNativeConnectors";
-import { writeCodexAuthMaterial } from "../src/providers/codex-auth";
 import type { AgentConfig } from "../src/types";
 
 function makeConfig(workspaceRoot: string, home: string): AgentConfig {
@@ -98,9 +98,9 @@ describe("OpenAI native connectors", () => {
       "connector_gmail",
       "connector_workspace",
     ]);
-    expect(snapshot.connectors.find((connector) => connector.id === "connector_gmail")?.isEnabled).toBe(
-      false,
-    );
+    expect(
+      snapshot.connectors.find((connector) => connector.id === "connector_gmail")?.isEnabled,
+    ).toBe(false);
     expect(requestedUrls.some((url) => url.includes("token=page-2"))).toBe(true);
   });
 
@@ -111,7 +111,9 @@ describe("OpenAI native connectors", () => {
 
     await setOpenAiNativeConnectorEnabled(config, "connector_dropbox", true);
 
-    const persisted = JSON.parse(await fs.readFile(openAiNativeConnectorsConfigPath(config), "utf-8"));
+    const persisted = JSON.parse(
+      await fs.readFile(openAiNativeConnectorsConfigPath(config), "utf-8"),
+    );
     expect(persisted.connectors.connector_dropbox.enabled).toBe(true);
   });
 });

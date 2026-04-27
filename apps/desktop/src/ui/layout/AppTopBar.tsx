@@ -138,10 +138,16 @@ export function AppTopBar({
       ? 0
       : sidebarWidth;
   const showQuickChatPopOut = managementMode === "thread" && onPopOutQuickChat !== undefined;
-  const defaultRightInset =
-    busy ? 8.75 * 16 : showContextToggle || showQuickChatPopOut ? 4.75 * 16 : 12;
-  const win32RightInset =
-    busy ? 8.75 * 16 : showContextToggle || showQuickChatPopOut ? 2.75 * 16 : 12;
+  const defaultRightInset = busy
+    ? 8.75 * 16
+    : showContextToggle || showQuickChatPopOut
+      ? 4.75 * 16
+      : 12;
+  const win32RightInset = busy
+    ? 8.75 * 16
+    : showContextToggle || showQuickChatPopOut
+      ? 2.75 * 16
+      : 12;
   const titleRightInset = isWin32
     ? WIN32_CAPTION_BUTTON_RESERVE + WIN32_RIGHT_TOOLBAR_GAP + win32RightInset
     : defaultRightInset;

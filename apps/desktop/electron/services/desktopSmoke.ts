@@ -80,8 +80,7 @@ export async function connectDesktopSmokeJsonRpc(
 ): Promise<DesktopSmokeJsonRpcConnection> {
   const createWebSocket =
     options.createWebSocket ??
-    ((url: string) =>
-      new WebSocket(url, "cowork.jsonrpc.v1") as unknown as DesktopSmokeSocket);
+    ((url: string) => new WebSocket(url, "cowork.jsonrpc.v1") as unknown as DesktopSmokeSocket);
   const setTimeoutFn = options.setTimeoutFn ?? setTimeout;
   const clearTimeoutFn = options.clearTimeoutFn ?? clearTimeout;
 

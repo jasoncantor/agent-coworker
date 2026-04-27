@@ -128,7 +128,10 @@ describe("workspace IPC", () => {
   });
 
   test("popup saveState preserves newer persisted data and merges popup threads", async () => {
-    const handlers = new Map<string, (event: unknown, args?: unknown) => Promise<unknown> | unknown>();
+    const handlers = new Map<
+      string,
+      (event: unknown, args?: unknown) => Promise<unknown> | unknown
+    >();
     let savedState: any = null;
 
     registerWorkspaceIpc({
@@ -283,18 +286,28 @@ describe("workspace IPC", () => {
         ],
         developerMode: false,
         showHiddenFiles: false,
-      }
+      },
     );
 
-    expect(savedState.workspaces.map((workspace: any) => workspace.id)).toEqual(["ws-main", "ws-newer"]);
-    expect(savedState.threads.map((thread: any) => thread.id)).toEqual(["thread-main", "thread-newer", "thread-popup"]);
+    expect(savedState.workspaces.map((workspace: any) => workspace.id)).toEqual([
+      "ws-main",
+      "ws-newer",
+    ]);
+    expect(savedState.threads.map((thread: any) => thread.id)).toEqual([
+      "thread-main",
+      "thread-newer",
+      "thread-popup",
+    ]);
     expect(savedState.threads[0]?.title).toBe("Latest main thread");
     expect(savedState.developerMode).toBe(true);
     expect(savedState.showHiddenFiles).toBe(true);
   });
 
   test("main saveState preserves popup-created threads until the main window observes them", async () => {
-    const handlers = new Map<string, (event: unknown, args?: unknown) => Promise<unknown> | unknown>();
+    const handlers = new Map<
+      string,
+      (event: unknown, args?: unknown) => Promise<unknown> | unknown
+    >();
     let persistedState: any = {
       version: 2,
       workspaces: [
@@ -409,7 +422,9 @@ describe("workspace IPC", () => {
       {},
       {
         ...persistedState,
-        threads: persistedState.threads.filter((thread: { id: string }) => thread.id === "thread-main"),
+        threads: persistedState.threads.filter(
+          (thread: { id: string }) => thread.id === "thread-main",
+        ),
         developerMode: true,
       },
     );
@@ -422,7 +437,10 @@ describe("workspace IPC", () => {
   });
 
   test("main saveState preserves metadata-only thread edits", async () => {
-    const handlers = new Map<string, (event: unknown, args?: unknown) => Promise<unknown> | unknown>();
+    const handlers = new Map<
+      string,
+      (event: unknown, args?: unknown) => Promise<unknown> | unknown
+    >();
     let persistedState: any = {
       version: 2,
       workspaces: [
@@ -521,7 +539,10 @@ describe("workspace IPC", () => {
   });
 
   test("main saveState can delete popup threads after observing loaded state", async () => {
-    const handlers = new Map<string, (event: unknown, args?: unknown) => Promise<unknown> | unknown>();
+    const handlers = new Map<
+      string,
+      (event: unknown, args?: unknown) => Promise<unknown> | unknown
+    >();
     let persistedState: any = {
       version: 2,
       workspaces: [
@@ -637,15 +658,22 @@ describe("workspace IPC", () => {
       {},
       {
         ...persistedState,
-        threads: persistedState.threads.filter((thread: { id: string }) => thread.id === "thread-main"),
+        threads: persistedState.threads.filter(
+          (thread: { id: string }) => thread.id === "thread-main",
+        ),
       },
     );
 
-    expect(persistedState.threads.map((thread: { id: string }) => thread.id)).toEqual(["thread-main"]);
+    expect(persistedState.threads.map((thread: { id: string }) => thread.id)).toEqual([
+      "thread-main",
+    ]);
   });
 
   test("popup saveState does not resurrect thread ids removed by the main window", async () => {
-    const handlers = new Map<string, (event: unknown, args?: unknown) => Promise<unknown> | unknown>();
+    const handlers = new Map<
+      string,
+      (event: unknown, args?: unknown) => Promise<unknown> | unknown
+    >();
     let savedState: any = null;
     let persistedState: any = {
       version: 2,
@@ -803,7 +831,10 @@ describe("workspace IPC", () => {
   });
 
   test("popup saveState does not re-add workspaces removed by the main window", async () => {
-    const handlers = new Map<string, (event: unknown, args?: unknown) => Promise<unknown> | unknown>();
+    const handlers = new Map<
+      string,
+      (event: unknown, args?: unknown) => Promise<unknown> | unknown
+    >();
     let savedState: any = null;
 
     registerWorkspaceIpc({
@@ -945,12 +976,17 @@ describe("workspace IPC", () => {
       },
     );
 
-    expect(savedState.workspaces.map((workspace: { id: string }) => workspace.id)).toEqual(["ws-main"]);
+    expect(savedState.workspaces.map((workspace: { id: string }) => workspace.id)).toEqual([
+      "ws-main",
+    ]);
     expect(savedState.threads.map((thread: { id: string }) => thread.id)).toEqual(["thread-main"]);
   });
 
   test("popup saveState ignores stale removed workspace paths instead of rejecting", async () => {
-    const handlers = new Map<string, (event: unknown, args?: unknown) => Promise<unknown> | unknown>();
+    const handlers = new Map<
+      string,
+      (event: unknown, args?: unknown) => Promise<unknown> | unknown
+    >();
     let savedState: any = null;
 
     registerWorkspaceIpc({
@@ -1059,6 +1095,8 @@ describe("workspace IPC", () => {
       ),
     ).resolves.toBeUndefined();
 
-    expect(savedState.workspaces.map((workspace: { id: string }) => workspace.id)).toEqual(["ws-main"]);
+    expect(savedState.workspaces.map((workspace: { id: string }) => workspace.id)).toEqual([
+      "ws-main",
+    ]);
   });
 });

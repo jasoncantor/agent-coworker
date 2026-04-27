@@ -30,8 +30,8 @@ import {
   type RevealPathInput,
   type SaveExportedFileInput,
   type SetWindowAppearanceInput,
-  type ShowQuickChatWindowInput,
   type ShowContextMenuInput,
+  type ShowQuickChatWindowInput,
   type StartWorkspaceServerInput,
   type StopWorkspaceServerInput,
   type SystemAppearance,
@@ -62,8 +62,8 @@ import {
   revealPathInputSchema,
   saveExportedFileInputSchema,
   setWindowAppearanceInputSchema,
-  showQuickChatWindowInputSchema,
   showContextMenuInputSchema,
+  showQuickChatWindowInputSchema,
   startWorkspaceServerInputSchema,
   stopWorkspaceServerInputSchema,
   systemAppearanceSchema,
@@ -459,17 +459,20 @@ const desktopApi = Object.freeze<DesktopApi>({
       listener(payload);
     };
     ipcRenderer.on(DESKTOP_EVENT_CHANNELS.menuCommand, wrapped);
-    void ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.consumePendingMenuCommands).then((payload: unknown) => {
-      if (!active || !Array.isArray(payload)) {
-        return;
-      }
-      for (const command of payload) {
-        assertDesktopMenuCommand(command);
-        listener(command);
-      }
-    }).catch(() => {
-      // Keep live menu-command delivery even if pending startup commands are unavailable.
-    });
+    void ipcRenderer
+      .invoke(DESKTOP_IPC_CHANNELS.consumePendingMenuCommands)
+      .then((payload: unknown) => {
+        if (!active || !Array.isArray(payload)) {
+          return;
+        }
+        for (const command of payload) {
+          assertDesktopMenuCommand(command);
+          listener(command);
+        }
+      })
+      .catch(() => {
+        // Keep live menu-command delivery even if pending startup commands are unavailable.
+      });
     return () => {
       active = false;
       ipcRenderer.off(DESKTOP_EVENT_CHANNELS.menuCommand, wrapped);

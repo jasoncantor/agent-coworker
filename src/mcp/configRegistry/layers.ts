@@ -71,11 +71,7 @@ async function readLayer(opts: {
 }
 
 function mergeLayers(layers: MCPConfigLayer[]): MCPRegistryServer[] {
-  const precedence: MCPServerSource[] = [
-    "system",
-    "user",
-    "workspace",
-  ];
+  const precedence: MCPServerSource[] = ["system", "user", "workspace"];
   const bySource = new Map(layers.map((layer) => [layer.source, layer]));
   const mergedByName = new Map<string, MCPRegistryServer>();
 

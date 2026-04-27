@@ -134,7 +134,10 @@ type JsonRpcConnectionTarget = {
   protocols?: string | string[];
 };
 
-function buildConnectionTarget(url: string, protocols: string | string[] | undefined): JsonRpcConnectionTarget {
+function buildConnectionTarget(
+  url: string,
+  protocols: string | string[] | undefined,
+): JsonRpcConnectionTarget {
   return {
     url,
     protocols,
@@ -182,7 +185,10 @@ export class JsonRpcSocket {
     this.clientInfo = opts.clientInfo;
     this.experimentalApi = opts.experimentalApi === true;
     this.optOutNotificationMethods = [...(opts.optOutNotificationMethods ?? [])];
-    this.connectionTarget = buildConnectionTarget(opts.url, opts.protocols ?? DEFAULT_JSONRPC_SUBPROTOCOL);
+    this.connectionTarget = buildConnectionTarget(
+      opts.url,
+      opts.protocols ?? DEFAULT_JSONRPC_SUBPROTOCOL,
+    );
     this.autoReconnect = opts.autoReconnect ?? false;
     this.maxReconnectAttempts = opts.maxReconnectAttempts ?? 10;
     this.maxQueuedMessages = Math.max(1, opts.maxQueuedMessages ?? DEFAULT_MAX_QUEUED_MESSAGES);

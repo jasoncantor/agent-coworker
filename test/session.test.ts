@@ -3,13 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import * as REAL_AGENT from "../src/agent";
-import { defaultSupportedModel, getSupportedModel } from "../src/models/registry";
-import { __internal as observabilityRuntimeInternal } from "../src/observability/runtime";
-import { createRuntime } from "../src/runtime";
 import {
   createExperimentalA2uiSurfaceManager,
   deriveA2uiSurfacesFromSnapshot,
 } from "../src/experimental/a2ui/sessionAdapter";
+import { defaultSupportedModel, getSupportedModel } from "../src/models/registry";
+import { __internal as observabilityRuntimeInternal } from "../src/observability/runtime";
+import { createRuntime } from "../src/runtime";
 import { ASK_SKIP_TOKEN, type SessionEvent } from "../src/server/protocol";
 import type { SessionInfoState } from "../src/server/session/SessionContext";
 import type {
@@ -1006,7 +1006,6 @@ describe("AgentSession", () => {
         await fs.rm(tmpDir, { recursive: true, force: true });
       }
     });
-
   });
 
   describe("session config", () => {
@@ -4465,7 +4464,8 @@ describe("AgentSession", () => {
         query: "first question",
       });
       const infoEvents = events.filter(
-        (evt): evt is Extract<SessionEvent, { type: "session_info" }> => evt.type === "session_info",
+        (evt): evt is Extract<SessionEvent, { type: "session_info" }> =>
+          evt.type === "session_info",
       );
       expect(infoEvents.some((evt) => evt.title === "First prompt title")).toBe(true);
     });

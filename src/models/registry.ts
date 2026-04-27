@@ -11,9 +11,9 @@ import bedrockAmazonNova2LiteV10 from "../../config/models/bedrock/amazon.nova-2
 import bedrockAnthropicClaudeOpus46V1 from "../../config/models/bedrock/anthropic.claude-opus-4-6-v1.json";
 import bedrockAnthropicClaudeOpus47 from "../../config/models/bedrock/anthropic.claude-opus-4-7.json";
 import bedrockAnthropicClaudeSonnet46 from "../../config/models/bedrock/anthropic.claude-sonnet-4-6.json";
-import codexCliGpt55 from "../../config/models/codex-cli/gpt-5.5.json";
 import codexCliGpt54 from "../../config/models/codex-cli/gpt-5.4.json";
 import codexCliGpt54Mini from "../../config/models/codex-cli/gpt-5.4-mini.json";
+import codexCliGpt55 from "../../config/models/codex-cli/gpt-5.5.json";
 import fireworksDeepseekV4Pro from "../../config/models/fireworks/accounts-fireworks-models-deepseek-v4-pro.json";
 import fireworksGlm5 from "../../config/models/fireworks/accounts-fireworks-models-glm-5.json";
 import fireworksKimiK2p5 from "../../config/models/fireworks/accounts-fireworks-models-kimi-k2p5.json";
@@ -27,9 +27,9 @@ import googleGemini3FlashPreview from "../../config/models/google/gemini-3-flash
 import nvidiaNemotron3Super120bA12b from "../../config/models/nvidia/nvidia-nemotron-3-super-120b-a12b.json";
 import openaiGpt52 from "../../config/models/openai/gpt-5.2.json";
 import openaiGpt52Pro from "../../config/models/openai/gpt-5.2-pro.json";
-import openaiGpt55 from "../../config/models/openai/gpt-5.5.json";
 import openaiGpt54 from "../../config/models/openai/gpt-5.4.json";
 import openaiGpt54Mini from "../../config/models/openai/gpt-5.4-mini.json";
+import openaiGpt55 from "../../config/models/openai/gpt-5.5.json";
 import openaiGpt5Mini from "../../config/models/openai/gpt-5-mini.json";
 import opencodeGoGlm5 from "../../config/models/opencode-go/glm-5.json";
 import opencodeGoKimiK25 from "../../config/models/opencode-go/kimi-k2.5.json";

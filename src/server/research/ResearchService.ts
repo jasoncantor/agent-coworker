@@ -1252,7 +1252,10 @@ export class ResearchService {
     if (!this.workspacePath) {
       return true;
     }
-    return typeof record.workspacePath === "string" && sameWorkspacePath(record.workspacePath, this.workspacePath);
+    return (
+      typeof record.workspacePath === "string" &&
+      sameWorkspacePath(record.workspacePath, this.workspacePath)
+    );
   }
 
   private async cleanupTerminalState(state: ResearchRuntimeState): Promise<void> {
@@ -1389,7 +1392,9 @@ export class ResearchService {
       }
     }
     if (missing.length > 0) {
-      throw new Error(`Unknown uploaded research file${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}`);
+      throw new Error(
+        `Unknown uploaded research file${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}`,
+      );
     }
     return resolved;
   }

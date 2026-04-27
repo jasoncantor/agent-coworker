@@ -33,16 +33,24 @@ export function PluginCardGrid({
                       {plugin.displayName}
                     </div>
                     <div className="truncate text-xs text-muted-foreground flex items-center gap-1.5">
-                      <span>{plugin.scope === "workspace" ? "Workspace plugin" : "User plugin"}</span>
+                      <span>
+                        {plugin.scope === "workspace" ? "Workspace plugin" : "User plugin"}
+                      </span>
                       <span>·</span>
-                      <span>{plugin.discoveryKind === "marketplace" ? "Marketplace" : "Direct"}</span>
+                      <span>
+                        {plugin.discoveryKind === "marketplace" ? "Marketplace" : "Direct"}
+                      </span>
                     </div>
                   </div>
                 </div>
                 {plugin.enabled ? (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Enabled</Badge>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                    Enabled
+                  </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">Disabled</Badge>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                    Disabled
+                  </Badge>
                 )}
               </div>
               <div className="mb-3 flex-1 line-clamp-3 text-xs text-muted-foreground">

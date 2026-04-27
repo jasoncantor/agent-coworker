@@ -172,11 +172,7 @@ export const PromptInputForm = forwardRef<HTMLFormElement, ComponentProps<"form"
 export const PromptInputBody = forwardRef<HTMLDivElement, ComponentProps<"div">>(
   function PromptInputBody({ className, ...props }, ref) {
     return (
-      <div
-        ref={ref}
-        className={cn("flex min-h-0 flex-1 flex-col px-0.5", className)}
-        {...props}
-      />
+      <div ref={ref} className={cn("flex min-h-0 flex-1 flex-col px-0.5", className)} {...props} />
     );
   },
 );

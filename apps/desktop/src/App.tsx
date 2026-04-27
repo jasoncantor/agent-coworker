@@ -11,8 +11,8 @@ import {
   onSystemAppearanceChanged,
   onUpdateStateChanged,
   setWindowAppearance,
-  showQuickChatWindow,
   showNotification,
+  showQuickChatWindow,
 } from "./lib/desktopCommands";
 import { canPopOutQuickChatThread } from "./lib/quickChatPopout";
 import { getDesktopWindowMode } from "./lib/windowMode";
@@ -24,9 +24,9 @@ import { ContextSidebarResizer } from "./ui/layout/ContextSidebarResizer";
 import { PrimaryContent } from "./ui/layout/PrimaryContent";
 import { SettingsContent } from "./ui/layout/SettingsContent";
 import { SidebarResizer } from "./ui/layout/SidebarResizer";
+import { MenuBarUtilityShell } from "./ui/menuBar/MenuBarUtilityShell";
 import { DesktopOnboarding } from "./ui/onboarding/DesktopOnboarding";
 import { PromptModal } from "./ui/PromptModal";
-import { MenuBarUtilityShell } from "./ui/menuBar/MenuBarUtilityShell";
 import { QuickChatShell } from "./ui/quickChat/QuickChatShell";
 import { Sidebar } from "./ui/Sidebar";
 
@@ -169,7 +169,8 @@ const ChatShell = memo(function ChatShell({
     runtime?.connected === true &&
     Boolean(runtime?.sessionId) &&
     activeThread?.status === "active";
-  const quickChatPopOutThreadId = activeThread && canPopOutQuickChatThread(activeThread) ? activeThread.id : null;
+  const quickChatPopOutThreadId =
+    activeThread && canPopOutQuickChatThread(activeThread) ? activeThread.id : null;
   useEffect(() => {
     const sidebarStateChanged =
       previousSidebarStateRef.current.sidebarCollapsed !== sidebarCollapsed ||
@@ -207,7 +208,11 @@ const ChatShell = memo(function ChatShell({
         sidebarWidth={sidebarWidth}
         contextSidebarCollapsed={contextSidebarCollapsed}
         onToggleContextSidebar={toggleContextSidebar}
-        onPopOutQuickChat={quickChatPopOutThreadId ? () => void showQuickChatWindow({ threadId: quickChatPopOutThreadId }) : undefined}
+        onPopOutQuickChat={
+          quickChatPopOutThreadId
+            ? () => void showQuickChatWindow({ threadId: quickChatPopOutThreadId })
+            : undefined
+        }
         title={topBarTitle}
         subtitle={topBarSubtitle}
         managementMode={view === "skills" ? "plugins" : "thread"}

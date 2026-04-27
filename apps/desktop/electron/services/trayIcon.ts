@@ -18,15 +18,20 @@ export function resolveTrayIconPath(
 ): string {
   const isPackaged = options.isPackaged ?? process.env.COWORK_IS_PACKAGED === "true";
   const platform = options.platform ?? process.platform;
+  const pathModule = platform === "win32" ? path.win32 : path.posix;
   const trayIconFilename = resolveTrayIconFilename(platform);
   if (isPackaged) {
-    return path.join(options.resourcesPath ?? process.resourcesPath, "tray", trayIconFilename);
+    return pathModule.join(
+      options.resourcesPath ?? process.resourcesPath,
+      "tray",
+      trayIconFilename,
+    );
   }
 
   const pathExists = options.pathExists ?? existsSync;
   const candidates = [
-    path.resolve(rootDir, "../../build", trayIconFilename),
-    path.resolve(rootDir, "../build", trayIconFilename),
+    pathModule.resolve(rootDir, "../../build", trayIconFilename),
+    pathModule.resolve(rootDir, "../build", trayIconFilename),
   ];
   return candidates.find((candidatePath) => pathExists(candidatePath)) ?? candidates[0];
 }

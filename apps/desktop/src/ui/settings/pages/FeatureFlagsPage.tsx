@@ -1,3 +1,8 @@
+import {
+  FEATURE_FLAG_DEFINITIONS,
+  FEATURE_FLAG_IDS,
+  type FeatureFlagId,
+} from "../../../../../../src/shared/featureFlags";
 import { useAppStore } from "../../../app/store";
 import {
   Card,
@@ -7,11 +12,6 @@ import {
   CardTitle,
 } from "../../../components/ui/card";
 import { Switch } from "../../../components/ui/switch";
-import {
-  FEATURE_FLAG_DEFINITIONS,
-  FEATURE_FLAG_IDS,
-  type FeatureFlagId,
-} from "../../../../../../src/shared/featureFlags";
 
 export function FeatureFlagsPage() {
   const updateState = useAppStore((s) => s.updateState);

@@ -18,7 +18,6 @@ import { normalizeQuickChatShortcutAccelerator } from "../../lib/quickChatShortc
 import type { ChildModelRoutingMode } from "../../lib/wsProtocol";
 import { type ProviderName, safeParseSessionEvent } from "../../lib/wsProtocol";
 import { normalizeWorkspaceProviderOptions } from "../openaiCompatibleProviderOptions";
-import { isSettingsPageAvailable } from "../settingsPageAvailability";
 import {
   deriveConnectedProviders,
   normalizePersistedProviderState,
@@ -31,6 +30,7 @@ import {
   deriveDefaultLmStudioUiEnabled,
   normalizePersistedProviderUiState,
 } from "../providerUiState";
+import { isSettingsPageAvailable } from "../settingsPageAvailability";
 import {
   type AppStoreActions,
   type AppStoreDataState,

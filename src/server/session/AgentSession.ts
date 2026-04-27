@@ -1,6 +1,5 @@
 import type { runTurn } from "../../agent";
 import type { ConnectProviderResult, connectProvider as connectModelProvider } from "../../connect";
-import { HarnessContextStore } from "../../sessionContext/HarnessContextStore";
 import type { MCPRegistryServer } from "../../mcp/configRegistry";
 import { type MemoryScope, MemoryStore } from "../../memoryStore";
 import { getKnownResolvedModelMetadata, isDynamicModelProvider } from "../../models/metadata";
@@ -13,6 +12,7 @@ import {
   type SessionUsageSnapshot,
   type TurnUsage,
 } from "../../session/costTracker";
+import { HarnessContextStore } from "../../sessionContext/HarnessContextStore";
 import type {
   AgentContextMode,
   AgentInspectResult,
@@ -30,7 +30,7 @@ import type {
   ServerErrorSource,
 } from "../../types";
 import type { AgentWaitMode } from "../agents/types";
-import type { SessionEvent, SessionConfigPatch } from "../protocol";
+import type { SessionConfigPatch, SessionEvent } from "../protocol";
 import {
   type SessionBackupHandle,
   type SessionBackupInitOptions,
@@ -425,7 +425,8 @@ export class AgentSession {
     this.skillCatalogMtimeSnapshot = opts.initialSkillCatalogMtimeSnapshot ?? null;
 
     const now = new Date().toISOString();
-    const initialBackupsEnabled = hydrated?.backupsEnabledOverride ?? opts.config.backupsEnabled ?? false;
+    const initialBackupsEnabled =
+      hydrated?.backupsEnabledOverride ?? opts.config.backupsEnabled ?? false;
 
     this.state = {
       config: opts.config,
@@ -732,9 +733,7 @@ export class AgentSession {
         log: (line) => this.context.emit({ type: "log", sessionId: this.id, line }),
       });
       this.a2uiSurfaceManager.hydrate(
-        this.deps.deriveA2uiSurfacesFromSnapshotImpl?.(
-          this.sessionSnapshotProjector.getSnapshot(),
-        ),
+        this.deps.deriveA2uiSurfacesFromSnapshotImpl?.(this.sessionSnapshotProjector.getSnapshot()),
       );
     }
     return this.a2uiSurfaceManager;

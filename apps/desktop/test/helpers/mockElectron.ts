@@ -89,14 +89,17 @@ class DefaultTray {
 
 let electronMockOverrides: ElectronMockShape = {};
 
-function mergeMock<T extends Record<string, unknown>>(defaults: T, key: keyof ElectronMockShape): T {
+function mergeMock<T extends Record<string, unknown>>(
+  defaults: T,
+  key: keyof ElectronMockShape,
+): T {
   const override = electronMockOverrides[key];
   if (!override || typeof override !== "object") {
     return defaults;
   }
   return {
     ...defaults,
-    ...override as Partial<T>,
+    ...(override as Partial<T>),
   };
 }
 

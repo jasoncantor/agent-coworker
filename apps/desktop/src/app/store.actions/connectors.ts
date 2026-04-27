@@ -15,7 +15,9 @@ export function createOpenAiNativeConnectorActions(
   get: StoreGet,
 ): Pick<
   AppStoreActions,
-  "requestOpenAiNativeConnectors" | "refreshOpenAiNativeConnectors" | "setOpenAiNativeConnectorEnabled"
+  | "requestOpenAiNativeConnectors"
+  | "refreshOpenAiNativeConnectors"
+  | "setOpenAiNativeConnectorEnabled"
 > {
   async function requestConnectors(
     workspaceId: string,

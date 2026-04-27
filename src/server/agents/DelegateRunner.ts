@@ -1,4 +1,3 @@
-import { buildTurnSystemPrompt } from "../../turnSystemPrompt";
 import { buildRuntimeTelemetrySettings } from "../../observability/runtime";
 import { loadAgentPrompt } from "../../prompt";
 import { buildGooglePrepareStep } from "../../providers/googleReplay";
@@ -6,6 +5,7 @@ import { createRuntime } from "../../runtime";
 import type { AgentReasoningEffort, AgentRole } from "../../shared/agents";
 import type { ToolContext } from "../../tools";
 import { createTools } from "../../tools";
+import { buildTurnSystemPrompt } from "../../turnSystemPrompt";
 import type {
   AgentConfig,
   HarnessContextState,

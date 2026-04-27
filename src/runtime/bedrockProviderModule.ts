@@ -107,7 +107,9 @@ export const streamBedrock = (model, context, options = {}) => {
       }
     } else {
       config.region =
-        configuredRegion || (endpointRegion && useExplicitEndpoint ? endpointRegion : undefined) || "us-east-1";
+        configuredRegion ||
+        (endpointRegion && useExplicitEndpoint ? endpointRegion : undefined) ||
+        "us-east-1";
     }
 
     if (useBearerToken) {

@@ -6,14 +6,12 @@ import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-
+import { buildCodexAppsMcpServer } from "../server/connectors/openaiNativeConnectors";
+import { CODEX_APPS_MCP_SERVER_NAME } from "../shared/openaiNativeConnectors";
 import type { AgentConfig, MCPServerConfig } from "../types";
 import { VERSION } from "../version";
-import {
-  buildCodexAppsMcpServer,
-} from "../server/connectors/openaiNativeConnectors";
-import { CODEX_APPS_MCP_SERVER_NAME } from "../shared/openaiNativeConnectors";
 import {
   completeMCPServerOAuth,
   type MCPAuthMode,
@@ -116,6 +114,11 @@ function normalizeToolArguments(input: unknown): Record<string, unknown> {
   return input as Record<string, unknown>;
 }
 
+function normalizeToolMeta(input: unknown): Record<string, unknown> | undefined {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined;
+  return input as Record<string, unknown>;
+}
+
 function normalizeMcpJsonSchema(value: unknown, root = false): unknown {
   if (typeof value === "boolean") return value;
   if (Array.isArray(value)) return value.map((entry) => normalizeMcpJsonSchema(entry));
@@ -124,7 +127,12 @@ function normalizeMcpJsonSchema(value: unknown, root = false): unknown {
   const input = value as Record<string, unknown>;
   const output: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(input)) {
-    if (key === "properties" && typeof entry === "object" && entry !== null && !Array.isArray(entry)) {
+    if (
+      key === "properties" &&
+      typeof entry === "object" &&
+      entry !== null &&
+      !Array.isArray(entry)
+    ) {
       output.properties = Object.fromEntries(
         Object.entries(entry as Record<string, unknown>).map(([propName, propSchema]) => [
           propName,
@@ -155,7 +163,10 @@ function normalizeMcpJsonSchema(value: unknown, root = false): unknown {
     "const" in output ||
     "enum" in output;
   if (!hasTypeLike) {
-    output.type = root || "properties" in output ? "object" : ["string", "number", "boolean", "object", "array", "null"];
+    output.type =
+      root || "properties" in output
+        ? "object"
+        : ["string", "number", "boolean", "object", "array", "null"];
   }
   return output;
 }
@@ -208,9 +219,9 @@ async function createRuntimeMcpClient(opts: {
           description,
           inputSchema: normalizeMcpJsonSchema(
             entry.inputSchema ?? {
-            type: "object",
-            properties: {},
-            additionalProperties: true,
+              type: "object",
+              properties: {},
+              additionalProperties: true,
             },
             true,
           ),
@@ -218,12 +229,15 @@ async function createRuntimeMcpClient(opts: {
           ...(entry._meta ? { _meta: entry._meta } : {}),
           ...(entry.connector_id ? { connectorId: entry.connector_id } : {}),
           ...(entry.connector_name ? { connectorName: entry.connector_name } : {}),
-          execute: async (input: unknown) =>
-            await client.callTool({
+          execute: async (input: unknown) => {
+            const meta = normalizeToolMeta(entry._meta);
+            const params: CallToolRequest["params"] = {
               name,
               arguments: normalizeToolArguments(input),
-              ...(entry._meta ? { _meta: entry._meta } : {}),
-            } as any),
+              ...(meta ? { _meta: meta } : {}),
+            };
+            return await client.callTool(params);
+          },
         };
       }
       return discovered;

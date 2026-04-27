@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, type CSSProperties } from "react";
-
 import { ArrowUpRightIcon, SquarePenIcon, XIcon } from "lucide-react";
+import { type CSSProperties, useEffect, useMemo, useRef } from "react";
 
 import { useAppStore } from "../../app/store";
 import { Button } from "../../components/ui/button";
@@ -29,7 +28,10 @@ export function QuickChatShell({ init, ready, startupError }: QuickChatShellProp
     [selectedThreadId, threads],
   );
   const activeWorkspace = useMemo(
-    () => workspaces.find((workspace) => workspace.id === activeThread?.workspaceId) ?? workspaces[0] ?? null,
+    () =>
+      workspaces.find((workspace) => workspace.id === activeThread?.workspaceId) ??
+      workspaces[0] ??
+      null,
     [activeThread?.workspaceId, workspaces],
   );
 
@@ -146,7 +148,9 @@ export function QuickChatShell({ init, ready, startupError }: QuickChatShellProp
           <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] border border-border/45 bg-panel/75">
             {!ready ? (
               <div className="flex h-full items-center justify-center">
-                <div className="text-sm font-medium text-muted-foreground">Starting quick chat…</div>
+                <div className="text-sm font-medium text-muted-foreground">
+                  Starting quick chat…
+                </div>
               </div>
             ) : startupError ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">

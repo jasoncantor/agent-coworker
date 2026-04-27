@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { HarnessContextStore, normalizeHarnessContextPayload } from "../src/sessionContext/HarnessContextStore";
+import {
+  HarnessContextStore,
+  normalizeHarnessContextPayload,
+} from "../src/sessionContext/HarnessContextStore";
 import type { HarnessContextPayload } from "../src/types";
 
 function makePayload(overrides?: Partial<HarnessContextPayload>): HarnessContextPayload {

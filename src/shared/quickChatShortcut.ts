@@ -62,7 +62,7 @@ export type QuickChatShortcutCapture =
   | { status: "invalid"; message: string }
   | { status: "complete"; accelerator: string };
 
-function canonicalModifierToken(token: string): typeof MODIFIER_TOKENS[number] | null {
+function canonicalModifierToken(token: string): (typeof MODIFIER_TOKENS)[number] | null {
   const normalized = token.trim().toLowerCase();
   switch (normalized) {
     case "cmdorctrl":

@@ -9,8 +9,8 @@ import type {
 import type { SessionSnapshot } from "../../shared/sessionSnapshot";
 import type { AgentConfig, HarnessContextPayload, MCPServerConfig } from "../../types";
 import type { AgentWaitMode } from "../agents/types";
-import type { SessionConfigPatch } from "../protocol";
 import type { FileAttachment, OrderedInputPart } from "../jsonrpc/routes/shared";
+import type { SessionConfigPatch } from "../protocol";
 import type { AgentSession } from "./AgentSession";
 import type { PendingPromptReplayEvent } from "./InteractionManager";
 import type { ExperimentalA2uiManager, SeededSessionContext } from "./SessionContext";

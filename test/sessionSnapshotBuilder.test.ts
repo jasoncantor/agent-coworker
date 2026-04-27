@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
-
-import { HarnessContextStore } from "../src/sessionContext/HarnessContextStore";
 import type { SessionRuntimeState } from "../src/server/session/SessionContext";
 import { SessionSnapshotBuilder } from "../src/server/session/SessionSnapshotBuilder";
+import { HarnessContextStore } from "../src/sessionContext/HarnessContextStore";
 import type { AgentConfig } from "../src/types";
 
 function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {

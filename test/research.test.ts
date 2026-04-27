@@ -972,7 +972,8 @@ describe("research service", () => {
   test("list preserves newer runtime state while merging resolved sources", async () => {
     const paths = await makeTmpCoworkHome();
     const sessionDb = await SessionDb.create({ paths });
-    const redirectUrl = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/source-live";
+    const redirectUrl =
+      "https://vertexaisearch.cloud.google.com/grounding-api-redirect/source-live";
     const resolvedUrl = "https://example.com/resolved-live";
     const resolvedTitle = "Resolved live source";
     const fetchGate = deferred<void>();
@@ -1150,7 +1151,11 @@ describe("research service", () => {
         (value) => value?.outputsMarkdown === "# Better title",
       );
 
-      await service.subscribe({ data: { connectionId: "replay-socket" } } as any, research.id, "evt-replay-1");
+      await service.subscribe(
+        { data: { connectionId: "replay-socket" } } as any,
+        research.id,
+        "evt-replay-1",
+      );
       expect(replayed).toEqual([]);
 
       const cancelPromise = service.cancel(research.id);
@@ -1383,7 +1388,12 @@ describe("research service", () => {
         mimeType: "text/plain",
         contentBase64: Buffer.from("early failure").toString("base64"),
       });
-      const metadataPath = path.join(paths.rootDir, "research", "uploads", `${uploaded.fileId}.json`);
+      const metadataPath = path.join(
+        paths.rootDir,
+        "research",
+        "uploads",
+        `${uploaded.fileId}.json`,
+      );
 
       const research = await service.start({
         input: "This should fail before preparation.",
